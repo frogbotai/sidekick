@@ -1,0 +1,14 @@
+{
+  "name": "@frogbotai/sidekick-core",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Sidekick's browser tools, permissions, providers and agent loop. No React.",
+  "license": "MIT",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "devDependencies": {
+    "@types/chrome": "^0.1.1"
+  }
+}
