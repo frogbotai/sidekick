@@ -12,6 +12,7 @@ Build the best version, not the usual one. Subtract what doesn't earn its place,
 ```
 pnpm check            format, eslint, oxlint (type-aware), typecheck; never tests
 pnpm test:unit <file>
+pnpm ticket verify    in a ticket worktree; runs the frogbot checkout's ticket script
 ```
 
 ## Rules
