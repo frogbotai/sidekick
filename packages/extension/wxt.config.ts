@@ -1,0 +1,65 @@
+import { defineConfig } from 'wxt';
+
+const STORE_KEY =
+  'MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAwDBUC+bdAZwnXyO6CRfN75935fUiW92B+Tp+iLYqrFyEJHYL1a4hcS16SsEsHSUqxuutL3e6iP72yAg6PowXWNASsjm0Aj+3NXP1CI0thE3Rgi1ahZSmaIZXmtLv+x5g4LrIrYZ6VWLx96VC7mc5UgyjHc8p7drBWlquEy6fzB+8K4S8WScGTA3j6KegIFApLiXle59XrLSxhCPwm6pnTsXn02R6xihd4ZFcz9D3P1R1XlofulPgD9voFe9FnYBYm+mQpU2nvZNPfQc5J5qJAvFwp9CfB0k0LUeMa6iF909h4gcl8O/hN1Kmg52lY/Cismz15uYJwhhPjBC31oqt4wIDAQAB';
+
+const PERMISSIONS = {
+  sidePanel: 'the chat lives in the side panel',
+  storage: 'settings and credentials, in storage.local only',
+  tabs: 'tab URLs, to re-check the site before each action',
+  tabGroups: 'the tab group the agent works in',
+  scripting: 'inject the content script into tabs open before install',
+  debugger: 'trusted input and scrolling over CDP',
+  webNavigation: 'list a tab’s frames, to reach each frame’s content script',
+} as const;
+
+const FRAME_SCRIPT = 'frame.js';
+
+const E2E_ONLY = ['e2e-open'];
+
+const e2e = process.env.SIDEKICK_E2E === '1';
+
+export default defineConfig({
+  srcDir: 'src',
+  outDirTemplate: `{{browser}}-mv{{manifestVersion}}${e2e ? '-e2e' : '{{modeSuffix}}'}`,
+  imports: false,
+  modules: ['@wxt-dev/module-react'],
+  vite: () => ({ define: { 'import.meta.env.SIDEKICK_E2E': JSON.stringify(e2e) } }),
+  manifest: {
+    name: 'FrogBot Sidekick',
+    description: 'Your AI work assistant, right in your browser.',
+    key: STORE_KEY,
+    minimum_chrome_version: '123',
+    permissions: Object.keys(PERMISSIONS),
+    host_permissions: ['<all_urls>'],
+    content_scripts: [
+      {
+        matches: ['<all_urls>'],
+        js: [FRAME_SCRIPT],
+        all_frames: true,
+        match_about_blank: true,
+        match_origin_as_fallback: true,
+        run_at: 'document_start',
+        world: 'ISOLATED',
+      },
+    ],
+    action: { default_title: 'Open FrogBot Sidekick' },
+    icons: {
+      16: 'icons/icon-16.png',
+      32: 'icons/icon-32.png',
+      48: 'icons/icon-48.png',
+      128: 'icons/icon-128.png',
+    },
+  },
+  hooks: {
+    'entrypoints:resolved': (_wxt, entrypoints) => {
+      if (e2e) return;
+
+      for (const name of E2E_ONLY) {
+        const index = entrypoints.findIndex((entrypoint) => entrypoint.name === name);
+
+        if (index !== -1) entrypoints.splice(index, 1);
+      }
+    },
+  },
+});

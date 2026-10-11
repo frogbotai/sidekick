@@ -16,12 +16,14 @@
     "typecheck": "tsc -b",
     "test": "vitest run",
     "test:unit": "vitest run --project unit",
+    "test:e2e": "pnpm --filter @frogbotai/sidekick-extension build:e2e && playwright test",
     "lint-staged": "lint-staged",
     "prepare": "husky",
     "ticket": "node ../frogbot/scripts/ticket.mjs"
   },
   "devDependencies": {
     "@eslint/js": "^9.16.0",
+    "@playwright/test": "1.63.0",
     "@stylistic/eslint-plugin": "5.10.0",
     "@types/node": "^22.10.2",
     "@vitest/eslint-plugin": "^1.1.0",

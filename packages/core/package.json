@@ -5,10 +5,16 @@
   "description": "Sidekick's browser tools, permissions, providers and agent loop. No React.",
   "license": "MIT",
   "type": "module",
+  "sideEffects": false,
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./testing": "./src/testing/fakeChrome.ts"
+  },
+  "dependencies": {
+    "zod": "4.6.6"
   },
   "devDependencies": {
-    "@types/chrome": "^0.1.1"
+    "@types/chrome": "0.1.43",
+    "fake-indexeddb": "6.2.5"
   }
 }

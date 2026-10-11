@@ -2,16 +2,17 @@
 import { spawnSync } from 'node:child_process';
 
 const STEPS = [
-  ['format', ['prettier', '--check', '.', '--log-level', 'warn']],
-  ['eslint', ['eslint', '.', '--max-warnings=0']],
-  ['oxlint', ['oxlint', '--type-aware', '--quiet']],
-  ['typecheck', ['tsc', '-b', '--pretty']],
+  ['prepare', ['--recursive', '--if-present', '--silent', 'run', 'postinstall']],
+  ['format', ['exec', 'prettier', '--check', '.', '--log-level', 'warn']],
+  ['eslint', ['exec', 'eslint', '.', '--max-warnings=0']],
+  ['oxlint', ['exec', 'oxlint', '--type-aware', '--quiet']],
+  ['typecheck', ['exec', 'tsc', '-b', '--pretty']],
 ];
 
 const failed = [];
 
-for (const [name, [command, ...args]] of STEPS) {
-  const result = spawnSync('pnpm', ['exec', command, ...args], { stdio: 'inherit' });
+for (const [name, args] of STEPS) {
+  const result = spawnSync('pnpm', args, { stdio: 'inherit' });
 
   if (result.status !== 0) failed.push(name);
 }

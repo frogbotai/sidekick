@@ -1,0 +1,26 @@
+{
+  "name": "@frogbotai/sidekick-extension",
+  "version": "0.9.0",
+  "private": true,
+  "description": "Sidekick's Chrome extension: side panel, service worker and content script.",
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "build": "wxt build",
+    "build:e2e": "SIDEKICK_E2E=1 wxt build",
+    "postinstall": "wxt prepare"
+  },
+  "dependencies": {
+    "@frogbotai/sidekick-core": "workspace:^",
+    "@frogbotai/ui": "0.32.0",
+    "react": "19.2.6",
+    "react-dom": "19.2.6"
+  },
+  "devDependencies": {
+    "@types/chrome": "0.1.43",
+    "@types/react": "19.2.14",
+    "@types/react-dom": "19.2.3",
+    "@wxt-dev/module-react": "1.2.2",
+    "wxt": "0.21.4"
+  }
+}

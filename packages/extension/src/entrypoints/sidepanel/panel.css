@@ -1,0 +1,17 @@
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+.fb-theme {
+  height: 100%;
+}
+
+.sidekick-panel {
+  box-sizing: border-box;
+  height: 100%;
+  padding: 1rem;
+  background: var(--theme-base-0);
+}

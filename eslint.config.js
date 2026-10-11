@@ -19,6 +19,22 @@ const SLEEP = 'Wait for a condition, not a fixed time';
 const CAST_MESSAGE =
   'No `as never` or `as unknown as` in product code. Type the value, or cross a seam with a checked converter.';
 
+const NO_SYNC_MESSAGE =
+  'Settings and credentials stay on this device: use chrome.storage.local, never storage.sync (PLAN D7).';
+
+const noSync = [
+  {
+    selector:
+      "MemberExpression:matches([object.name='storage'], [object.property.name='storage']):matches([property.name='sync'], [property.value='sync'])",
+    message: NO_SYNC_MESSAGE,
+  },
+  {
+    selector:
+      "VariableDeclarator:matches([init.name='storage'], [init.property.name='storage']) > ObjectPattern > Property[key.name='sync']",
+    message: NO_SYNC_MESSAGE,
+  },
+];
+
 const castBans = [
   { selector: "TSAsExpression[typeAnnotation.type='TSNeverKeyword']", message: CAST_MESSAGE },
   {
@@ -100,6 +116,7 @@ export default tseslint.config(
       'simple-import-sort/imports': 'error',
       'simple-import-sort/exports': 'error',
       'no-console': 'error',
+      'no-restricted-syntax': ['error', ...noSync],
       'no-empty': ['error', { allowEmptyCatch: true }],
       'prefer-const': ['error', { ignoreReadBeforeAssign: true }],
       curly: ['error', 'multi-line'],
@@ -113,6 +130,7 @@ export default tseslint.config(
       'vitest/padding-around-expect-groups': 'error',
       'no-restricted-syntax': [
         'error',
+        ...noSync,
         { selector: "CallExpression[callee.name='sleep']", message: SLEEP },
       ],
     },
@@ -131,7 +149,7 @@ export default tseslint.config(
   {
     files: ['packages/**/src/**/*.{ts,tsx}'],
     ignores: SPECS,
-    rules: { 'no-restricted-syntax': ['error', ...castBans] },
+    rules: { 'no-restricted-syntax': ['error', ...noSync, ...castBans] },
   },
   {
     files: ['packages/**/src/**'],
