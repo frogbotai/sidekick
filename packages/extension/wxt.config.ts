@@ -1,5 +1,14 @@
 import { defineConfig } from 'wxt';
 
+import {
+  CHECKOUT_ENV,
+  LINKED_MODE,
+  linkedVite,
+  resolveCheckout,
+  SIDEKICK_ROOT,
+  unimportExclude,
+} from './scripts/linked.ts';
+
 const STORE_KEY =
   'MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAwDBUC+bdAZwnXyO6CRfN75935fUiW92B+Tp+iLYqrFyEJHYL1a4hcS16SsEsHSUqxuutL3e6iP72yAg6PowXWNASsjm0Aj+3NXP1CI0thE3Rgi1ahZSmaIZXmtLv+x5g4LrIrYZ6VWLx96VC7mc5UgyjHc8p7drBWlquEy6fzB+8K4S8WScGTA3j6KegIFApLiXle59XrLSxhCPwm6pnTsXn02R6xihd4ZFcz9D3P1R1XlofulPgD9voFe9FnYBYm+mQpU2nvZNPfQc5J5qJAvFwp9CfB0k0LUeMa6iF909h4gcl8O/hN1Kmg52lY/Cismz15uYJwhhPjBC31oqt4wIDAQAB';
 
@@ -19,12 +28,17 @@ const E2E_ONLY = ['e2e-open'];
 
 const e2e = process.env.SIDEKICK_E2E === '1';
 
+const checkout = () => resolveCheckout(process.env[CHECKOUT_ENV], SIDEKICK_ROOT);
+
 export default defineConfig({
   srcDir: 'src',
-  outDirTemplate: `{{browser}}-mv{{manifestVersion}}${e2e ? '-e2e' : '{{modeSuffix}}'}`,
+  outDirTemplate: `{{browser}}-mv{{manifestVersion}}${e2e ? '-e2e' : ''}{{modeSuffix}}`,
   imports: false,
   modules: ['@wxt-dev/module-react'],
-  vite: () => ({ define: { 'import.meta.env.SIDEKICK_E2E': JSON.stringify(e2e) } }),
+  vite: ({ mode }) => ({
+    define: { 'import.meta.env.SIDEKICK_E2E': JSON.stringify(e2e) },
+    ...(mode === LINKED_MODE ? linkedVite(checkout(), SIDEKICK_ROOT) : {}),
+  }),
   manifest: {
     name: 'FrogBot Sidekick',
     description: 'Your AI work assistant, right in your browser.',
@@ -52,6 +66,11 @@ export default defineConfig({
     },
   },
   hooks: {
+    'config:resolved': (wxt) => {
+      if (wxt.config.mode !== LINKED_MODE) return;
+
+      Object.assign(wxt.config.imports, { exclude: unimportExclude(checkout()) });
+    },
     'entrypoints:resolved': (_wxt, entrypoints) => {
       if (e2e) return;
 

@@ -5,7 +5,10 @@ export default defineConfig({
     passWithNoTests: true,
     projects: [
       {
-        test: { name: 'unit', include: ['packages/*/src/**/*.spec.{ts,tsx}'] },
+        test: {
+          name: 'unit',
+          include: ['packages/*/src/**/*.spec.{ts,tsx}', 'packages/*/scripts/**/*.spec.ts'],
+        },
       },
     ],
   },

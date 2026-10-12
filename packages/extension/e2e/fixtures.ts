@@ -2,7 +2,13 @@ import path from 'node:path';
 
 import { type BrowserContext, chromium, type Page, test as base } from '@playwright/test';
 
-const BUILD = path.resolve(import.meta.dirname, '../.output/chrome-mv3-e2e');
+const OUTPUT = path.resolve(import.meta.dirname, '../.output');
+
+/** Options a Playwright config can set for these fixtures. */
+export interface Options {
+  /** The `.output` folder of the build under test. */
+  extensionBuild: string;
+}
 
 interface Fixtures {
   context: BrowserContext;
@@ -12,12 +18,13 @@ interface Fixtures {
 
 process.env.PW_CHROMIUM_ATTACH_TO_OTHER = '1';
 
-export const test = base.extend<Fixtures>({
-  // eslint-disable-next-line no-empty-pattern -- Playwright reads fixture dependencies from this pattern
-  context: async ({}, use) => {
+export const test = base.extend<Fixtures & Options>({
+  extensionBuild: ['chrome-mv3-e2e', { option: true }],
+  context: async ({ extensionBuild }, use) => {
+    const build = path.join(OUTPUT, extensionBuild);
     const context = await chromium.launchPersistentContext('', {
       channel: 'chromium',
-      args: [`--disable-extensions-except=${BUILD}`, `--load-extension=${BUILD}`],
+      args: [`--disable-extensions-except=${build}`, `--load-extension=${build}`],
     });
 
     await use(context);
