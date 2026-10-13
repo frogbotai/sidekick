@@ -1,9 +1,10 @@
+import type { ProviderDefinition } from '../provider/definition';
 import { createRegistry } from './registry';
 
 export type { Registry, RegistryDraft, RegistryError, RegistryTransform } from './registry';
 export { createRegistry } from './registry';
 
-export const providers = createRegistry<{ id: string }>('providers');
+export const providers = createRegistry<ProviderDefinition>('providers');
 export const tools = createRegistry<{ id: string }>('tools');
 export const commands = createRegistry<{ id: string }>('commands');
 export const mentionSources = createRegistry<{ id: string }>('mentionSources');

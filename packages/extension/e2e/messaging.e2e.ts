@@ -1,11 +1,9 @@
 import type { BrowserContext, Page } from '@playwright/test';
 
-import type { SidekickWorker } from '../src/entrypoints/sidepanel/worker';
 import { expect, test } from './fixtures';
 
 declare global {
   interface Window {
-    sidekick: { worker: SidekickWorker };
     boots?: string[];
   }
 }

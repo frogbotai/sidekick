@@ -5,5 +5,5 @@
     "rootDir": "src",
     "types": ["chrome"]
   },
-  "include": ["src"]
+  "include": ["src", "src/**/*.json"]
 }

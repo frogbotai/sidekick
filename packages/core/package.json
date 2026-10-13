@@ -8,9 +8,18 @@
   "sideEffects": false,
   "exports": {
     ".": "./src/index.ts",
+    "./provider": "./src/provider/index.ts",
     "./testing": "./src/testing/fakeChrome.ts"
   },
   "dependencies": {
+    "@ai-sdk/anthropic": "4.0.71",
+    "@ai-sdk/google": "4.0.87",
+    "@ai-sdk/groq": "4.0.54",
+    "@ai-sdk/mistral": "4.0.56",
+    "@ai-sdk/openai": "4.0.83",
+    "@ai-sdk/openai-compatible": "3.0.62",
+    "@ai-sdk/xai": "5.0.14",
+    "ai": "7.0.127",
     "zod": "4.6.6"
   },
   "devDependencies": {

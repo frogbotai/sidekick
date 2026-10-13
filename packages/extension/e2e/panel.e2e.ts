@@ -15,6 +15,11 @@ test('opens the side panel styled like FrogBot', async ({ openPanel }) => {
   );
 
   expect(base).not.toBe('');
+
+  await expect(panel.locator('.sidekick-panel')).not.toHaveCSS(
+    'background-color',
+    'rgba(0, 0, 0, 0)',
+  );
 });
 
 test('follows the stored theme, live and before first render', async ({ openPanel }) => {

@@ -1,3 +1,5 @@
+import path from 'node:path';
+
 import { defineConfig } from 'wxt';
 
 import {
@@ -24,6 +26,8 @@ const PERMISSIONS = {
 
 const FRAME_SCRIPT = 'frame.js';
 
+const MINIMUM_CHROME = 123;
+
 const E2E_ONLY = ['e2e-open'];
 
 const e2e = process.env.SIDEKICK_E2E === '1';
@@ -37,13 +41,17 @@ export default defineConfig({
   modules: ['@wxt-dev/module-react'],
   vite: ({ mode }) => ({
     define: { 'import.meta.env.SIDEKICK_E2E': JSON.stringify(e2e) },
+    build: { cssTarget: `chrome${MINIMUM_CHROME}` },
+    resolve: {
+      alias: { '@ai-sdk/gateway': path.resolve(import.meta.dirname, 'src/stubs/gateway.ts') },
+    },
     ...(mode === LINKED_MODE ? linkedVite(checkout(), SIDEKICK_ROOT) : {}),
   }),
   manifest: {
     name: 'FrogBot Sidekick',
     description: 'Your AI work assistant, right in your browser.',
     key: STORE_KEY,
-    minimum_chrome_version: '123',
+    minimum_chrome_version: String(MINIMUM_CHROME),
     permissions: Object.keys(PERMISSIONS),
     host_permissions: ['<all_urls>'],
     content_scripts: [

@@ -1,8 +1,19 @@
 import path from 'node:path';
 
+import type * as provider from '@frogbotai/sidekick-core/provider';
 import { type BrowserContext, chromium, type Page, test as base } from '@playwright/test';
+import type { streamText } from 'ai';
 
-const OUTPUT = path.resolve(import.meta.dirname, '../.output');
+import type { SidekickWorker } from '../src/entrypoints/sidepanel/worker';
+
+declare global {
+  interface Window {
+    sidekick: { worker: SidekickWorker; provider: typeof provider; streamText: typeof streamText };
+  }
+}
+
+/** The folder WXT builds into; `extensionBuild` names a folder inside it. */
+export const OUTPUT = path.resolve(import.meta.dirname, '../.output');
 
 /** Options a Playwright config can set for these fixtures. */
 export interface Options {
