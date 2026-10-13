@@ -27,16 +27,29 @@ interface Built<T> {
   errors: RegistryError[];
 }
 
-function draftOf<T extends { id: string }>(items: Map<string, T>): RegistryDraft<T> {
+/** Options for a registry. `check` returns why an item is invalid, or `undefined`; an invalid item is skipped and listed in `errors()`. */
+export interface RegistryOptions<T> {
+  check?: (item: T) => unknown;
+}
+
+function draftOf<T extends { id: string }>(
+  items: Map<string, T>,
+  reject: (item: T) => boolean,
+): RegistryDraft<T> {
   return {
-    add: (item) => void items.set(item.id, item),
+    add: (item) => {
+      if (!reject(item)) items.set(item.id, item);
+    },
     remove: (id) => void items.delete(id),
     get: (id) => items.get(id),
     list: () => [...items.values()],
   };
 }
 
-export function createRegistry<T extends { id: string }>(name: string): Registry<T> {
+export function createRegistry<T extends { id: string }>(
+  name: string,
+  { check }: RegistryOptions<T> = {},
+): Registry<T> {
   const transforms = new Map<symbol, { source: string; transform: RegistryTransform<T> }>();
   const listeners = new Set<() => void>();
   let version = 0;
@@ -51,8 +64,16 @@ export function createRegistry<T extends { id: string }>(name: string): Registry
     for (const { source, transform } of transforms.values()) {
       const attempt = new Map(items);
 
+      const reject = (item: T) => {
+        const error = check?.(item);
+
+        if (error !== undefined) errors.push({ source, error });
+
+        return error !== undefined;
+      };
+
       try {
-        transform(draftOf(attempt));
+        transform(draftOf(attempt, reject));
         items = attempt;
       } catch (error) {
         errors.push({ source, error });

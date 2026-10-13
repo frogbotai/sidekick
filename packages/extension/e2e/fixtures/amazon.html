@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Amazon stand-in</title>
+    <style>
+      .nav-search-scope {
+        position: relative;
+        display: inline-block;
+        width: 60px;
+      }
+
+      #searchDropdownBox {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 60px;
+        opacity: 0;
+      }
+
+      .filler {
+        height: 2400px;
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <a href="#business">Amazon Business</a>
+      <form id="nav-search-bar-form" role="search" action="#" name="site-search">
+        <div class="nav-search-scope">
+          <div class="nav-search-facade"><span>All</span></div>
+          <label id="searchDropdownDescription" for="searchDropdownBox" style="display: none"
+            >Select the department you want to search in</label
+          >
+          <select
+            aria-describedby="searchDropdownDescription"
+            id="searchDropdownBox"
+            name="url"
+            tabindex="0"
+            title="Search in"
+          >
+            <option selected>All Departments</option>
+            <option>Books</option>
+            <option>Electronics</option>
+          </select>
+        </div>
+        <label for="twotabsearchtextbox" style="display: none">Search Amazon</label>
+        <input
+          type="text"
+          id="twotabsearchtextbox"
+          value="usb c cable"
+          name="field-keywords"
+          autocomplete="off"
+          placeholder="Search Amazon"
+          dir="auto"
+          tabindex="0"
+          aria-label="Search Amazon"
+          spellcheck="false"
+        />
+        <input type="submit" id="nav-search-submit-button" value="Go" />
+      </form>
+    </header>
+    <div class="filler"></div>
+    <a href="#ratings">4,719 ratings</a>
+  </body>
+</html>

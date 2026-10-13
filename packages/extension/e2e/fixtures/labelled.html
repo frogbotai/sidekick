@@ -1,0 +1,16 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Labelled frame</title>
+  </head>
+  <body>
+    <script>
+      const button = document.createElement('button');
+
+      button.type = 'button';
+      button.textContent = `Button ${location.search.slice(1)}`;
+      document.body.append(button);
+    </script>
+  </body>
+</html>

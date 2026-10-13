@@ -45,12 +45,14 @@ function e2e(checkout: string, args: string[]) {
     NODE_ENV: 'production',
   };
 
-  const build = run('pnpm', ['exec', 'wxt', 'build', '--mode', LINKED_MODE], {
-    cwd: EXTENSION,
-    env,
-  });
+  for (const variant of [{}, { SIDEKICK_LIVE: '1' }]) {
+    const build = run('pnpm', ['exec', 'wxt', 'build', '--mode', LINKED_MODE], {
+      cwd: EXTENSION,
+      env: { ...env, ...variant },
+    });
 
-  if (build !== 0) return build;
+    if (build !== 0) return build;
+  }
 
   return run('pnpm', ['exec', 'playwright', 'test', '--config', LINKED_PLAYWRIGHT, ...args], {
     cwd: SIDEKICK_ROOT,

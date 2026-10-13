@@ -1,5 +1,7 @@
 export type { WorkerClient } from './client';
 export { CALL_TIMEOUT, connectWorker, HEARTBEAT, MAX_BACKOFF, MIN_BACKOFF } from './client';
+export type { ContentSender } from './content';
+export { answerContent, callWorker } from './content';
 export type { Handlers, Input, MethodDefinition, Methods, Output, Protocol } from './define';
 export { CONNECTED, defineProtocol } from './define';
 export { answerFrames, callFrame } from './frames';

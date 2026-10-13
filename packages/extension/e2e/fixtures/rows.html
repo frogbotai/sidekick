@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Five thousand rows</title>
+  </head>
+  <body>
+    <h1>Five thousand rows</h1>
+    <ul id="rows"></ul>
+    <script>
+      const rows = document.getElementById('rows');
+
+      for (let index = 1; index <= 5000; index++) {
+        const item = document.createElement('li');
+        const link = document.createElement('a');
+
+        link.href = `#row-${index}`;
+        link.textContent = `Row ${index}`;
+        item.append(link);
+        rows.append(item);
+      }
+    </script>
+  </body>
+</html>

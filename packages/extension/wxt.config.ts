@@ -30,13 +30,19 @@ const MINIMUM_CHROME = 123;
 
 const E2E_ONLY = ['e2e-open'];
 
-const e2e = process.env.SIDEKICK_E2E === '1';
+const LIVE_ONLY = ['live'];
+
+const live = process.env.SIDEKICK_LIVE === '1';
+
+const e2e = live || process.env.SIDEKICK_E2E === '1';
+
+const outSuffix = live ? '-live' : e2e ? '-e2e' : '';
 
 const checkout = () => resolveCheckout(process.env[CHECKOUT_ENV], SIDEKICK_ROOT);
 
 export default defineConfig({
   srcDir: 'src',
-  outDirTemplate: `{{browser}}-mv{{manifestVersion}}${e2e ? '-e2e' : ''}{{modeSuffix}}`,
+  outDirTemplate: `{{browser}}-mv{{manifestVersion}}${outSuffix}{{modeSuffix}}`,
   imports: false,
   modules: ['@wxt-dev/module-react'],
   vite: ({ mode }) => ({
@@ -80,13 +86,22 @@ export default defineConfig({
       Object.assign(wxt.config.imports, { exclude: unimportExclude(checkout()) });
     },
     'entrypoints:resolved': (_wxt, entrypoints) => {
-      if (e2e) return;
+      const dropped = [...(e2e ? [] : E2E_ONLY), ...(live ? [] : LIVE_ONLY)];
 
-      for (const name of E2E_ONLY) {
+      for (const name of dropped) {
         const index = entrypoints.findIndex((entrypoint) => entrypoint.name === name);
 
         if (index !== -1) entrypoints.splice(index, 1);
       }
+    },
+    'build:manifestGenerated': (_wxt, manifest) => {
+      if (!live) return;
+
+      delete manifest.key;
+      manifest.name = 'Sidekick live test (ticket 271)';
+      manifest.description = 'Test only: runs Sidekick’s browser tools on a few public sites.';
+      manifest.side_panel = { default_path: 'live.html' };
+      manifest.action = { default_title: 'Open the Sidekick live test' };
     },
   },
 });

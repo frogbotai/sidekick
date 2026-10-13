@@ -149,10 +149,8 @@ export function installFakeRuntime(): FakeRuntime {
     return client;
   };
 
-  const sendMessage = (tabId: number, message: unknown, options: { frameId?: number } = {}) => {
-    fake.frameMessages.push({ tabId, message, ...options });
-
-    return new Promise((resolve, reject) => {
+  const deliver = (message: unknown) =>
+    new Promise((resolve, reject) => {
       let answered = false;
       let waiting = false;
 
@@ -179,6 +177,11 @@ export function installFakeRuntime(): FakeRuntime {
         reject(new Error('The message port closed before a response was received.'));
       }
     });
+
+  const sendMessage = (tabId: number, message: unknown, options: { frameId?: number } = {}) => {
+    fake.frameMessages.push({ tabId, message, ...options });
+
+    return deliver(message);
   };
 
   const current = (globalThis as { chrome?: object }).chrome ?? {};
@@ -192,6 +195,7 @@ export function installFakeRuntime(): FakeRuntime {
         connect,
         onConnect: connectListeners.event,
         onMessage: messageListeners.event,
+        sendMessage: deliver,
       },
       tabs: { sendMessage },
     },

@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Sticky header</title>
+    <style>
+      body {
+        margin: 0;
+        font:
+          16px system-ui,
+          sans-serif;
+      }
+      header {
+        position: sticky;
+        top: 0;
+        height: 60px;
+        background: #234;
+        color: #fff;
+        z-index: 10;
+      }
+      header.tall {
+        height: 180px;
+      }
+      .filler {
+        height: 2400px;
+      }
+      #late {
+        height: 0;
+        transition: none;
+      }
+    </style>
+  </head>
+  <body>
+    <header id="header">Sticky header</header>
+    <div class="filler"></div>
+    <div id="late"></div>
+    <button id="target" type="button">Far target</button>
+    <div class="filler"></div>
+    <script>
+      window.log = [];
+
+      const header = document.getElementById('header');
+
+      document
+        .getElementById('target')
+        .addEventListener('click', (event) => log.push(`target-click:${event.isTrusted}`));
+
+      let shifted = false;
+
+      addEventListener('scroll', () => {
+        if (shifted || scrollY < 200) return;
+
+        shifted = true;
+        requestAnimationFrame(() => {
+          header.classList.add('tall');
+          document.getElementById('late').style.height = '500px';
+        });
+      });
+
+      window.targetBox = () => {
+        const box = document.getElementById('target').getBoundingClientRect();
+
+        return {
+          top: box.top,
+          bottom: box.bottom,
+          header: header.getBoundingClientRect().bottom,
+          viewport: innerHeight,
+        };
+      };
+    </script>
+  </body>
+</html>

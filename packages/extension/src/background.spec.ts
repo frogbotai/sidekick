@@ -1,3 +1,4 @@
+import { tools } from '@frogbotai/sidekick-core';
 import { installFakeChrome } from '@frogbotai/sidekick-core/testing';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -17,13 +18,16 @@ function start() {
 
   const query = vi.fn(() => Promise.resolve([{ id: 4 }]));
   const executeScript = vi.fn(() => Promise.resolve([]));
+  const event = () => ({ addListener: () => undefined, removeListener: () => undefined });
 
   Object.assign(chrome, {
     sidePanel: {
       setPanelBehavior: () => Promise.resolve(void calls.push('setPanelBehavior')),
     },
     runtime: {
+      id: 'sidekicktestid',
       onConnect: { addListener: () => void calls.push('onConnect') },
+      onMessage: { addListener: () => void calls.push('onMessage') },
       onInstalled: {
         addListener: (listener: typeof onInstalled) => {
           calls.push('onInstalled');
@@ -31,7 +35,15 @@ function start() {
         },
       },
     },
+    debugger: {
+      onEvent: event(),
+      onDetach: event(),
+      getTargets: () => Promise.resolve([]),
+      detach: () => Promise.resolve(),
+    },
     tabs: { query },
+    webNavigation: { onCreatedNavigationTarget: event() },
+    tabGroups: { onRemoved: event() },
     scripting: { executeScript },
   });
 
@@ -50,8 +62,22 @@ describe('background', () => {
   it('restricts storage.local to trusted contexts before anything else on start', () => {
     const { calls, setAccessLevel } = start();
 
-    expect(calls).toEqual(['setAccessLevel', 'setPanelBehavior', 'onConnect', 'onInstalled']);
+    expect(calls).toEqual([
+      'setAccessLevel',
+      'setPanelBehavior',
+      'onConnect',
+      'onMessage',
+      'onInstalled',
+    ]);
+
     expect(setAccessLevel).toHaveBeenCalledWith({ accessLevel: 'TRUSTED_CONTEXTS' });
+  });
+
+  it('registers the 15 browser tools as built-ins', () => {
+    start();
+
+    expect(tools.list()).toHaveLength(15);
+    expect(tools.errors()).toEqual([]);
   });
 
   it.each(['install', 'update'])(

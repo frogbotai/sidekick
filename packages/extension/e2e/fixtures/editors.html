@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Editors</title>
+    <style>
+      section {
+        margin: 16px;
+        border: 1px solid #888;
+        padding: 8px;
+      }
+      [contenteditable] {
+        min-height: 40px;
+        outline: 1px dashed #ccc;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Editors fixture</h1>
+    <section id="lexical">
+      <h2>Lexical</h2>
+      <div
+        id="lexical-root"
+        contenteditable="true"
+        role="textbox"
+        aria-label="Lexical editor"
+      ></div>
+    </section>
+    <section>
+      <h2>ProseMirror</h2>
+      <div id="prosemirror"></div>
+    </section>
+    <section>
+      <h2>Draft.js</h2>
+      <div id="draft"></div>
+    </section>
+    <div style="height: 2400px"></div>
+    <script type="module" src="/bundles/editors.js"></script>
+  </body>
+</html>

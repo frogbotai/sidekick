@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Color</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        background: rgb(220, 40, 40);
+      }
+    </style>
+  </head>
+  <body>
+    <button id="press" type="button">Press me</button>
+    <script>
+      window.log = [];
+
+      document
+        .getElementById('press')
+        .addEventListener('click', (event) => log.push(`press-click:${event.isTrusted}`));
+    </script>
+  </body>
+</html>

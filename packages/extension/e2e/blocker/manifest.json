@@ -1,0 +1,14 @@
+{
+  "manifest_version": 3,
+  "name": "Sidekick e2e blocker",
+  "version": "1.0.0",
+  "description": "Test only: puts its own iframe on blocked.html, which makes Chrome refuse other extensions' debugger attach.",
+  "content_scripts": [
+    {
+      "matches": ["http://localhost/blocked.html*"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "web_accessible_resources": [{ "resources": ["frame.html"], "matches": ["<all_urls>"] }]
+}

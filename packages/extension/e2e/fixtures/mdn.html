@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>MDN stand-in</title>
+    <script>
+      window.other = `http://127.0.0.1:${location.port}`;
+    </script>
+  </head>
+  <body>
+    <iframe
+      title="Tracker"
+      style="display: none"
+      src="/redirect?other=/labelled.html%3Ftracker"
+    ></iframe>
+    <h1>MDN stand-in</h1>
+    <interactive-example></interactive-example>
+    <iframe
+      title="Redirected frame"
+      width="420"
+      height="120"
+      src="/redirect?other=/labelled.html%3Fredirected"
+    ></iframe>
+    <iframe id="written" title="Written frame" width="460" height="200"></iframe>
+    <iframe
+      title="Sample frame"
+      width="460"
+      height="200"
+      srcdoc="<p>Sample</p><iframe title='Nested frame' width='420' height='120' src='/redirect?other=/labelled.html%3Fnested'></iframe>"
+    ></iframe>
+    <div style="height: 3000px"></div>
+    <iframe title="Lazy blank" loading="lazy" src="about:blank" width="400" height="80"></iframe>
+    <iframe
+      title="Lazy frame"
+      loading="lazy"
+      width="400"
+      height="80"
+      src="/redirect?other=/labelled.html%3Flazy"
+    ></iframe>
+    <script>
+      const written = document.getElementById('written').contentDocument;
+
+      written.open();
+      written.write(
+        `<p>Written</p><iframe title="Inside written" width="420" height="120" src="${other}/labelled.html?written"></iframe>`,
+      );
+      written.close();
+
+      const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+      customElements.define(
+        'play-runner',
+        class extends HTMLElement {
+          async connectedCallback() {
+            const root = this.attachShadow({ mode: 'open' });
+
+            for (let chunk = 0; chunk < 3; chunk++) {
+              await fetch(`/labelled.html?chunk=${chunk}`);
+              await pause(150);
+            }
+
+            const frame = document.createElement('iframe');
+
+            frame.title = 'runner';
+            frame.width = 420;
+            frame.height = 80;
+            frame.src = `${other}/runner.html?state=1`;
+            frame.addEventListener(
+              'load',
+              () => {
+                if (sessionStorage.getItem('renavigated')) return;
+
+                sessionStorage.setItem('renavigated', '1');
+                frame.src = `${other}/runner.html?state=2`;
+              },
+              { once: true },
+            );
+            root.append(frame);
+          }
+        },
+      );
+
+      customElements.define(
+        'interactive-example',
+        class extends HTMLElement {
+          connectedCallback() {
+            this.attachShadow({ mode: 'open' }).append(document.createElement('play-runner'));
+          }
+        },
+      );
+    </script>
+  </body>
+</html>

@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Frames</title>
+  </head>
+  <body>
+    <h1>Frames fixture</h1>
+    <button id="top-button" type="button">Top button</button>
+    <label>Top field <input id="top-field" /></label>
+    <shadow-box></shadow-box>
+    <iframe id="cross" title="Cross frame" width="420" height="160"></iframe>
+    <div style="height: 2400px"></div>
+    <script>
+      window.log = [];
+
+      document
+        .getElementById('top-button')
+        .addEventListener('click', (event) => log.push(`top-click:${event.isTrusted}`));
+
+      const root = document.querySelector('shadow-box').attachShadow({ mode: 'closed' });
+
+      root.innerHTML =
+        '<button id="shadow-button" type="button">Shadow button</button> <label>Shadow field <input id="shadow-field" /></label>';
+      root
+        .getElementById('shadow-button')
+        .addEventListener('click', (event) => log.push(`shadow-click:${event.isTrusted}`));
+      window.shadowValue = () => root.getElementById('shadow-field').value;
+
+      document.getElementById('cross').src = `http://127.0.0.1:${location.port}/frame-inner.html`;
+    </script>
+  </body>
+</html>

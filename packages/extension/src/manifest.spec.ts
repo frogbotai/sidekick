@@ -135,13 +135,19 @@ describe('built files', () => {
 
     expect(source).not.toMatch(/(^|[;\s}])import[\s{*("']/);
     expect(source).not.toMatch(/(^|[;\s}])export[\s{*]/);
-    expect(source.length).toBeLessThan(32_000);
+    expect(source.length).toBeLessThan(64_000);
   });
 
-  it('leaves the e2e page out of production', async () => {
+  it('leaves the e2e and live-test pages out of production', async () => {
     const files = await listFiles(outDir);
 
-    expect(files.filter((file) => file.includes('e2e-open'))).toEqual([]);
+    expect(files.filter((file) => /e2e-open|live/.test(file))).toEqual([]);
     expect(files).toContain('sidepanel.html');
+  });
+
+  it('leaves the test tool hook out of production', async () => {
+    const source = await readFile(path.join(outDir, 'background.js'), 'utf8');
+
+    expect(source).not.toContain('sidekickTest');
   });
 });

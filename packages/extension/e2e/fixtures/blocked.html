@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Blocked</title>
+  </head>
+  <body>
+    <h1>Another extension’s frame</h1>
+    <button id="blocked-button" type="button">Blocked button</button>
+    <script>
+      window.log = [];
+
+      document
+        .getElementById('blocked-button')
+        .addEventListener('click', (event) => log.push(`blocked-click:${event.isTrusted}`));
+    </script>
+  </body>
+</html>

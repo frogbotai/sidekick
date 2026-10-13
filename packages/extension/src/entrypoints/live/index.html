@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Sidekick live test</title>
+    <link rel="stylesheet" href="./live.css" />
+  </head>
+  <body>
+    <h1>Sidekick live test <small>ticket 271</small></h1>
+    <section id="start">
+      <h2>Before you start</h2>
+      <ol>
+        <li>Close DevTools in every tab. Open DevTools makes the test fail.</li>
+        <li>Untick any site you don’t want tested. Tick Gmail only if you are signed in to it.</li>
+      </ol>
+      <ul id="sites" class="sites"></ul>
+      <button id="run" type="button" class="primary">Run all tests</button>
+      <p id="last" hidden>
+        <button id="copyLast" type="button">Copy the last results</button>
+        <span id="copiedLast" class="copied"></span>
+      </p>
+    </section>
+    <section id="running" hidden>
+      <p id="progress" class="progress"></p>
+      <p id="stopNow" class="stop-now" hidden></p>
+      <button id="stop" type="button" class="danger">Stop</button>
+    </section>
+    <section id="finish" hidden>
+      <h2>Finished</h2>
+      <p>Answer each question from what you saw, then copy the results.</p>
+      <ol id="questions" class="questions"></ol>
+      <label class="notes">
+        Anything else you noticed (optional)
+        <textarea id="notes" rows="4"></textarea>
+      </label>
+      <button id="copy" type="button" class="primary">Copy results</button>
+      <span id="copied" class="copied"></span>
+    </section>
+    <section id="checklist" hidden></section>
+    <script type="module" src="./main.ts"></script>
+  </body>
+</html>

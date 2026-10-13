@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Inner frame</title>
+  </head>
+  <body>
+    <button id="frame-button" type="button">Frame button</button>
+    <label>Frame field <input id="frame-field" /></label>
+    <script>
+      window.log = [];
+
+      document
+        .getElementById('frame-button')
+        .addEventListener('click', (event) => log.push(`frame-click:${event.isTrusted}`));
+    </script>
+  </body>
+</html>

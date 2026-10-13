@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Recycling list</title>
+  </head>
+  <body>
+    <h1>Recycling list</h1>
+    <ul id="list"></ul>
+    <script>
+      const list = document.getElementById('list');
+
+      for (let index = 1; index <= 10; index++) {
+        const item = document.createElement('li');
+        const button = document.createElement('button');
+
+        button.type = 'button';
+        button.textContent = `Item ${index}`;
+        item.append(button);
+        list.append(item);
+      }
+
+      window.recycle = (offset) => {
+        for (const button of list.querySelectorAll('button')) {
+          button.textContent = `Item ${Number(button.textContent.slice(5)) + offset}`;
+        }
+      };
+
+      window.removeAll = () => list.replaceChildren();
+    </script>
+  </body>
+</html>

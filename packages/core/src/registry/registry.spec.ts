@@ -93,6 +93,22 @@ describe('createRegistry', () => {
     expect(registry.errors()).toEqual([{ source: 'broken', error: failure }]);
   });
 
+  it('skips an item its check refuses, keeps the rest of the transform, and lists it in errors()', () => {
+    const problem = new Error('bad id');
+    const registry = createRegistry<Item>('test', {
+      check: (value) => (value.id === 'bad' ? problem : undefined),
+    });
+
+    registry.register('built-in', (draft) => {
+      draft.add(item('a'));
+      draft.add(item('bad'));
+      draft.add(item('b'));
+    });
+
+    expect(registry.list().map(({ id }) => id)).toEqual(['a', 'b']);
+    expect(registry.errors()).toEqual([{ source: 'built-in', error: problem }]);
+  });
+
   it('calls each subscriber once per register or dispose, and replays lazily', () => {
     const registry = createRegistry<Item>('test');
     const listener = vi.fn();

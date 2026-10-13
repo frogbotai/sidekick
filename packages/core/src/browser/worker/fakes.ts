@@ -1,0 +1,267 @@
+import type { PermissionRequest, ToolContext } from '../../tool/tool';
+import type { Cdp, CdpEvent, Page, TabInfo, Tabs } from './types';
+
+export type Log = string[];
+
+export interface SentCommand {
+  tabId: number;
+  method: string;
+  params: Record<string, unknown>;
+}
+
+function logged<T extends object>(log: Log, prefix: string, target: T): T {
+  return new Proxy(target, {
+    get(object, key, receiver) {
+      const value: unknown = Reflect.get(object, key, receiver);
+
+      if (typeof value !== 'function') return value;
+
+      return (...args: unknown[]) => {
+        log.push(`${prefix}.${String(key)}`);
+
+        return Reflect.apply(value, object, args);
+      };
+    },
+  });
+}
+
+/** Runs `fn` as a promise, so a throw becomes a rejection. */
+export function later<A extends unknown[], R>(fn: (...args: A) => R) {
+  return (...args: A) => new Promise<R>((resolve) => resolve(fn(...args)));
+}
+
+function emitter<A extends unknown[]>() {
+  const listeners = new Set<(...args: A) => void>();
+
+  return {
+    add: (listener: (...args: A) => void) => {
+      listeners.add(listener);
+
+      return () => void listeners.delete(listener);
+    },
+    emit: (...args: A) => {
+      for (const listener of [...listeners]) listener(...args);
+    },
+    size: () => listeners.size,
+  };
+}
+
+export interface FakeCdp extends Cdp {
+  sent: SentCommand[];
+  attaching: number[];
+  detached: number[];
+  sessions: Set<number>;
+  leftover: number[];
+  attachErrors: Error[];
+  sendErrors: Map<string, Error[]>;
+  replies: Map<string, (params: Record<string, unknown>) => unknown>;
+  emit: (event: CdpEvent) => void;
+  detachByChrome: (tabId: number, reason: string) => void;
+  listeners: () => number;
+}
+
+export function fakeCdp(log: Log): FakeCdp {
+  const events = emitter<[CdpEvent]>();
+  const detaches = emitter<[number, string]>();
+
+  const fake: FakeCdp = {
+    sent: [],
+    attaching: [],
+    detached: [],
+    sessions: new Set(),
+    leftover: [],
+    attachErrors: [],
+    sendErrors: new Map(),
+    replies: new Map<string, (params: Record<string, unknown>) => unknown>([
+      [
+        'Page.getLayoutMetrics',
+        () => ({
+          cssVisualViewport: { pageX: 0, pageY: 500, clientWidth: 800, clientHeight: 600 },
+        }),
+      ],
+      ['Page.captureScreenshot', () => ({ data: 'SU1H' })],
+    ]),
+    attach: later((tabId: number) => {
+      log.push('cdp.attach');
+      fake.attaching.push(tabId);
+
+      const error = fake.attachErrors.shift();
+
+      if (error !== undefined) throw error;
+
+      fake.sessions.add(tabId);
+    }),
+    detach: later((tabId: number) => {
+      log.push('cdp.detach');
+      fake.detached.push(tabId);
+      fake.sessions.delete(tabId);
+    }),
+    send: later((tabId: number, method: string, params: Record<string, unknown> = {}) => {
+      log.push(`cdp.${method}`);
+      fake.sent.push({ tabId, method, params });
+
+      const error = fake.sendErrors.get(method)?.shift();
+
+      if (error !== undefined) throw error;
+
+      if (!fake.sessions.has(tabId)) {
+        throw new Error(`Debugger is not attached to the tab with id: ${tabId}.`);
+      }
+
+      return fake.replies.get(method)?.(params) ?? {};
+    }),
+    attachedTabs: later(() => [...fake.leftover]),
+    onEvent: events.add,
+    onDetach: detaches.add,
+    emit: events.emit,
+    detachByChrome: (tabId, reason) => {
+      fake.sessions.delete(tabId);
+      detaches.emit(tabId, reason);
+    },
+    listeners: events.size,
+  };
+
+  return fake;
+}
+
+export function fakePage(log: Log, overrides: Partial<Page> = {}): Page {
+  const page: Page = {
+    key: 'worker-key',
+    snapshot: later(() => ({
+      title: 'Example',
+      text: '- button "Go" [f0e1]',
+      redacted: 0,
+      truncated: false,
+    })),
+    inspect: later(() => ({ frameId: 0, frameOrigin: 'https://example.com', redacted: false })),
+    scrollTo: later(() => ({
+      point: { x: 100, y: 200 },
+      rect: { x: 50, y: 150, width: 100, height: 100 },
+      in_view: true,
+    })),
+    focus: later(() => undefined),
+    selectContents: later(() => undefined),
+    readValue: later(() => ''),
+    selectOptions: later((_tabId: number, _ref: string, values: string[]) => values),
+    scrollStart: later(() => ({
+      token: 't1',
+      container: 'document',
+      point: { x: 400, y: 300 },
+      delta: { x: 0, y: 480 },
+    })),
+    scrollEnd: later(() => ({ moved: 480, at_end: false })),
+    scrollFallback: later(() => ({ moved: 480, at_end: false })),
+    domQuiet: later(() => true),
+    viewport: later(() => ({ width: 800, height: 600 })),
+    iframes: later(() => []),
+    strip: later(() => []),
+    indicator: later(() => undefined),
+    ...overrides,
+  };
+
+  return logged(log, 'page', page);
+}
+
+export interface FakeTabs extends Tabs {
+  tabs: Map<number, TabInfo>;
+  createTab: (tab: Partial<TabInfo> & { id: number; sourceTabId?: number }) => void;
+  removeGroup: (groupId: number) => void;
+}
+
+export function fakeTabs(log: Log, initial: TabInfo[]): FakeTabs {
+  const tabs = new Map(initial.map((tab) => [tab.id, { ...tab }]));
+  const opened = emitter<[{ id: number; sourceTabId: number }]>();
+  const groupsRemoved = emitter<[number]>();
+  let nextGroup = 100;
+  let nextTab = 1000;
+
+  const tab = (tabId: number) => {
+    const found = tabs.get(tabId);
+
+    if (!found) throw new Error(`No tab with id: ${tabId}.`);
+
+    return found;
+  };
+
+  const fake: FakeTabs = {
+    tabs,
+    get: later((tabId: number) => ({ ...tab(tabId) })),
+    inGroup: later((groupId: number) =>
+      [...tabs.values()].filter((entry) => entry.groupId === groupId),
+    ),
+    create: later(
+      ({ windowId, url, active }: { windowId: number; url: string; active: boolean }) => {
+        const opened = { id: nextTab++, windowId, groupId: -1, url, title: '', active };
+
+        tabs.set(opened.id, opened);
+
+        return { ...opened };
+      },
+    ),
+    group: later((tabId: number, groupId?: number) => {
+      const id = groupId ?? nextGroup++;
+
+      tab(tabId).groupId = id;
+
+      return id;
+    }),
+    label: later(() => undefined),
+    activate: later((tabId: number) => {
+      for (const entry of tabs.values()) entry.active = entry.id === tabId;
+    }),
+    navigate: later((tabId: number, url: string) => {
+      tab(tabId).url = url;
+    }),
+    history: later(() => undefined),
+    close: later((tabId: number) => {
+      tabs.delete(tabId);
+    }),
+    frames: later(() => [{ frameId: 0, parentFrameId: -1, url: 'https://example.com/' }]),
+    waitForLoad: later(() => true),
+    captureVisible: later(() => ({ data: 'VklT', mime: 'image/jpeg', width: 1600, height: 1200 })),
+    onOpened: opened.add,
+    onGroupRemoved: groupsRemoved.add,
+    createTab: ({ sourceTabId, ...entry }) => {
+      tabs.set(entry.id, {
+        windowId: 1,
+        groupId: -1,
+        url: 'about:blank',
+        title: '',
+        active: false,
+        ...entry,
+      });
+
+      if (sourceTabId !== undefined) opened.emit({ id: entry.id, sourceTabId });
+    },
+    removeGroup: (groupId) => {
+      for (const entry of tabs.values()) if (entry.groupId === groupId) entry.groupId = -1;
+
+      groupsRemoved.emit(groupId);
+    },
+  };
+
+  return logged(log, 'tabs', fake);
+}
+
+export interface FakeContext extends ToolContext {
+  asserts: PermissionRequest[];
+  controller: AbortController;
+}
+
+export function fakeContext(log: Log, runId: string): FakeContext {
+  const controller = new AbortController();
+  const asserts: PermissionRequest[] = [];
+
+  return {
+    signal: controller.signal,
+    controller,
+    run: { id: runId },
+    asserts,
+    permission: {
+      assert: later((request: PermissionRequest) => {
+        log.push(`assert.${request.action}`);
+        asserts.push(request);
+      }),
+    },
+  };
+}

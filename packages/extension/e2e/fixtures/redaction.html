@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Redaction</title>
+  </head>
+  <body>
+    <h1>Redaction fixture</h1>
+    <form id="form">
+      <label>Name <input id="name" value="Visible value" /></label>
+      <label>Password <input id="password" type="password" value="SECRET-1" /></label>
+      <label>Current <input autocomplete="current-password" value="SECRET-2" /></label>
+      <label>New <input autocomplete="new-password" value="SECRET-3" /></label>
+      <label>Code <input autocomplete="one-time-code" value="SECRET-4" /></label>
+      <label>Card number <input autocomplete="cc-number" value="SECRET-5" /></label>
+      <label>Card code <input autocomplete="cc-csc" value="SECRET-6" /></label>
+      <label>Card expiry <input autocomplete="cc-exp" value="SECRET-7" /></label>
+      <label>Card name <input autocomplete="section-pay cc-name" value="SECRET-8" /></label>
+    </form>
+    <div id="hidden"></div>
+    <script>
+      const hidden = document.getElementById('hidden');
+
+      for (let index = 0; index < 300; index++) {
+        const input = document.createElement('input');
+
+        if (index % 3 === 0) input.type = 'hidden';
+        else if (index % 3 === 1) {
+          input.type = 'password';
+          input.style.display = 'none';
+        } else {
+          input.autocomplete = 'cc-number';
+          input.hidden = true;
+        }
+
+        input.value = `HIDDEN-${index}`;
+        hidden.append(input);
+      }
+
+      window.passwordValue = () => document.getElementById('password').value;
+    </script>
+  </body>
+</html>

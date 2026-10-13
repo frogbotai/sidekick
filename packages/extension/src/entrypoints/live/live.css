@@ -1,0 +1,120 @@
+body {
+  margin: 0;
+  padding: 12px;
+  font:
+    14px/1.4 system-ui,
+    sans-serif;
+  color: #111;
+  background: #fff;
+}
+
+h1 {
+  font-size: 18px;
+  margin: 0 0 12px;
+}
+
+h1 small {
+  font-weight: 400;
+  color: #666;
+}
+
+h2 {
+  font-size: 15px;
+  margin: 12px 0 6px;
+}
+
+button {
+  font: inherit;
+  padding: 6px 12px;
+  border: 1px solid #999;
+  border-radius: 6px;
+  background: #f4f4f4;
+  cursor: pointer;
+}
+
+button.primary {
+  display: block;
+  width: 100%;
+  margin: 12px 0 6px;
+  padding: 12px;
+  font-size: 16px;
+  font-weight: 600;
+  color: #fff;
+  background: #ea580c;
+  border-color: #c2410c;
+}
+
+button.danger {
+  color: #fff;
+  background: #b91c1c;
+  border-color: #991b1b;
+}
+
+button.chosen {
+  color: #fff;
+  background: #1d4ed8;
+  border-color: #1e40af;
+}
+
+.sites {
+  list-style: none;
+  padding: 0;
+}
+
+.sites li {
+  margin: 6px 0;
+}
+
+.sites small,
+.step small {
+  display: block;
+  margin-left: 24px;
+  color: #666;
+}
+
+.progress {
+  font-weight: 600;
+}
+
+.stop-now {
+  padding: 10px;
+  border-radius: 6px;
+  font-weight: 600;
+  background: #fef3c7;
+  border: 2px solid #d97706;
+}
+
+.questions li {
+  margin: 10px 0;
+}
+
+.questions .answers {
+  display: flex;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.notes textarea {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  margin-top: 4px;
+}
+
+.copied {
+  color: #15803d;
+  font-weight: 600;
+}
+
+.site {
+  margin: 10px 0;
+}
+
+.site h3 {
+  font-size: 14px;
+  margin: 0 0 4px;
+}
+
+.step {
+  margin: 2px 0;
+}

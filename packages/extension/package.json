@@ -9,6 +9,7 @@
     "dev": "wxt",
     "build": "wxt build",
     "build:e2e": "SIDEKICK_E2E=1 wxt build",
+    "build:live": "SIDEKICK_LIVE=1 wxt build",
     "postinstall": "wxt prepare"
   },
   "dependencies": {
@@ -19,10 +20,21 @@
     "react-dom": "19.2.6"
   },
   "devDependencies": {
+    "@lexical/rich-text": "0.52.0",
     "@types/chrome": "0.1.43",
+    "@types/draft-js": "0.11.20",
     "@types/react": "19.2.14",
     "@types/react-dom": "19.2.3",
     "@wxt-dev/module-react": "1.2.2",
+    "draft-js": "0.11.7",
+    "lexical": "0.52.0",
+    "prosemirror-commands": "1.7.2",
+    "prosemirror-keymap": "1.2.3",
+    "prosemirror-model": "1.25.12",
+    "prosemirror-schema-basic": "1.2.5",
+    "prosemirror-state": "1.4.4",
+    "prosemirror-view": "1.42.6",
+    "vite": "8.3.4",
     "wxt": "0.21.4"
   }
 }

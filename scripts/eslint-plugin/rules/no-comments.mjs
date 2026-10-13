@@ -16,6 +16,7 @@ const DIRECTIVES = [
   /^Workaround: https?:\/\/\S+, remove when \S/,
   /^[#@] sourceMappingURL=/,
   /^check: full-only$/,
+  /^@vitest-environment(?:-options)?\s/,
 ];
 
 const DISABLE = /^(?:eslint|oxlint)-disable(?:-next-line|-line)?(?:\s|$)/;
