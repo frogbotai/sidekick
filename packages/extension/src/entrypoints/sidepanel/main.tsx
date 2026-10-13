@@ -1,7 +1,15 @@
 import '@frogbotai/ui/styles.css';
 import './panel.css';
 
-import { connectWorker, sidekickProtocol, theme } from '@frogbotai/sidekick-core';
+import {
+  cleanupLegacyPanel,
+  connectWorker,
+  registerWebSearchTool,
+  sidekickProtocol,
+  theme,
+  tools,
+} from '@frogbotai/sidekick-core';
+import { registerFrogbotSearch } from '@frogbotai/sidekick-core/frogbot';
 import * as provider from '@frogbotai/sidekick-core/provider';
 import { streamText } from 'ai';
 import { StrictMode } from 'react';
@@ -17,10 +25,13 @@ if (!root) throw new Error('Missing #root');
 const worker = connectWorker(sidekickProtocol);
 
 if (import.meta.env.SIDEKICK_E2E) {
-  Object.assign(window, { sidekick: { worker, provider, streamText } });
+  Object.assign(window, { sidekick: { worker, provider, streamText, tools } });
 }
 
 provider.registerBuiltinProviders();
+registerFrogbotSearch();
+registerWebSearchTool();
+void cleanupLegacyPanel({ localStorage, document });
 
 const [initialMode] = await Promise.all([theme.get(), provider.registerCustomProviders()]);
 

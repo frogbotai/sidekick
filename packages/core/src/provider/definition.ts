@@ -1,5 +1,6 @@
 import type { LanguageModelMiddleware } from 'ai';
 
+import type { CatalogSlice } from './catalog-source';
 import type { Variant } from './variant';
 
 export type Fetch = typeof globalThis.fetch;
@@ -20,12 +21,22 @@ export interface ProviderRequest {
   headers: Readonly<Record<string, string>>;
   fetch: Fetch;
   signal?: AbortSignal;
+  /** The models.dev slice, for servers that list bare ids to join by id. */
+  catalog?: CatalogSlice;
+}
+
+/** A model's context and output token limits. */
+export interface ModelLimit {
+  context: number;
+  output: number;
 }
 
 /** A model a local or custom server reports, with any headers or settings it needs. */
 export interface ListedModel {
   id: string;
   name?: string;
+  limit?: ModelLimit;
+  reasoning?: boolean;
   headers?: Record<string, string>;
   settings?: Record<string, unknown>;
 }
@@ -38,6 +49,8 @@ export interface ProviderModel {
   route: string;
   family?: string;
   release_date?: string;
+  limit?: ModelLimit;
+  reasoning?: boolean;
   variants: Variant[];
   headers?: Record<string, string>;
   settings?: Record<string, unknown>;

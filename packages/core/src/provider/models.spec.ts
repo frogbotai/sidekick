@@ -99,8 +99,9 @@ afterEach(() => {
 });
 
 describe('built-in providers', () => {
-  it('registers the nine launch providers', () => {
+  it('registers FrogBot and the nine launch providers', () => {
     expect(providers.list().map(({ id }) => id)).toEqual([
+      'frogbot',
       'openai',
       'anthropic',
       'google',

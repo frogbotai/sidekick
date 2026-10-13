@@ -8,6 +8,7 @@
   "sideEffects": false,
   "exports": {
     ".": "./src/index.ts",
+    "./frogbot": "./src/frogbot/index.ts",
     "./provider": "./src/provider/index.ts",
     "./testing": "./src/testing/fakeChrome.ts"
   },

@@ -4,6 +4,7 @@ import {
   chromeCdp,
   chromePage,
   chromeTabs,
+  cleanupLegacy,
   contentProtocol,
   createBrowserRuntime,
   createBrowserWorker,
@@ -13,6 +14,7 @@ import {
   sidekickProtocol,
   tools,
 } from '@frogbotai/sidekick-core';
+import { listenForConnect } from '@frogbotai/sidekick-core/frogbot';
 import { defineBackground } from 'wxt/utils/define-background';
 
 import { answerTestRequests } from '../testTools';
@@ -81,7 +83,11 @@ export default defineBackground(() => {
 
   void runtime.start();
 
-  chrome.runtime.onInstalled.addListener(({ reason }) => {
-    if (reason === 'install' || reason === 'update') void injectIntoOpenTabs();
+  listenForConnect();
+
+  chrome.runtime.onInstalled.addListener((details) => {
+    void cleanupLegacy(details);
+
+    if (details.reason === 'install' || details.reason === 'update') void injectIntoOpenTabs();
   });
 });

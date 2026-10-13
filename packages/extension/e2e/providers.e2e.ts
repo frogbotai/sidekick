@@ -191,3 +191,114 @@ test('an Ollama that refuses the extension shows the OLLAMA_ORIGINS fix', async 
   await expect(ollama.getByRole('button', { name: 'Copy' })).toBeVisible();
   await expect(ollama.getByText('Connected')).toHaveCount(0);
 });
+
+const FROGBOT = 'https://app.frogbot.ai/api';
+
+async function fakeFrogbot(context: BrowserContext) {
+  await context.route(`${FROGBOT}/**`, (route) => {
+    const request = route.request();
+
+    if (request.headers().authorization !== 'Bearer fb_api_good') {
+      return route.fulfill({ status: 401, json: { error: 'Unauthorized' } });
+    }
+
+    if (request.url().endsWith('/v1/quota')) return route.fulfill({ json: { balanceUSD: 4.5 } });
+
+    if (request.url().endsWith('/v1/search')) {
+      return route.fulfill({
+        json: { results: [{ url: 'https://example.com/', title: 'Example', content: 'Hi' }] },
+      });
+    }
+
+    return route.fulfill({
+      json: {
+        data: [
+          {
+            id: 'claude-sonnet-5',
+            name: 'Claude Sonnet 5',
+            mode: 'chat',
+            context_length: 1_000_000,
+            max_output_tokens: 128_000,
+            reasoning: true,
+          },
+        ],
+      },
+    });
+  });
+}
+
+test('a pasted FrogBot key connects, shows the balance and models, and web search asks once', async ({
+  context,
+  openPanel,
+}) => {
+  await fakeProviders(context);
+  await fakeFrogbot(context);
+
+  const panel = await openPanel();
+
+  await panel.getByRole('tab', { name: 'Providers' }).click();
+
+  const frogbot = panel.getByRole('region', { name: 'FrogBot', exact: true });
+
+  await expect(frogbot.getByRole('button', { name: 'Connect FrogBot' })).toBeVisible();
+  await frogbot.getByLabel('Paste an API key (fb_api_…)').fill('fb_api_bad');
+  await frogbot.getByRole('button', { name: 'Add key' }).click();
+  await expect(frogbot.getByText('FrogBot rejected the key')).toBeVisible();
+
+  await frogbot.getByLabel('Paste an API key (fb_api_…)').fill('fb_api_good');
+  await frogbot.getByRole('button', { name: 'Add key' }).click();
+  await expect(frogbot.getByText('Connected')).toBeVisible();
+  await expect(frogbot.getByLabel('FrogBot balance')).toHaveText('Balance: $4.50');
+
+  await panel.getByRole('tab', { name: 'Try it' }).click();
+  await panel.getByRole('button', { name: 'Claude Sonnet 5' }).click();
+
+  await expect(
+    panel.getByRole('dialog').getByRole('button', { name: 'Claude Sonnet 5' }),
+  ).toBeVisible();
+
+  await panel.keyboard.press('Escape');
+
+  const search = panel.evaluate(async () => {
+    const tool = window.sidekick.tools.get('web_search');
+
+    if (!tool) throw new Error('No web_search');
+
+    const result = await tool.execute(
+      { query: 'example' },
+      {
+        signal: new AbortController().signal,
+        run: { id: 'e2e' },
+        permission: { assert: () => Promise.resolve() },
+      },
+    );
+
+    return result.output;
+  });
+
+  const prompt = panel.getByRole('region', { name: 'Web Search' });
+
+  await prompt.getByLabel('Allow search via FrogBot').click();
+  await prompt.getByRole('button', { name: 'Continue' }).click();
+
+  expect(await search).toEqual({
+    provider: 'frogbot',
+    results: [{ url: 'https://example.com/', title: 'Example', content: 'Hi' }],
+  });
+
+  await expect(prompt).toHaveCount(0);
+
+  expect(await panel.evaluate(() => chrome.storage.local.get('websearch:provider'))).toEqual({
+    'websearch:provider': 'random',
+  });
+
+  await panel.getByRole('tab', { name: 'Providers' }).click();
+  await frogbot.getByRole('button', { name: 'Disconnect' }).click();
+
+  await expect(frogbot.getByRole('link', { name: 'revoke it on FrogBot' })).toHaveAttribute(
+    'href',
+    'https://app.frogbot.ai/collections/api-keys',
+  );
+
+  expect(await panel.evaluate(() => window.sidekick.tools.get('web_search'))).toBeUndefined();
+});

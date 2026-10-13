@@ -39,6 +39,7 @@ export type {
   Fetch,
   KeyTest,
   ListedModel,
+  ModelLimit,
   ProviderAuth,
   ProviderDefinition,
   ProviderModel,

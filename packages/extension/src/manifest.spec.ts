@@ -51,6 +51,7 @@ describe('built manifest', () => {
         'background',
         'content_scripts',
         'description',
+        'externally_connectable',
         'host_permissions',
         'icons',
         'key',
@@ -95,6 +96,11 @@ describe('built manifest', () => {
     ]);
 
     expect(manifest.host_permissions).toEqual(['<all_urls>']);
+    expect(manifest.permissions).not.toContain('cookies');
+  });
+
+  it('lets only FrogBot’s connect page message the extension', () => {
+    expect(manifest.externally_connectable).toEqual({ matches: ['https://app.frogbot.ai/*'] });
   });
 
   it('declares one passive content script in every frame', () => {
@@ -117,12 +123,9 @@ describe('built manifest', () => {
     expect(manifest.background).toEqual({ service_worker: 'background.js' });
   });
 
-  it.each(['web_accessible_resources', 'externally_connectable', 'content_security_policy'])(
-    'has no %s',
-    (field) => {
-      expect(manifest).not.toHaveProperty(field);
-    },
-  );
+  it.each(['web_accessible_resources', 'content_security_policy'])('has no %s', (field) => {
+    expect(manifest).not.toHaveProperty(field);
+  });
 
   it('has no offscreen permission', () => {
     expect(manifest.permissions).not.toContain('offscreen');

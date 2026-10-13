@@ -1,5 +1,6 @@
 import path from 'node:path';
 
+import type { tools } from '@frogbotai/sidekick-core';
 import type * as provider from '@frogbotai/sidekick-core/provider';
 import { type BrowserContext, chromium, type Page, test as base } from '@playwright/test';
 import type { streamText } from 'ai';
@@ -54,7 +55,12 @@ export function liveBuild(extensionBuild: string) {
 declare global {
   /** What the side panel and the pages in `e2e/fixtures` expose to the tests. */
   interface Window {
-    sidekick: { worker: SidekickWorker; provider: typeof provider; streamText: typeof streamText };
+    sidekick: {
+      worker: SidekickWorker;
+      provider: typeof provider;
+      streamText: typeof streamText;
+      tools: typeof tools;
+    };
     log: string[];
     shadowValue: () => string;
     recycle: (offset: number) => void;

@@ -8,7 +8,7 @@ function start() {
   installFakeChrome();
 
   const calls: string[] = [];
-  let onInstalled: (details: { reason: string }) => void = () => {};
+  let onInstalled: (details: { reason: string; previousVersion?: string }) => void = () => {};
 
   const setAccessLevel = vi.spyOn(chrome.storage.local, 'setAccessLevel').mockImplementation(() => {
     calls.push('setAccessLevel');
@@ -28,6 +28,7 @@ function start() {
       id: 'sidekicktestid',
       onConnect: { addListener: () => void calls.push('onConnect') },
       onMessage: { addListener: () => void calls.push('onMessage') },
+      onMessageExternal: { addListener: () => void calls.push('onMessageExternal') },
       onInstalled: {
         addListener: (listener: typeof onInstalled) => {
           calls.push('onInstalled');
@@ -54,7 +55,8 @@ function start() {
     setAccessLevel,
     query,
     executeScript,
-    install: (reason: string) => onInstalled({ reason }),
+    install: (reason: string, previousVersion?: string) =>
+      onInstalled({ reason, ...(previousVersion ? { previousVersion } : {}) }),
   };
 }
 
@@ -67,6 +69,7 @@ describe('background', () => {
       'setPanelBehavior',
       'onConnect',
       'onMessage',
+      'onMessageExternal',
       'onInstalled',
     ]);
 
@@ -95,6 +98,20 @@ describe('background', () => {
       );
     },
   );
+
+  it('clears 0.8.x storage on an update from 0.8.x', async () => {
+    const { install } = start();
+
+    await chrome.storage.local.set({ auth_user: { id: 'u' }, theme: 'dark' });
+    install('update', '0.8.3');
+
+    await vi.waitFor(async () =>
+      expect(await chrome.storage.local.get(null)).toEqual({
+        theme: 'dark',
+        legacyPanelCleanup: true,
+      }),
+    );
+  });
 
   it('does not inject again when only Chrome updated, since the manifest script already runs', () => {
     const { install, query } = start();

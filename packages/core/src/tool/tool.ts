@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-export const PERMISSION_ACTIONS = ['read', 'input', 'navigate', 'tabs'] as const;
+export const PERMISSION_ACTIONS = ['read', 'input', 'navigate', 'tabs', 'websearch'] as const;
 
 export type PermissionAction = (typeof PERMISSION_ACTIONS)[number];
 
@@ -47,6 +47,13 @@ export const TOOL_ERROR_CODES = [
   'input_mismatch',
   'timeout',
   'stopped',
+  'not_connected',
+  'reconnect',
+  'out_of_credit',
+  'rate_limited',
+  'search_disabled',
+  'cancelled',
+  'request_failed',
 ] as const;
 
 export type ToolErrorCode = (typeof TOOL_ERROR_CODES)[number];

@@ -34,7 +34,11 @@ function fromCatalog(definition: ProviderDefinition, catalog: CatalogSlice): Pro
   });
 }
 
-async function discover(definition: ProviderDefinition, connection: Connection) {
+async function discover(
+  definition: ProviderDefinition,
+  connection: Connection,
+  catalog: CatalogSlice,
+) {
   const { listModels } = definition;
 
   if (!listModels || !connection.baseURL || !routeOf(definition.route)) return [];
@@ -45,6 +49,7 @@ async function discover(definition: ProviderDefinition, connection: Connection) 
     headers: definition.headers ?? {},
     fetch: fetchFor(definition),
     signal: AbortSignal.timeout(KEY_TEST_TIMEOUT_MS),
+    catalog,
   });
 
   return listed.map(({ name, ...model }) => ({
@@ -72,7 +77,7 @@ export async function providerModels(
 
   if (cached && !fresh) return cached;
 
-  const models = await discover(definition, connection);
+  const models = await discover(definition, connection, catalog);
 
   discovered.set(key, models);
 

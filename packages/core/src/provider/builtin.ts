@@ -1,3 +1,4 @@
+import { frogbotProvider } from '../frogbot/provider';
 import { providers } from '../registry';
 import type { ProviderDefinition } from './definition';
 import { bearer, listEndpointTest } from './key-test';
@@ -12,6 +13,7 @@ const cloud = (
 
 /** The providers Sidekick ships with, in the order the Providers screen lists them. */
 export const BUILTIN_PROVIDERS: readonly ProviderDefinition[] = [
+  frogbotProvider,
   cloud({
     id: 'openai',
     name: 'OpenAI',

@@ -4,6 +4,7 @@ import type { ThemeMode, ThemeStorage } from '@frogbotai/ui/theme';
 import { ThemeProvider } from '@frogbotai/ui/theme';
 import { useEffect, useState } from 'react';
 
+import { PendingFormCard } from '../../form/PendingFormCard';
 import { ModelPicker } from '../../providers/ModelPicker';
 import { ProvidersScreen } from '../../providers/ProvidersScreen';
 import { TryIt } from '../../providers/TryIt';
@@ -27,6 +28,7 @@ export function App({ initialMode, worker }: { initialMode: ThemeMode; worker: S
       <ThemeProvider mode={mode} onModeChange={setMode} storage={themeStorage}>
         <main className="sidekick-panel">
           <h1>Sidekick</h1>
+          <PendingFormCard />
           <Tabs value={tab} onValueChange={setTab}>
             <TabsList>
               <TabsTrigger value="try">Try it</TabsTrigger>

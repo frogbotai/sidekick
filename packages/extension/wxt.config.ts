@@ -26,6 +26,8 @@ const PERMISSIONS = {
 
 const FRAME_SCRIPT = 'frame.js';
 
+const FROGBOT_URL = 'https://app.frogbot.ai';
+
 const MINIMUM_CHROME = 123;
 
 const E2E_ONLY = ['e2e-open'];
@@ -60,6 +62,7 @@ export default defineConfig({
     minimum_chrome_version: String(MINIMUM_CHROME),
     permissions: Object.keys(PERMISSIONS),
     host_permissions: ['<all_urls>'],
+    externally_connectable: { matches: [`${FROGBOT_URL}/*`] },
     content_scripts: [
       {
         matches: ['<all_urls>'],

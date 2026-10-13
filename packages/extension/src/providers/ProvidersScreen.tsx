@@ -1,3 +1,4 @@
+import { FROGBOT_PROVIDER_ID } from '@frogbotai/sidekick-core/frogbot';
 import {
   type Credential,
   customProviders,
@@ -18,6 +19,7 @@ import { ProviderLogo } from '@frogbotai/ui/chat';
 import { useId } from 'react';
 
 import { CustomProviderForm } from './CustomProviderForm';
+import { FrogbotConnect } from './FrogbotConnect';
 import { KeyForm } from './KeyForm';
 import { ModelList } from './ModelList';
 import { ServerForm } from './ServerForm';
@@ -46,7 +48,9 @@ function ProviderCard({ definition, models, keys, settings, custom }: CardProps)
         {models.connected.has(definition.id) ? <Badge variant="success">Connected</Badge> : null}
       </CardHeader>
       <CardContent className="sidekick-stack">
-        {definition.auth === 'key' ? (
+        {definition.id === FROGBOT_PROVIDER_ID ? (
+          <FrogbotConnect connected={own.length > 0} />
+        ) : definition.auth === 'key' ? (
           <KeyForm definition={definition} keys={own} />
         ) : (
           <ServerForm definition={definition} setting={settings[definition.id]} custom={custom} />
