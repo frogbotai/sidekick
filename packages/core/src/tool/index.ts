@@ -1,3 +1,13 @@
+export type { BridgeCall, BridgeHandlers, ToolBridgeOptions } from './bridge';
+export { createToolBridge } from './bridge';
+export type { SidekickClient, WorkerToolOptions } from './proxy';
+export {
+  NOT_CONNECTED,
+  registerWorkerTools,
+  WORKER_SOURCE,
+  workerPermission,
+  workerTools,
+} from './proxy';
 export type {
   PermissionAction,
   PermissionRequest,

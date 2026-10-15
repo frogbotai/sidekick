@@ -115,6 +115,13 @@ function waitForLoad(tabId: number, timeout: number) {
 export function chromeTabs(): Tabs {
   return {
     get: async (tabId) => info(await chrome.tabs.get(tabId)),
+    active: async (windowId) => {
+      const [tab] = await chrome.tabs.query({ active: true, windowId });
+
+      if (!tab) throw new Error(`Window ${windowId} has no active tab`);
+
+      return info(tab);
+    },
     inGroup: async (groupId) => (await chrome.tabs.query({ groupId })).map(info),
     create: async (input) => info(await chrome.tabs.create(input)),
     group: (tabId, groupId) => chrome.tabs.group({ tabIds: tabId, groupId }),

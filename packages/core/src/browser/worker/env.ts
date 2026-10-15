@@ -53,7 +53,7 @@ export async function getTab(env: BrowserEnv, tabId: number, signal: AbortSignal
 }
 
 export function runOf(env: BrowserEnv, ctx: ToolContext) {
-  const run = env.runs.get(ctx.run.id);
+  const run = ctx.run && env.runs.get(ctx.run.id);
 
   if (!run) throw stopped();
 

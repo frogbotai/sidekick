@@ -36,7 +36,10 @@ function context(): ToolContext & { asserts: unknown[] } {
   return {
     asserts,
     signal: new AbortController().signal,
-    run: { id: 'run-1' },
+    session: { id: 'session-1' },
+    messageID: 'message-1',
+    callID: 'call-1',
+    agent: 'build',
     permission: { assert: (request) => Promise.resolve(void asserts.push(request)) },
   };
 }

@@ -71,12 +71,14 @@ function budgets(
   ];
 }
 
-function claudeInfo(model: CatalogModel) {
-  const familyFirst = /(?:claude-)?(opus|sonnet|haiku|fable|mythos)-(\d+)(?:[.-](\d+))?/i.exec(
-    model.id,
-  );
+/** What a Claude model id says: its family, version, and whether thinking is manual (4.5 and older) or always on. */
+export function claudeInfo(model: Pick<CatalogModel, 'id'>) {
+  const familyFirst =
+    /(?:claude-)?(opus|sonnet|haiku|fable|mythos)-(\d{1,2})(?!\d)(?:[.-](\d{1,2})(?!\d))?/i.exec(
+      model.id,
+    );
 
-  const versionFirst = /claude-(\d+)(?:[.-](\d+))?-(opus|sonnet|haiku|fable|mythos)/i.exec(
+  const versionFirst = /claude-(\d{1,2})(?:[.-](\d{1,2}))?-(opus|sonnet|haiku|fable|mythos)/i.exec(
     model.id,
   );
 

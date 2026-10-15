@@ -186,6 +186,13 @@ export function fakeTabs(log: Log, initial: TabInfo[]): FakeTabs {
   const fake: FakeTabs = {
     tabs,
     get: later((tabId: number) => ({ ...tab(tabId) })),
+    active: later((windowId: number) => {
+      const found = [...tabs.values()].find((entry) => entry.windowId === windowId && entry.active);
+
+      if (!found) throw new Error(`Window ${windowId} has no active tab`);
+
+      return { ...found };
+    }),
     inGroup: later((groupId: number) =>
       [...tabs.values()].filter((entry) => entry.groupId === groupId),
     ),
@@ -255,6 +262,10 @@ export function fakeContext(log: Log, runId: string): FakeContext {
   return {
     signal: controller.signal,
     controller,
+    session: { id: 'session-1' },
+    messageID: 'message-1',
+    callID: 'call-1',
+    agent: 'build',
     run: { id: runId },
     asserts,
     permission: {

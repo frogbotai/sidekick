@@ -16,6 +16,7 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 
 import { startCatalog } from '../../providers/catalog';
+import { startSessions } from '../../session';
 import { App } from './App';
 
 const root = document.getElementById('root');
@@ -24,9 +25,9 @@ if (!root) throw new Error('Missing #root');
 
 const worker = connectWorker(sidekickProtocol);
 
-if (import.meta.env.SIDEKICK_E2E) {
-  Object.assign(window, { sidekick: { worker, provider, streamText, tools } });
-}
+const sidekick = { worker, provider, streamText, tools };
+
+if (import.meta.env.SIDEKICK_E2E) Object.assign(window, { sidekick });
 
 provider.registerBuiltinProviders();
 registerFrogbotSearch();
@@ -36,6 +37,13 @@ void cleanupLegacyPanel({ localStorage, document });
 const [initialMode] = await Promise.all([theme.get(), provider.registerCustomProviders()]);
 
 void startCatalog();
+
+void chrome.windows
+  .getCurrent()
+  .then(({ id }) => startSessions(worker, id))
+  .then((sessions) => {
+    if (import.meta.env.SIDEKICK_E2E) Object.assign(sidekick, sessions);
+  });
 
 createRoot(root).render(
   <StrictMode>

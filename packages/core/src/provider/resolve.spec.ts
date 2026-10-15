@@ -195,6 +195,18 @@ describe('resolveModel variants', () => {
 
     expect((await send('openai/gpt-5')).body.reasoning).toBeUndefined();
   });
+
+  it('sends OpenAI requests with store: false, beside a variant', async () => {
+    await connect('openai');
+
+    expect((await send('openai/gpt-5')).body.store).toBe(false);
+
+    const { body } = await send('openai/gpt-5#high');
+
+    expect(body.store).toBe(false);
+    expect(body.reasoning).toEqual({ effort: 'high', summary: 'auto' });
+    expect(body.include).toContain('reasoning.encrypted_content');
+  });
 });
 
 describe('resolveModel refusals', () => {

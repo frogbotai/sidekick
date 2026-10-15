@@ -50,6 +50,8 @@ export interface Capture extends Size {
 /** The parts of `chrome.tabs`, `tabGroups`, `windows` and `webNavigation` the worker uses. */
 export interface Tabs {
   get(tabId: number): Promise<TabInfo>;
+  /** The active tab of a window, for a chat's first browser call (278 D1). */
+  active(windowId: number): Promise<TabInfo>;
   inGroup(groupId: number): Promise<TabInfo[]>;
   create(input: { windowId: number; url: string; active: boolean }): Promise<TabInfo>;
   group(tabId: number, groupId?: number): Promise<number>;

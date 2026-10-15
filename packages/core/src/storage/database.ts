@@ -2,21 +2,41 @@ export type Upgrade = (database: IDBDatabase, transaction: IDBTransaction) => vo
 
 const CACHE = 'cache';
 
-export const UPGRADES: readonly Upgrade[] = [(database) => database.createObjectStore(CACHE)];
+/** The session stores: `events` keyed `[sessionID, seq]`, and its projection, `sessions` and `messages`. */
+export const SESSION_STORES = {
+  events: 'events',
+  sessions: 'sessions',
+  messages: 'messages',
+} as const;
+
+/** The `messages` index that orders a session's messages, `[sessionID, seq]`. */
+export const MESSAGE_ORDER = 'order';
+
+export const UPGRADES: readonly Upgrade[] = [
+  (database) => database.createObjectStore(CACHE),
+  (database) => {
+    database.createObjectStore(SESSION_STORES.events, { keyPath: ['sessionID', 'seq'] });
+    database.createObjectStore(SESSION_STORES.sessions, { keyPath: 'id' });
+
+    database
+      .createObjectStore(SESSION_STORES.messages, { keyPath: 'id' })
+      .createIndex(MESSAGE_ORDER, ['sessionID', 'seq'], { unique: true });
+  },
+];
 
 interface Cached {
   value: unknown;
   expires: number;
 }
 
-function settle<T>(request: IDBRequest<T>) {
+export function settle<T>(request: IDBRequest<T>) {
   return new Promise<T>((resolve, reject) => {
     request.onsuccess = () => resolve(request.result);
     request.onerror = () => reject(request.error ?? new Error('IndexedDB request failed'));
   });
 }
 
-function complete(transaction: IDBTransaction) {
+export function complete(transaction: IDBTransaction) {
   return new Promise<void>((resolve, reject) => {
     transaction.oncomplete = () => resolve();
     transaction.onerror = () => reject(transaction.error ?? new Error('IndexedDB write failed'));

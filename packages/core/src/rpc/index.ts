@@ -1,4 +1,4 @@
-export type { WorkerClient } from './client';
+export type { CallOptions, WorkerClient } from './client';
 export { CALL_TIMEOUT, connectWorker, HEARTBEAT, MAX_BACKOFF, MIN_BACKOFF } from './client';
 export type { ContentSender } from './content';
 export { answerContent, callWorker } from './content';

@@ -1,8 +1,11 @@
+import { defaultSettingsMiddleware } from 'ai';
+
 import { frogbotProvider } from '../frogbot/provider';
 import { providers } from '../registry';
 import type { ProviderDefinition } from './definition';
 import { bearer, listEndpointTest } from './key-test';
 import { lmStudio, ollama } from './local';
+import { claudeInfo } from './variant';
 
 const ANTHROPIC_VERSION = '2023-06-01';
 
@@ -19,6 +22,9 @@ export const BUILTIN_PROVIDERS: readonly ProviderDefinition[] = [
     name: 'OpenAI',
     route: '@ai-sdk/openai',
     baseURL: 'https://api.openai.com/v1',
+    middleware: defaultSettingsMiddleware({
+      settings: { providerOptions: { openai: { store: false } } },
+    }),
   }),
   cloud(
     {
@@ -27,6 +33,7 @@ export const BUILTIN_PROVIDERS: readonly ProviderDefinition[] = [
       route: '@ai-sdk/anthropic',
       baseURL: 'https://api.anthropic.com/v1',
       headers: { 'anthropic-dangerous-direct-browser-access': 'true' },
+      reasoning: (model) => (claudeInfo(model).manual ? 'keep' : undefined),
     },
     listEndpointTest({
       path: '/models?limit=1',

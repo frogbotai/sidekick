@@ -18,13 +18,19 @@ interface Pending {
   method: string;
   resolve: (output: unknown) => void;
   reject: (error: RpcError) => void;
-  timer: ReturnType<typeof setTimeout>;
+  timer: ReturnType<typeof setTimeout> | undefined;
+}
+
+/** Per-call options: `timeout: false` waits as long as the worker takes, for tool calls. */
+export interface CallOptions {
+  timeout?: number | false;
 }
 
 export interface WorkerClient<P extends Protocol> {
   call: <K extends keyof P['methods'] & string>(
     method: K,
     input: Input<P['methods'], K>,
+    options?: CallOptions,
   ) => Promise<Output<P['methods'], K>>;
   on: <K extends keyof P['events'] & string>(
     type: K,
@@ -152,7 +158,7 @@ export function connectWorker<P extends Protocol>(
   open();
 
   return {
-    call: (method, input) => {
+    call: (method, input, { timeout: limit = timeout }: CallOptions = {}) => {
       const result = new Promise<unknown>((resolve, reject) => {
         if (!Object.hasOwn(protocol.methods, method)) {
           reject(new RpcError('unknown-method', `Unknown method "${method}"`));
@@ -168,9 +174,14 @@ export function connectWorker<P extends Protocol>(
 
         const id = String(++sequence);
 
-        const timer = setTimeout(() => {
-          settle(id)?.reject(new RpcError('timeout', `"${method}" took longer than ${timeout} ms`));
-        }, timeout);
+        const timer =
+          limit === false
+            ? undefined
+            : setTimeout(() => {
+                settle(id)?.reject(
+                  new RpcError('timeout', `"${method}" took longer than ${limit} ms`),
+                );
+              }, limit);
 
         pending.set(id, { method, resolve, reject, timer });
 

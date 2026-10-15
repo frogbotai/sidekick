@@ -8,6 +8,8 @@ import {
   contentProtocol,
   createBrowserRuntime,
   createBrowserWorker,
+  createPermissionSeam,
+  createToolBridge,
   frameProtocol,
   restrictStorageToTrustedContexts,
   serve,
@@ -58,6 +60,8 @@ export default defineBackground(() => {
   });
 
   const browser = createBrowserWorker(runtime);
+  const permission = createPermissionSeam();
+  const bridge = createToolBridge({ tools, permission, run: browser.sessionRun });
 
   tools.register('builtin', (draft) => {
     for (const tool of runtime.tools) draft.add(tool);
@@ -72,6 +76,7 @@ export default defineBackground(() => {
         return { frameId: target.frameId, url, bootId };
       },
       ...browser.handlers,
+      ...bridge,
     },
     { bootId },
   );

@@ -53,6 +53,10 @@ async function call(runId: string, id: string, input: unknown): Promise<TestRepl
 
   const result = await tool.execute(parsed.data, {
     signal: new AbortController().signal,
+    session: { id: 'e2e' },
+    messageID: 'e2e',
+    callID: crypto.randomUUID(),
+    agent: 'build',
     run: { id: runId },
     permission: {
       assert: (request) => {

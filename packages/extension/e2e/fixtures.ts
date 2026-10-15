@@ -1,6 +1,6 @@
 import path from 'node:path';
 
-import type { tools } from '@frogbotai/sidekick-core';
+import type { SessionEngine, tools } from '@frogbotai/sidekick-core';
 import type * as provider from '@frogbotai/sidekick-core/provider';
 import { type BrowserContext, chromium, type Page, test as base } from '@playwright/test';
 import type { streamText } from 'ai';
@@ -60,6 +60,8 @@ declare global {
       provider: typeof provider;
       streamText: typeof streamText;
       tools: typeof tools;
+      /** Set once the panel's session engine has started. */
+      engine?: SessionEngine;
     };
     log: string[];
     shadowValue: () => string;

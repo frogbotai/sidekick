@@ -70,4 +70,9 @@ export interface ProviderDefinition {
   listModels?: (request: ProviderRequest) => Promise<ListedModel[]>;
   wrapFetch?: (fetch: Fetch) => Fetch;
   middleware?: LanguageModelMiddleware | LanguageModelMiddleware[];
+  /**
+   * Whether requests send back reasoning from before the latest demotion (278 D4). `keep` for
+   * models that reject history without it; unset follows the session engine's default.
+   */
+  reasoning?: (model: Pick<ProviderModel, 'id' | 'family'>) => 'strip' | 'keep' | undefined;
 }

@@ -268,7 +268,10 @@ test('a pasted FrogBot key connects, shows the balance and models, and web searc
       { query: 'example' },
       {
         signal: new AbortController().signal,
-        run: { id: 'e2e' },
+        session: { id: 'e2e' },
+        messageID: 'e2e',
+        callID: 'e2e',
+        agent: 'build',
         permission: { assert: () => Promise.resolve() },
       },
     );

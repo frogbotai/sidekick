@@ -11,9 +11,15 @@ export interface PermissionRequest {
   frameOrigin?: string;
 }
 
+/** What a tool call gets, after v2's tool context: its session, message, call and agent. */
 export interface ToolContext {
   signal: AbortSignal;
-  run: { id: string };
+  session: { id: string };
+  messageID: string;
+  callID: string;
+  agent: string;
+  /** The browser run a worker tool acts in; the worker sets it (278 D1). */
+  run?: { id: string };
   permission: { assert: (request: PermissionRequest) => Promise<void> };
 }
 

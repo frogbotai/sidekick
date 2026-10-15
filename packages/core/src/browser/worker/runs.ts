@@ -5,6 +5,8 @@ export type StopReason = 'user' | 'group_closed' | 'aborted';
 export interface Run {
   id: string;
   label: string;
+  /** The chat that owns the run (278 D1), when a session started it. */
+  sessionID?: string;
   groupId: number;
   windowId: number;
   signal: AbortSignal;
@@ -13,10 +15,11 @@ export interface Run {
 export interface RunStopped {
   runId: string;
   reason: StopReason;
+  sessionID?: string;
 }
 
 export interface Runs {
-  start(input: { tabId: number; label: string }): Promise<Run>;
+  start(input: { tabId: number; label: string; sessionID?: string }): Promise<Run>;
   stop(runId: string, reason?: StopReason): void;
   get(runId: string): Run | undefined;
   list(): Run[];
@@ -45,7 +48,9 @@ export function createRuns(tabs: Tabs): Runs {
     runs.delete(runId);
     run.controller.abort();
 
-    for (const listener of [...listeners]) listener({ runId, reason });
+    const event = { runId, reason, ...(run.sessionID ? { sessionID: run.sessionID } : {}) };
+
+    for (const listener of [...listeners]) listener(event);
   };
 
   const byGroup = (groupId: number) => [...runs.values()].find((run) => run.groupId === groupId);
@@ -74,7 +79,7 @@ export function createRuns(tabs: Tabs): Runs {
   ];
 
   return {
-    start: async ({ tabId, label }) => {
+    start: async ({ tabId, label, sessionID }) => {
       const tab = await tabs.get(tabId);
       const groupId = await tabs.group(tabId);
 
@@ -85,6 +90,7 @@ export function createRuns(tabs: Tabs): Runs {
       const run = {
         id: crypto.randomUUID(),
         label,
+        ...(sessionID ? { sessionID } : {}),
         groupId,
         windowId: tab.windowId,
         signal: controller.signal,

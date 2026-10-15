@@ -3,6 +3,7 @@ import 'fake-indexeddb/auto';
 import { IDBFactory } from 'fake-indexeddb';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { CATALOG_TTL_MS, fallbackCatalog, loadCatalog } from '../provider/catalog';
 import { getCached, openDatabase, putCached, type Upgrade, UPGRADES } from './database';
 
 const opened: IDBDatabase[] = [];
@@ -26,12 +27,62 @@ afterEach(() => {
 });
 
 describe('openDatabase', () => {
-  it('upgrades from 0 to 1, creating the cache store', async () => {
+  it('upgrades from 0 to 2, creating the cache and session stores', async () => {
     const database = await open();
 
     expect(database.name).toBe('sidekick');
-    expect(database.version).toBe(1);
-    expect([...database.objectStoreNames]).toEqual(['cache']);
+    expect(database.version).toBe(2);
+
+    expect([...database.objectStoreNames].sort()).toEqual([
+      'cache',
+      'events',
+      'messages',
+      'sessions',
+    ]);
+  });
+
+  it('upgrades a version 1 database to 2, keeping its cache', async () => {
+    const first = await open(UPGRADES.slice(0, 1));
+
+    await putCached(first, 'models', { ids: ['a'] }, 60_000);
+    first.close();
+
+    const database = await open();
+
+    expect(database.version).toBe(2);
+    expect(await getCached(database, 'models')).toEqual({ ids: ['a'] });
+
+    const order = database.transaction('messages').objectStore('messages').index('order');
+
+    expect(order.keyPath).toEqual(['sessionID', 'seq']);
+  });
+
+  it('upgrades a version 1 database with a cached catalog, so the catalog still loads', async () => {
+    const first = await open(UPGRADES.slice(0, 1));
+    const slice = Object.fromEntries(Object.entries(fallbackCatalog).slice(0, 1));
+
+    await putCached(
+      first,
+      'catalog',
+      { slice, catalogIDs: ['openai'], etag: 'W/"1"', digest: 'abc', fetchedAt: 1 },
+      CATALOG_TTL_MS,
+    );
+
+    first.close();
+
+    expect(await loadCatalog(await open())).toEqual(slice);
+  });
+
+  it('upgrades while another panel holds the version 1 database, which closes for it', async () => {
+    const other = await open(UPGRADES.slice(0, 1));
+
+    await putCached(other, 'models', { ids: ['a'] }, 60_000);
+
+    const [one, two] = await Promise.all([open(), open()]);
+
+    expect([one.version, two.version]).toEqual([2, 2]);
+    expect(await getCached(two, 'models')).toEqual({ ids: ['a'] });
+    expect(() => other.transaction('cache')).toThrow();
   });
 
   it('runs only the upgrades past the stored version, in order', async () => {
@@ -42,17 +93,17 @@ describe('openDatabase', () => {
     const next: Upgrade[] = [
       ...UPGRADES,
       (database) => {
-        ran.push(2);
-        database.createObjectStore('sessions');
+        ran.push(3);
+        database.createObjectStore('later');
       },
-      () => ran.push(3),
+      () => ran.push(4),
     ];
 
     const database = await open(next);
 
-    expect(database.version).toBe(3);
-    expect(ran).toEqual([2, 3]);
-    expect([...database.objectStoreNames].sort()).toEqual(['cache', 'sessions']);
+    expect(database.version).toBe(4);
+    expect(ran).toEqual([3, 4]);
+    expect([...database.objectStoreNames].sort()).toContain('later');
   });
 });
 

@@ -2,7 +2,7 @@ import * as z from 'zod/mini';
 import type { $ZodType } from 'zod/v4/core';
 
 import { defineProtocol } from './rpc/define';
-import { TOOL_ERROR_CODES } from './tool/tool';
+import { PERMISSION_ACTIONS, TOOL_ERROR_CODES } from './tool/tool';
 
 const frameId = z.int().check(z.nonnegative());
 
@@ -33,6 +33,28 @@ function outcome<T extends $ZodType>(ok: T) {
 }
 
 const byRef = z.object({ ref, doc });
+
+const id = z.string().check(z.minLength(1));
+
+const scope = { sessionID: id, messageID: id, callID: id, agent: id };
+
+const jsonSchema = z.record(z.string(), z.unknown());
+
+const toolContent = z.union([
+  z.object({ type: z.literal('text'), text: z.string() }),
+  z.object({
+    type: z.literal('file'),
+    uri: z.string(),
+    mime: z.string(),
+    name: z.optional(z.string()),
+  }),
+]);
+
+const permissionRequest = z.object({
+  action: z.enum(PERMISSION_ACTIONS),
+  resource: z.string(),
+  frameOrigin: z.optional(z.string()),
+});
 
 const children = z.optional(z.array(z.object({ frameId, url: z.string() })));
 
@@ -65,11 +87,37 @@ export const sidekickProtocol = defineProtocol({
       output: z.object({ runId: z.string(), groupId: z.int() }),
     },
     'run.stop': { input: z.object({ runId: z.string() }), output: z.object({}) },
+    'run.end': {
+      input: z.object({ sessionID: id, close: z.boolean() }),
+      output: z.object({}),
+    },
+    'tool.list': {
+      input: z.object({}),
+      output: z.array(
+        z.object({
+          id,
+          description: z.string(),
+          permission: z.enum(PERMISSION_ACTIONS),
+          input: jsonSchema,
+          output: jsonSchema,
+        }),
+      ),
+    },
+    'tool.call': {
+      input: z.object({ ...scope, tool: id, input: z.unknown(), windowId: z.optional(z.int()) }),
+      output: outcome(z.object({ output: z.unknown(), content: z.optional(z.array(toolContent)) })),
+    },
+    'tool.cancel': { input: z.object({ callID: id }), output: z.object({}) },
+    'permission.assert': {
+      input: z.object({ ...scope, request: permissionRequest }),
+      output: outcome(z.null()),
+    },
   },
   events: {
     'run.stopped': z.object({
       runId: z.string(),
       reason: z.enum(['user', 'group_closed', 'aborted']),
+      sessionID: z.optional(z.string()),
     }),
     'page.stripped': z.object({ tabId, removed: z.array(z.string()) }),
   },

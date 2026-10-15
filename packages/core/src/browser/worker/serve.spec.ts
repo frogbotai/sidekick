@@ -119,4 +119,50 @@ describe('the browser worker', () => {
       { type: 'page.stripped', data: { tabId: 1, removed: ['chrome-extension://abcdef'] } },
     ]);
   });
+
+  it('keeps one run per chat, hides its indicator between messages, and ends it on close', async () => {
+    const { worker, runtime, shown, emitted } = setup();
+    const first = await worker.sessionRun({ sessionID: 's1', windowId: 1 });
+    const again = await worker.sessionRun({ sessionID: 's1', windowId: 1 });
+    const state = () => worker.content({ tabId: 1, frameId: 0 })['indicator.state']({});
+
+    expect(again).toEqual(first);
+    expect(runtime.env.runs.get(first.id)).toMatchObject({ sessionID: 's1', label: 'Sidekick' });
+
+    await worker.handlers['run.end']({ sessionID: 's1', close: false });
+    await vi.runAllTimersAsync();
+
+    expect(await state()).toEqual({ visible: false });
+
+    await worker.sessionRun({ sessionID: 's1', windowId: 1 });
+    await vi.runAllTimersAsync();
+
+    expect(await state()).toEqual({ visible: true });
+
+    expect(shown).toEqual([
+      { tabId: 1, visible: true },
+      { tabId: 1, visible: false },
+      { tabId: 1, visible: true },
+    ]);
+
+    await worker.handlers['run.end']({ sessionID: 's1', close: true });
+
+    expect(runtime.env.runs.get(first.id)).toBeUndefined();
+
+    expect(emitted).toEqual([
+      { type: 'run.stopped', data: { runId: first.id, reason: 'user', sessionID: 's1' } },
+    ]);
+
+    const next = await worker.sessionRun({ sessionID: 's1', windowId: 1 });
+
+    expect(next.id).not.toBe(first.id);
+  });
+
+  it('refuses a chat’s first browser call without a window', async () => {
+    const { worker } = setup();
+
+    await expect(worker.sessionRun({ sessionID: 's1' })).rejects.toMatchObject({
+      code: 'invalid_target',
+    });
+  });
 });

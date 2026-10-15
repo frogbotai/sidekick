@@ -188,6 +188,25 @@ describe('connectWorker and serve', () => {
     expect(CALL_TIMEOUT).toBe(30_000);
   });
 
+  it('lets a call opt out of the timeout', async () => {
+    start();
+
+    const worker = connectWorker(protocol);
+    let settled = false;
+
+    const call = worker.call('wait', {}, { timeout: false }).finally(() => {
+      settled = true;
+    });
+
+    await vi.advanceTimersByTimeAsync(CALL_TIMEOUT + 1_000);
+
+    expect(settled).toBe(false);
+
+    release();
+
+    await expect(call).resolves.toEqual({});
+  });
+
   it.each([
     ['a foreign extension', { id: 'other', url: `${EXTENSION_ORIGIN}sidepanel.html` }],
     ['a web page', { id: 'sidekicktestid', url: 'https://example.com/', tab: { id: 1 } }],

@@ -65,6 +65,8 @@ export {
   selectedModel,
   selectModel,
 } from './selection';
+export type { TitleModelInput } from './small';
+export { MINIMAL_VARIANTS, pickTitleModel, SMALL_FAMILIES, smallModel } from './small';
 export type { JsonObject, JsonValue, ReasoningLevel, Variant } from './variant';
 export { findVariant, modelVariants, reasoningLevels } from './variant';
 export type { Visibility, VisibilityModel, VisibilityOptions } from './visibility';
