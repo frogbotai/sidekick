@@ -58,6 +58,7 @@ describe('built manifest', () => {
         'manifest_version',
         'minimum_chrome_version',
         'name',
+        'options_ui',
         'permissions',
         'side_panel',
         'version',
@@ -121,6 +122,10 @@ describe('built manifest', () => {
     expect(manifest.side_panel).toEqual({ default_path: 'sidepanel.html' });
     expect(manifest.action).toEqual({ default_title: 'Open FrogBot Sidekick' });
     expect(manifest.background).toEqual({ service_worker: 'background.js' });
+  });
+
+  it('opens the options page in Chrome’s extension menu', () => {
+    expect(manifest.options_ui).toEqual({ page: 'options.html', open_in_tab: false });
   });
 
   it.each(['web_accessible_resources', 'content_security_policy'])('has no %s', (field) => {

@@ -4,7 +4,7 @@ import path from 'node:path';
 import { installFakeChrome } from '@frogbotai/sidekick-core/testing';
 import { describe, expect, it } from 'vitest';
 
-import { openChat } from '.';
+import { openChat, windowChat } from '.';
 
 const SESSION = path.resolve(import.meta.dirname, '../../../core/src/session');
 
@@ -41,5 +41,32 @@ describe('openChat', () => {
 
     expect(await openChat.get(1)).toBeUndefined();
     expect(fake.data.size).toBe(0);
+  });
+});
+
+describe('windowChat', () => {
+  it('starts on the stored open chat, and opening another ends the previous run', async () => {
+    installFakeChrome();
+    await openChat.set(7, 'ses_a');
+
+    const closed: string[] = [];
+    const chat = await windowChat(7, (sessionID) => {
+      closed.push(sessionID);
+
+      return Promise.resolve();
+    });
+
+    expect(chat.current()).toBe('ses_a');
+
+    await chat.open('ses_a');
+    await chat.open('ses_b');
+
+    expect(closed).toEqual(['ses_a']);
+    expect(await openChat.get(7)).toBe('ses_b');
+
+    await chat.open(undefined);
+
+    expect(closed).toEqual(['ses_a', 'ses_b']);
+    expect(await openChat.get(7)).toBeUndefined();
   });
 });

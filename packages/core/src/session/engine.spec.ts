@@ -11,10 +11,12 @@ import { BUILTIN_AGENTS } from '../agent/builtin';
 import { createRegistry } from '../registry/registry';
 import { openDatabase } from '../storage/database';
 import { defineTool, type ToolDefinition } from '../tool/tool';
-import { createSessionEngine, MAX_STEPS_PROMPT, type SessionLocks } from './engine';
+import { createSessionEngine, MAX_STEPS_PROMPT } from './engine';
+import type { SessionLocks } from './queue';
 import { CHAT_FULL } from './retry';
 import type { AssistantMessage, SessionMessage } from './schema';
 import { createSessionStore, type SessionStore } from './store';
+import { toUIMessages } from './ui';
 
 type Stream = Awaited<ReturnType<MockLanguageModelV4['doStream']>>['stream'];
 
@@ -540,6 +542,96 @@ describe('turns', () => {
     expect(kinds(await one.store.messages(one.session.id))).toEqual(
       Array.from({ length: 3 }, () => ['user', 'assistant', 'idle:succeeded']).flat(),
     );
+  });
+});
+
+describe('client message ids', () => {
+  const hello = [{ type: 'text' as const, text: 'Hello' }];
+
+  it('admits one message for the same messageID sent twice', async () => {
+    const { engine, model, session } = await setup({ steps: [text('Hi')] });
+
+    const sent = await Promise.all([
+      engine.prompt({ sessionID: session.id, messageID: 'msg_client', parts: hello }),
+      engine.prompt({ sessionID: session.id, messageID: 'msg_client', parts: hello }),
+    ]);
+
+    await Promise.all(sent.map(({ done }) => done));
+
+    const again = await engine.prompt({
+      sessionID: session.id,
+      messageID: 'msg_client',
+      parts: hello,
+    });
+
+    await again.done;
+
+    const messages = await engine.messages(session.id);
+
+    expect(sent.map(({ messageID }) => messageID)).toEqual(['msg_client', 'msg_client']);
+    expect(again.messageID).toBe('msg_client');
+    expect(kinds(messages)).toEqual(['user', 'assistant', 'idle:succeeded']);
+    expect(model.doStreamCalls).toHaveLength(1);
+  });
+
+  it('reloads a message with the client’s id and its stored time', async () => {
+    const { engine, session } = await setup({ steps: [text('Hi')] });
+
+    await (
+      await engine.prompt({ sessionID: session.id, messageID: 'msg_client', parts: hello })
+    ).done;
+
+    const messages = await engine.messages(session.id);
+    const [user, reply] = toUIMessages(messages);
+
+    expect(user).toMatchObject({
+      id: 'msg_client',
+      role: 'user',
+      metadata: { createdAt: messages[0]?.time.created },
+    });
+
+    expect(reply).toMatchObject({
+      id: messages[1]?.id,
+      metadata: { createdAt: messages[1]?.time.created },
+    });
+  });
+
+  it('never runs a queued message that was cancelled', async () => {
+    const hold = gate();
+
+    const { engine, model, session } = await setup({
+      steps: [
+        async () => {
+          await hold.opened;
+
+          return text('First');
+        },
+        text('Second'),
+      ],
+    });
+
+    const first = await engine.prompt({ sessionID: session.id, messageID: 'msg_1', parts: hello });
+
+    await expect.poll(() => engine.busy(session.id)).toBe(true);
+
+    const second = await engine.prompt({
+      sessionID: session.id,
+      messageID: 'msg_2',
+      parts: hello,
+    });
+
+    expect(engine.cancel(session.id, 'msg_1')).toBe(false);
+    expect(engine.cancel(session.id, 'msg_2')).toBe(true);
+    expect(engine.queued(session.id)).toEqual([]);
+
+    hold.open();
+    await Promise.all([first.done, second.done]);
+
+    const messages = await engine.messages(session.id);
+
+    expect(kinds(messages)).toEqual(['user', 'assistant', 'idle:succeeded']);
+    expect(messages[0]?.id).toBe('msg_1');
+    expect(model.doStreamCalls).toHaveLength(1);
   });
 });
 

@@ -1,102 +1,10 @@
-import type { BrowserContext, Page } from '@playwright/test';
+import type { Page } from '@playwright/test';
 
-import { expect, test } from './fixtures';
-
-const OPENAI = 'https://api.openai.com/v1';
-
-const MODEL = 'openai/gpt-6-luna';
+import { callTool, expect, reply, scriptOpenAI, test } from './fixtures';
 
 const HANG = 'https://hang.test/';
 
-const event = (body: Record<string, unknown>) => `data: ${JSON.stringify(body)}\n\n`;
-
-const created = event({
-  type: 'response.created',
-  response: { id: 'r1', created_at: 1, model: 'gpt-6-luna' },
-});
-
-const completed = [event({ type: 'response.completed', response: {} }), 'data: [DONE]\n\n'];
-
-function callTool(name: string, input: Record<string, unknown>) {
-  const item = { type: 'function_call', id: 'fc1', call_id: 'call_1', name };
-
-  return [
-    created,
-    event({
-      type: 'response.output_item.added',
-      output_index: 0,
-      item: { ...item, arguments: '' },
-    }),
-    event({
-      type: 'response.output_item.done',
-      output_index: 0,
-      item: { ...item, arguments: JSON.stringify(input), status: 'completed' },
-    }),
-    ...completed,
-  ].join('');
-}
-
-function reply(text: string) {
-  return [
-    created,
-    event({
-      type: 'response.output_item.added',
-      output_index: 0,
-      item: { type: 'message', id: 'm1' },
-    }),
-    event({ type: 'response.output_text.delta', item_id: 'm1', output_index: 0, delta: text }),
-    ...completed,
-  ].join('');
-}
-
-function titleReply(text: string) {
-  return {
-    id: 'r-title',
-    created_at: 1,
-    model: 'gpt-6-luna',
-    output: [
-      {
-        type: 'message',
-        id: 'm-title',
-        role: 'assistant',
-        status: 'completed',
-        content: [{ type: 'output_text', text, annotations: [] }],
-      },
-    ],
-    usage: { input_tokens: 1, output_tokens: 1 },
-  };
-}
-
-async function scriptOpenAI(context: BrowserContext, script: string[]) {
-  const bodies: string[] = [];
-  const titles: string[] = [];
-
-  await context.route('https://models.dev/api.json', (route) => route.fulfill({ status: 503 }));
-
-  await context.route(`${OPENAI}/**`, (route) => {
-    const request = route.request();
-
-    if (!request.url().endsWith('/responses')) return route.fulfill({ json: { data: [] } });
-
-    const body = request.postData() ?? '';
-    const title = body.includes('You are a title generator');
-
-    if (title) {
-      titles.push(body);
-
-      return route.fulfill({ json: titleReply('Open tabs') });
-    }
-
-    bodies.push(body);
-
-    return route.fulfill({
-      contentType: 'text/event-stream',
-      body: script.shift() ?? reply('(script ended)'),
-    });
-  });
-
-  return { bodies, titles };
-}
+const MODEL = 'openai/gpt-6-luna';
 
 async function engineReady(panel: Page) {
   await expect

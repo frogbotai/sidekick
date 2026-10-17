@@ -10,11 +10,11 @@
     "build": "wxt build",
     "build:e2e": "SIDEKICK_E2E=1 wxt build",
     "build:live": "SIDEKICK_LIVE=1 wxt build",
-    "postinstall": "wxt prepare"
+    "postinstall": "node scripts/linked-cli.ts prepare"
   },
   "dependencies": {
     "@frogbotai/sidekick-core": "workspace:^",
-    "@frogbotai/ui": "0.33.0",
+    "@frogbotai/ui": "link:../../.frogbot/packages/ui",
     "ai": "7.0.127",
     "react": "19.2.6",
     "react-dom": "19.2.6"

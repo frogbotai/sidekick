@@ -12,14 +12,12 @@ Build the best version, not the usual one. Subtract what doesn't earn its place,
 ```
 pnpm check            format, eslint, oxlint (type-aware), typecheck; never tests
 pnpm test:unit <file>
+pnpm test:e2e [<file>] [--grep <name>]
+pnpm dev
 pnpm ticket verify    in a ticket worktree; runs the frogbot checkout's ticket script
-
-pnpm dev:local [<checkout>]                      wxt dev with @frogbotai/* served from a FrogBot checkout
-pnpm test:e2e:local [<checkout>] [-- <args>]     the e2e suite against that checkout
-pnpm typecheck:local [<checkout>]                typecheck against the checkout's built declarations
 ```
 
-`<checkout>` is a ticket key (`272` → `~/code/frogbot/frogbot-ticket272`), a path, or nothing (`~/code/frogbot/frogbot`). `check`, `test:e2e`, `verify` and `land` always use the published packages; see [README.md](README.md#working-against-local-frogbot).
+Every command builds against the FrogBot checkout at `~/code/frogbot/frogbot` (DR-066), through the `.frogbot` link; `SIDEKICK_FROGBOT=<path or ticket key>` picks another one. Never wait for, or ask about, a FrogBot release. See [README.md](README.md#development).
 
 ## Rules
 

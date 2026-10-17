@@ -1,12 +1,13 @@
 import { providers } from '@frogbotai/sidekick-core';
 import {
+  effectiveSelection,
   modelKey,
   parseModelRef,
   type ProviderModel,
   reasoningLevels,
-  selectModel,
+  type Selection,
 } from '@frogbotai/sidekick-core/provider';
-import { Alert, AlertDescription, Button } from '@frogbotai/ui';
+import { Alert, AlertDescription } from '@frogbotai/ui';
 import { ModelSelector, type ModelSelectorModel } from '@frogbotai/ui/chat';
 import type { SyntheticEvent } from 'react';
 
@@ -22,17 +23,54 @@ function option(model: ProviderModel): ModelSelectorModel {
   };
 }
 
-export function ModelPicker({ models, onConnect }: { models: Models; onConnect: () => void }) {
-  if (models.loading) return null;
+/** The models the picker lists: the visible ones, plus the selected one when it's hidden. */
+export function shownModels(models: Models, selection: Selection<ProviderModel>) {
+  const { model } = selection;
 
-  if (models.connected.size === 0) {
-    return <Button onClick={onConnect}>Connect a provider</Button>;
-  }
+  return model && !models.visible.includes(model) ? [model, ...models.visible] : models.visible;
+}
 
-  const { ref, model, missing } = models.selection;
-  const shown =
-    model && !models.visible.includes(model) ? [model, ...models.visible] : models.visible;
+/**
+ * The chat's model: its own `ref` while that model is available, else the newest pick, else the
+ * newest visible model. `missing` names a chat model that vanished.
+ */
+export function chatSelection(models: Models, ref: string | undefined): Selection<ProviderModel> {
+  if (models.loading) return {};
 
+  if (ref === undefined) return models.selection;
+
+  return effectiveSelection({
+    stored: ref,
+    available: models.available,
+    visible: models.visible,
+  });
+}
+
+/** "Model unavailable" for a chat whose model is gone. */
+export function ModelNotice({ selection }: { selection: Selection<ProviderModel> }) {
+  if (!selection.missing) return null;
+
+  return (
+    <Alert variant="warning">
+      <AlertDescription>
+        Model unavailable: {selection.missing}.{' '}
+        {selection.model ? `Using ${selection.model.name} instead.` : 'Pick another model.'}
+      </AlertDescription>
+    </Alert>
+  );
+}
+
+export interface ModelPickerProps {
+  models: Models;
+  selection: Selection<ProviderModel>;
+  onChange: (ref: string) => void;
+}
+
+export function ModelPicker({ models, selection, onChange }: ModelPickerProps) {
+  if (models.loading || models.connected.size === 0) return null;
+
+  const { ref, model } = selection;
+  const shown = shownModels(models, selection);
   const selected = ref ? parseModelRef(ref) : undefined;
   const key = model ? modelKey(model) : '';
 
@@ -42,29 +80,17 @@ export function ModelPicker({ models, onConnect }: { models: Models; onConnect: 
     }
   };
 
+  if (shown.length === 0) return <p>No models available from the connected providers.</p>;
+
   return (
-    <div className="sidekick-stack">
-      {missing ? (
-        <Alert variant="warning">
-          <AlertDescription>
-            Model unavailable: {missing}.{' '}
-            {model ? `Using ${model.name} instead.` : 'Pick another model.'}
-          </AlertDescription>
-        </Alert>
-      ) : null}
-      {shown.length > 0 ? (
-        <span onPointerDownCapture={discover} onKeyDownCapture={discover}>
-          <ModelSelector
-            models={shown.map(option)}
-            selectedModelId={key}
-            {...(selected?.variant ? { selectedReasoning: selected.variant } : {})}
-            onModelChange={(id) => void selectModel(id)}
-            onReasoningChange={(variant) => void selectModel(variant ? `${key}#${variant}` : key)}
-          />
-        </span>
-      ) : (
-        <p>No models available from the connected providers.</p>
-      )}
-    </div>
+    <span onPointerDownCapture={discover} onKeyDownCapture={discover}>
+      <ModelSelector
+        models={shown.map(option)}
+        selectedModelId={key}
+        {...(selected?.variant ? { selectedReasoning: selected.variant } : {})}
+        onModelChange={onChange}
+        onReasoningChange={(variant) => onChange(variant ? `${key}#${variant}` : key)}
+      />
+    </span>
   );
 }

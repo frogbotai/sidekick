@@ -1,28 +1,31 @@
 import { type FormAnswer, forms, type PendingForm } from '@frogbotai/sidekick-core';
-import {
-  Button,
-  Card,
-  CardContent,
-  CardFooter,
-  CardHeader,
-  CardTitle,
-  Label,
-  RadioGroup,
-  RadioGroupItem,
-} from '@frogbotai/ui';
+import { Button, Label, RadioGroup, RadioGroupItem } from '@frogbotai/ui';
+import { ChatDock } from '@frogbotai/ui/chat';
 import { useId, useState, useSyncExternalStore } from 'react';
 
-function FormCard({ form }: { form: PendingForm }) {
+/** A question a tool is waiting on, as a card for the chat's dock. */
+export function PendingFormCard({ form }: { form: PendingForm }) {
   const id = useId();
   const [answer, setAnswer] = useState<FormAnswer>({});
   const complete = form.fields.every(({ key }) => answer[key] !== undefined);
 
   return (
-    <Card role="region" aria-labelledby={id}>
-      <CardHeader>
-        <CardTitle id={id}>{form.title}</CardTitle>
-      </CardHeader>
-      <CardContent className="sidekick-stack">
+    <ChatDock
+      role="region"
+      aria-labelledby={id}
+      header={<span id={id}>{form.title}</span>}
+      footer={
+        <>
+          <Button variant="ghost" onClick={() => forms.cancel(form.id)}>
+            Cancel
+          </Button>
+          <Button disabled={!complete} onClick={() => forms.reply(form.id, answer)}>
+            Continue
+          </Button>
+        </>
+      }
+    >
+      <div className="sidekick-stack">
         {form.fields.map((field) => (
           <fieldset key={field.key} className="sidekick-stack">
             <legend>{field.description}</legend>
@@ -39,22 +42,12 @@ function FormCard({ form }: { form: PendingForm }) {
             </RadioGroup>
           </fieldset>
         ))}
-      </CardContent>
-      <CardFooter className="sidekick-row">
-        <Button disabled={!complete} onClick={() => forms.reply(form.id, answer)}>
-          Continue
-        </Button>
-        <Button variant="ghost" onClick={() => forms.cancel(form.id)}>
-          Cancel
-        </Button>
-      </CardFooter>
-    </Card>
+      </div>
+    </ChatDock>
   );
 }
 
 /** The oldest question a tool is waiting on, if any. */
-export function PendingFormCard() {
-  const [oldest] = useSyncExternalStore(forms.subscribe, forms.pending);
-
-  return oldest ? <FormCard key={oldest.id} form={oldest} /> : null;
+export function usePendingForm(): PendingForm | undefined {
+  return useSyncExternalStore(forms.subscribe, forms.pending)[0];
 }

@@ -1,24 +1,43 @@
-import { mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from 'node:fs/promises';
+import {
+  lstat,
+  mkdir,
+  mkdtemp,
+  readFile,
+  readlink,
+  realpath,
+  rm,
+  symlink,
+  writeFile,
+} from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
-import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createViteServer } from 'vitest/node';
 import type { ConfigEnv } from 'wxt';
 
 import config from '../wxt.config.ts';
 import {
   CHECKOUT_ENV,
-  LINKED_MODE,
+  isLinked,
+  LINK,
+  linkCheckout,
   linkedPackages,
   linkedVite,
   resolveCheckout,
   unimportExclude,
 } from './linked.ts';
-import { declarationPaths, inheritedPaths, peerPaths } from './typecheck-linked.ts';
+import {
+  declarationPaths,
+  inheritedPaths,
+  peerPaths,
+  TYPES_CONFIG,
+  writeTypesConfigs,
+} from './linked-types.ts';
 
 let base: string;
 let sidekick: string;
+let extension: string;
 let checkout: string;
 
 async function writeJson(file: string, value: unknown) {
@@ -42,9 +61,25 @@ async function link(target: string, at: string) {
   await symlink(target, at, 'dir');
 }
 
+async function fakeSidekick(root: string, ui: string) {
+  await writeJson(path.join(root, 'packages/extension/package.json'), {
+    name: '@frogbotai/sidekick-extension',
+    dependencies: {
+      '@frogbotai/sidekick-core': 'workspace:^',
+      '@frogbotai/ui': ui,
+      react: '19.2.6',
+    },
+  });
+
+  await writeJson(path.join(root, 'packages/core/package.json'), {
+    name: '@frogbotai/sidekick-core',
+  });
+}
+
 beforeAll(async () => {
   base = await realpath(await mkdtemp(path.join(tmpdir(), 'sidekick-linked-')));
   sidekick = path.join(base, 'sidekick');
+  extension = path.join(sidekick, 'packages/extension');
   checkout = path.join(base, 'frogbot');
 
   const ui = path.join(checkout, 'packages/ui');
@@ -63,7 +98,7 @@ beforeAll(async () => {
       },
       './styles.css': './src/styles.css',
     },
-    peerDependencies: { ai: '^7.0.0', react: '^19.0.0', 'react-dom': '^19.0.0' },
+    peerDependencies: { ai: '^7.0.0', payload: '3.90.2', react: '^19.0.0' },
     dependencies: { '@frogbotai/protocol': 'workspace:*' },
     publishConfig: {
       types: './dist/index.d.ts',
@@ -90,49 +125,25 @@ beforeAll(async () => {
     publishConfig: { exports: { '.': { types: './dist/index.d.ts' } } },
   });
 
-  await writeJson(path.join(checkout, 'packages/sdk/package.json'), {
-    name: '@frogbotai/sdk',
-    peerDependencies: { zod: '^4.0.0' },
-  });
-
-  const store = path.join(sidekick, 'node_modules/.pnpm/@frogbotai+ui@0.32.0/node_modules');
-
-  await fakePackage(path.join(store, '@frogbotai/ui'), '@frogbotai/ui', ['index.js']);
-  await fakePackage(path.join(store, 'react'), 'react', ['index.js', 'jsx-runtime.js']);
-  await fakePackage(path.join(store, 'ai'), 'ai', ['index.js']);
-
-  await fakePackage(
-    path.join(sidekick, 'node_modules/.pnpm/sdk/@frogbotai/sdk'),
-    '@frogbotai/sdk',
-    [],
-  );
-
-  await writeJson(path.join(sidekick, 'packages/extension/package.json'), {
-    name: '@frogbotai/sidekick-extension',
-    dependencies: {
-      '@frogbotai/sidekick-core': 'workspace:^',
-      '@frogbotai/ui': '0.32.0',
-      react: '19.2.6',
-    },
-  });
+  await fakeSidekick(sidekick, 'link:../../.frogbot/packages/ui');
 
   await link(
-    path.join(store, '@frogbotai/ui'),
-    path.join(sidekick, 'packages/extension/node_modules/@frogbotai/ui'),
+    '../../../../.frogbot/packages/ui',
+    path.join(extension, 'node_modules/@frogbotai/ui'),
   );
 
-  await writeJson(path.join(sidekick, 'packages/core/package.json'), {
-    name: '@frogbotai/sidekick-core',
-    devDependencies: { '@frogbotai/sdk': '0.32.0' },
-  });
+  await fakePackage(path.join(extension, 'node_modules/react'), 'react', [
+    'index.js',
+    'jsx-runtime.js',
+  ]);
 
-  await link(
-    path.join(sidekick, 'node_modules/.pnpm/sdk/@frogbotai/sdk'),
-    path.join(sidekick, 'packages/core/node_modules/@frogbotai/sdk'),
-  );
+  await fakePackage(path.join(extension, 'node_modules/ai'), 'ai', ['index.js']);
+  await fakePackage(path.join(extension, 'node_modules/@types/react'), '@types/react', []);
 
   await writeJson(path.join(base, 'frogbot-ticket210b/package.json'), { name: 'frogbot-monorepo' });
   await writeJson(path.join(base, 'elsewhere/package.json'), { name: 'frogbot-monorepo' });
+
+  linkCheckout(sidekick, undefined, sidekick);
 });
 
 afterAll(async () => {
@@ -148,9 +159,9 @@ describe('resolveCheckout', () => {
     expect(resolveCheckout(checkout, sidekick)).toBe(checkout);
   });
 
-  it('names the path it tried when there is no checkout', () => {
+  it('names the path it tried and the variable to set when there is no checkout', () => {
     expect(() => resolveCheckout('272', sidekick)).toThrow(
-      `No FrogBot checkout at ${path.join(base, 'frogbot-ticket272')}`,
+      `No FrogBot checkout at ${path.join(base, 'frogbot-ticket272')}. Sidekick builds against a local FrogBot checkout: clone FrogBot there, or set ${CHECKOUT_ENV} to its path`,
     );
 
     expect(() => resolveCheckout('missing', sidekick, base)).toThrow(
@@ -159,30 +170,86 @@ describe('resolveCheckout', () => {
   });
 });
 
+describe('linkCheckout', () => {
+  const at = () => path.join(sidekick, LINK);
+
+  it('points .frogbot at the sibling checkout by default, with a relative link', async () => {
+    expect(linkCheckout(sidekick, undefined, sidekick)).toBe(checkout);
+    expect(await readlink(at())).toBe('../frogbot');
+  });
+
+  it('follows the variable, and goes back without it', async () => {
+    try {
+      expect(linkCheckout(sidekick, '210b', sidekick)).toBe(path.join(base, 'frogbot-ticket210b'));
+      expect(await readlink(at())).toBe('../frogbot-ticket210b');
+    } finally {
+      linkCheckout(sidekick, undefined, sidekick);
+    }
+
+    expect(await readlink(at())).toBe('../frogbot');
+  });
+
+  it('leaves the link alone when the checkout is missing', async () => {
+    expect(() => linkCheckout(sidekick, 'missing', base)).toThrow(
+      `No FrogBot checkout at ${path.join(base, 'missing')}`,
+    );
+
+    expect(await readlink(at())).toBe('../frogbot');
+  });
+
+  it('does nothing when every FrogBot package comes from npm', async () => {
+    const npm = path.join(base, 'npm-sidekick');
+
+    await fakeSidekick(npm, '0.33.0');
+
+    expect(isLinked(npm)).toBe(false);
+    expect(linkCheckout(npm, 'missing', base)).toBeNull();
+    expect(await lstat(path.join(npm, LINK)).catch(() => null)).toBeNull();
+    expect(linkedPackages(npm)).toEqual([]);
+    expect(linkedVite(npm, path.join(npm, 'packages/extension'))).toEqual({});
+  });
+});
+
 describe('linkedPackages', () => {
-  it('lists the FrogBot packages Sidekick depends on, with their peers', () => {
-    const packages = linkedPackages(checkout, sidekick);
+  it('lists the packages Sidekick links, read from the checkout', () => {
+    expect(linkedPackages(sidekick)).toEqual([
+      {
+        name: '@frogbotai/ui',
+        dir: path.join(checkout, 'packages/ui'),
+        peers: ['ai', 'payload', 'react'],
+        consumers: [extension],
+      },
+    ]);
+  });
 
-    expect(packages.map((pkg) => pkg.name).sort()).toEqual(['@frogbotai/sdk', '@frogbotai/ui']);
+  it('says where the checkout should be when the link points nowhere', async () => {
+    const dangling = path.join(base, 'dangling-sidekick');
 
-    expect(new Set(packages.flatMap((pkg) => pkg.peers))).toEqual(
-      new Set(['ai', 'react', 'react-dom', 'zod']),
+    await fakeSidekick(dangling, 'link:../../.frogbot/packages/ui');
+    await link('../gone', path.join(dangling, LINK));
+
+    expect(() => linkedPackages(dangling)).toThrow(
+      `No FrogBot checkout at ${path.join(base, 'gone')}`,
+    );
+
+    await rm(path.join(dangling, LINK));
+
+    expect(() => linkedPackages(dangling)).toThrow(
+      `${path.join(dangling, LINK)} is missing; run \`pnpm install\``,
     );
   });
 
   it('says to run pnpm install in a checkout with a missing dependency', async () => {
     const ui = path.join(checkout, 'packages/ui/package.json');
-    const manifest = {
-      name: '@frogbotai/ui',
-      dependencies: { '@frogbotai/missing': 'workspace:*' },
-    };
-
     const original = await readFile(ui, 'utf8');
 
-    await writeJson(ui, manifest);
+    await writeJson(ui, {
+      name: '@frogbotai/ui',
+      dependencies: { '@frogbotai/missing': 'workspace:*' },
+    });
 
     try {
-      expect(() => linkedPackages(checkout, sidekick)).toThrow(
+      expect(() => linkedPackages(sidekick)).toThrow(
         `${checkout}: dependencies are not installed (@frogbotai/ui needs @frogbotai/missing); run \`pnpm install\` there`,
       );
     } finally {
@@ -192,22 +259,20 @@ describe('linkedPackages', () => {
 });
 
 describe('linkedVite', () => {
-  it('serves the checkout source and Sidekick’s own peers', async () => {
-    const extension = path.join(sidekick, 'packages/extension');
-    const linked = linkedVite(checkout, sidekick);
+  it('serves the checkout source through the link, with Sidekick’s own peers', async () => {
+    const linked = linkedVite(sidekick, extension);
     const server = await createViteServer({
+      ...linked,
       root: extension,
       configFile: false,
       logLevel: 'silent',
-      plugins: linked.plugins,
-      server: { middlewareMode: true, ws: false },
+      server: { ...linked.server, middlewareMode: true, ws: false },
       optimizeDeps: { noDiscovery: true },
     });
 
     const resolve = async (id: string, importer = path.join(extension, 'src/main.ts')) =>
       (await server.environments.client.pluginContainer.resolveId(id, importer))?.id;
 
-    const store = path.join(sidekick, 'node_modules/.pnpm/@frogbotai+ui@0.32.0/node_modules');
     const fromCheckout = path.join(checkout, 'packages/ui/src/index.ts');
 
     try {
@@ -221,36 +286,41 @@ describe('linkedVite', () => {
         path.join(checkout, 'packages/ui/src/styles.css'),
       );
 
-      expect(await resolve('react', fromCheckout)).toBe(path.join(store, 'react/index.js'));
-
-      expect(await resolve('react/jsx-runtime', fromCheckout)).toBe(
-        path.join(store, 'react/jsx-runtime.js'),
+      expect(await resolve('react', fromCheckout)).toBe(
+        path.join(extension, 'node_modules/react/index.js'),
       );
 
-      expect(await resolve('ai', fromCheckout)).toBe(path.join(store, 'ai/index.js'));
+      expect(await resolve('react/jsx-runtime', fromCheckout)).toBe(
+        path.join(extension, 'node_modules/react/jsx-runtime.js'),
+      );
+
+      expect(await resolve('ai', fromCheckout)).toBe(
+        path.join(extension, 'node_modules/ai/index.js'),
+      );
     } finally {
       await server.close();
     }
 
+    expect(linked.resolve?.dedupe).toEqual(['ai', 'react']);
+    expect(linked.server?.fs?.allow).toContain(checkout);
+
     expect(linked.cacheDir).toMatch(
-      /packages\/extension\/node_modules\/\.vite\/linked-[0-9a-f]{8}$/,
+      /packages\/extension\/node_modules\/\.vite\/frogbot-[0-9a-f]{8}$/,
     );
   });
 
   it('keeps WXT’s auto-imports out of the checkout', () => {
-    const exclude = unimportExclude(checkout);
+    const exclude = unimportExclude(sidekick);
 
     expect(
       exclude.some((pattern) => pattern.test(path.join(checkout, 'packages/ui/src/index.ts'))),
     ).toBe(true);
 
-    expect(
-      exclude.some((pattern) => pattern.test(path.join(sidekick, 'packages/extension/src/a.ts'))),
-    ).toBe(false);
+    expect(exclude.some((pattern) => pattern.test(path.join(extension, 'src/a.ts')))).toBe(false);
   });
 });
 
-describe('typecheck:local configs', () => {
+describe('types configs', () => {
   it('points linked packages and their workspace deps at the published declarations', () => {
     const ui = path.join(checkout, 'packages/ui');
 
@@ -261,63 +331,61 @@ describe('typecheck:local configs', () => {
     });
   });
 
-  it('points peers at the copy Sidekick has installed', () => {
-    const ui = linkedPackages(checkout, sidekick).find((pkg) => pkg.name === '@frogbotai/ui');
-    const store = path.join(sidekick, 'node_modules/.pnpm/@frogbotai+ui@0.32.0/node_modules');
+  it('points peers at the consumer’s own copy, preferring its @types package', () => {
+    const [ui] = linkedPackages(sidekick);
 
-    expect(ui && peerPaths(ui, path.join(sidekick, 'packages/extension'))).toEqual({
-      ai: [path.join(store, 'ai')],
-      'ai/*': [path.join(store, 'ai/*')],
-      react: [path.join(store, 'react')],
-      'react/*': [path.join(store, 'react/*')],
+    expect(ui && peerPaths(ui, extension)).toEqual({
+      ai: [path.join(extension, 'node_modules/ai')],
+      'ai/*': [path.join(extension, 'node_modules/ai/*')],
+      react: [path.join(extension, 'node_modules/@types/react')],
+      'react/*': [path.join(extension, 'node_modules/@types/react/*')],
     });
   });
 
-  it('keeps the inherited paths, made absolute', async () => {
-    const extension = path.join(sidekick, 'packages/extension');
+  it('writes the paths into packages that extend the config, keeping their other paths', async () => {
+    const generated = path.join(extension, TYPES_CONFIG);
 
-    await writeJson(path.join(extension, 'tsconfig.json'), { extends: './.wxt/tsconfig.json' });
+    await writeJson(path.join(extension, 'tsconfig.json'), {
+      extends: ['./.wxt/tsconfig.json', `./${TYPES_CONFIG}`],
+    });
 
     await writeJson(path.join(extension, '.wxt/tsconfig.json'), {
       compilerOptions: { paths: { '@/*': ['../src/*'] } },
     });
 
-    expect(inheritedPaths(path.join(extension, 'tsconfig.json'))).toEqual({
+    expect(inheritedPaths(path.join(extension, 'tsconfig.json'), generated)).toEqual({
       '@/*': [path.join(extension, 'src/*')],
     });
+
+    expect(writeTypesConfigs([extension], linkedPackages(sidekick))).toEqual([generated]);
+
+    const { compilerOptions } = JSON.parse(await readFile(generated, 'utf8'));
+
+    expect(compilerOptions.paths['@/*']).toEqual([path.join(extension, 'src/*')]);
+
+    expect(compilerOptions.paths['@frogbotai/ui']).toEqual([
+      path.join(checkout, 'packages/ui/dist/index.d.ts'),
+    ]);
+
+    expect(writeTypesConfigs([extension], [])).toEqual([generated]);
+    expect(JSON.parse(await readFile(generated, 'utf8'))).toEqual({});
+
+    expect(writeTypesConfigs([path.join(sidekick, 'packages/core')], [])).toEqual([]);
   });
 });
 
 describe('wxt.config.ts', () => {
-  const env = (mode: string): ConfigEnv => ({
-    mode,
+  const env: ConfigEnv = {
+    mode: 'production',
     command: 'build',
     browser: 'chrome',
     manifestVersion: 3,
-  });
+  };
 
-  it('adds no redirect without the linked mode, even with the variable set', async () => {
-    vi.stubEnv(CHECKOUT_ENV, checkout);
+  it('dedupes the linked packages’ peers and keeps its own aliases', async () => {
+    const vite = await config.vite?.(env);
 
-    try {
-      const vite = await config.vite?.(env('production'));
-
-      expect(vite?.plugins).toBeUndefined();
-      expect(vite?.cacheDir).toBeUndefined();
-    } finally {
-      vi.unstubAllEnvs();
-    }
-  });
-
-  it('fails in linked mode when the checkout is missing', async () => {
-    vi.stubEnv(CHECKOUT_ENV, path.join(base, 'missing'));
-
-    try {
-      await expect(async () => config.vite?.(env(LINKED_MODE))).rejects.toThrow(
-        `No FrogBot checkout at ${path.join(base, 'missing')}`,
-      );
-    } finally {
-      vi.unstubAllEnvs();
-    }
+    expect(vite?.resolve?.dedupe).toEqual(expect.arrayContaining(['ai', 'react', 'react-dom']));
+    expect(vite?.resolve?.alias).toHaveProperty('@ai-sdk/gateway');
   });
 });

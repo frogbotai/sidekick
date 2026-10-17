@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type { AssistantMessage, SessionMessage, UserMessage } from './schema';
-import { fromUIParts, toUIMessages } from './ui';
+import { fromUIParts, toolOutput, toUIMessages } from './ui';
 
 const user: UserMessage = {
   id: 'msg_u1',
@@ -88,6 +88,7 @@ describe('toUIMessages', () => {
     expect(first).toEqual({
       id: 'msg_u1',
       role: 'user',
+      metadata: { createdAt: 1 },
       parts: [
         { type: 'text', text: 'Compare these' },
         {
@@ -104,6 +105,7 @@ describe('toUIMessages', () => {
     expect(turn).toEqual({
       id: 'msg_a1',
       role: 'assistant',
+      metadata: { createdAt: 3 },
       parts: [
         { type: 'step-start' },
         {
@@ -151,6 +153,60 @@ describe('toUIMessages', () => {
 
     expect(second?.id).toBe('msg_u2');
     expect(next).toMatchObject({ id: 'msg_a3', parts: [{ type: 'step-start' }, { text: 'Sure' }] });
+  });
+
+  it('gives a screenshot result MCP’s image content beside its fields', () => {
+    const image = 'data:image/png;base64,iVBORw0K';
+
+    const [turn] = toUIMessages([
+      assistant('msg_a1', 3, [
+        {
+          ...tool('c1', {
+            status: 'completed',
+            input: {},
+            output: { url: 'https://a.test', width: 800, height: 600 },
+            content: [{ type: 'file', uri: image, mime: 'image/png' }],
+          }),
+          name: 'screenshot',
+        },
+      ]),
+    ]);
+
+    expect(turn?.parts[1]).toMatchObject({
+      type: 'dynamic-tool',
+      toolName: 'screenshot',
+      state: 'output-available',
+      output: {
+        url: 'https://a.test',
+        width: 800,
+        height: 600,
+        content: [{ type: 'image', data: 'iVBORw0K', mimeType: 'image/png' }],
+      },
+    });
+  });
+
+  it('keeps other content and outputs that aren’t plain objects under MCP’s shapes', () => {
+    const pdf = { type: 'file' as const, uri: 'https://a.test/a.pdf', mime: 'application/pdf' };
+
+    expect(toolOutput({ ok: true })).toEqual({ ok: true });
+
+    expect(toolOutput(['a'], [{ type: 'text', text: 'Note' }, pdf])).toEqual({
+      output: ['a'],
+      content: [
+        { type: 'text', text: 'Note' },
+        {
+          type: 'resource_link',
+          uri: 'https://a.test/a.pdf',
+          name: 'https://a.test/a.pdf',
+          mimeType: 'application/pdf',
+        },
+      ],
+    });
+
+    expect(toolOutput({ content: 'own' }, [{ type: 'text', text: 'x' }])).toEqual({
+      output: { content: 'own' },
+      content: [{ type: 'text', text: 'x' }],
+    });
   });
 
   it('reads a UI user message back into the same stored parts', () => {

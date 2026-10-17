@@ -7,7 +7,9 @@ test('loads with the Web Store ID', ({ extensionId }) => {
 test('opens the side panel styled like FrogBot', async ({ openPanel }) => {
   const panel = await openPanel();
 
-  await expect(panel.getByRole('heading', { name: 'Sidekick' })).toBeVisible();
+  await expect(panel.getByRole('button', { name: 'Connect a provider' })).toBeVisible();
+  await expect(panel.getByRole('heading')).toHaveCount(0);
+  await expect(panel.getByRole('tab')).toHaveCount(0);
   await expect(panel.locator('html')).toHaveAttribute('data-fb-theme', 'system');
 
   const base = await panel.evaluate(() =>

@@ -47,7 +47,7 @@ export interface Options {
   blocker: boolean;
 }
 
-/** The live runner's build beside an e2e build: `chrome-mv3-e2e-linked` → `chrome-mv3-live-linked`. */
+/** The live runner's build beside an e2e build: `chrome-mv3-e2e` → `chrome-mv3-live`. */
 export function liveBuild(extensionBuild: string) {
   return extensionBuild.replace(/-e2e(?=-|$)/, '-live');
 }
@@ -190,6 +190,105 @@ export const test = base.extend<Fixtures & Options>({
     await use({ send, tabId, start, runs });
   },
 });
+
+const OPENAI = 'https://api.openai.com/v1';
+
+const event = (body: Record<string, unknown>) => `data: ${JSON.stringify(body)}\n\n`;
+
+const created = event({
+  type: 'response.created',
+  response: { id: 'r1', created_at: 1, model: 'gpt-6-luna' },
+});
+
+const completed = [event({ type: 'response.completed', response: {} }), 'data: [DONE]\n\n'];
+
+/** An OpenAI Responses stream that calls one tool. */
+export function callTool(name: string, input: Record<string, unknown>, callID = 'call_1') {
+  const item = { type: 'function_call', id: `fc-${callID}`, call_id: callID, name };
+
+  return [
+    created,
+    event({
+      type: 'response.output_item.added',
+      output_index: 0,
+      item: { ...item, arguments: '' },
+    }),
+    event({
+      type: 'response.output_item.done',
+      output_index: 0,
+      item: { ...item, arguments: JSON.stringify(input), status: 'completed' },
+    }),
+    ...completed,
+  ].join('');
+}
+
+/** An OpenAI Responses stream that answers `text`. */
+export function reply(text: string) {
+  return [
+    created,
+    event({
+      type: 'response.output_item.added',
+      output_index: 0,
+      item: { type: 'message', id: 'm1' },
+    }),
+    event({ type: 'response.output_text.delta', item_id: 'm1', output_index: 0, delta: text }),
+    ...completed,
+  ].join('');
+}
+
+function titleReply(text: string) {
+  return {
+    id: 'r-title',
+    created_at: 1,
+    model: 'gpt-6-luna',
+    output: [
+      {
+        type: 'message',
+        id: 'm-title',
+        role: 'assistant',
+        status: 'completed',
+        content: [{ type: 'output_text', text, annotations: [] }],
+      },
+    ],
+    usage: { input_tokens: 1, output_tokens: 1 },
+  };
+}
+
+/** One scripted model response: a stream body, or one that waits first. */
+export type Scripted = string | (() => Promise<string>);
+
+/** Answers OpenAI's Responses API from `script`, in order; titles always come back "Open tabs". */
+export async function scriptOpenAI(context: BrowserContext, script: Scripted[]) {
+  const bodies: string[] = [];
+  const titles: string[] = [];
+
+  await context.route('https://models.dev/api.json', (route) => route.fulfill({ status: 503 }));
+
+  await context.route(`${OPENAI}/**`, async (route) => {
+    const request = route.request();
+
+    if (!request.url().endsWith('/responses')) return route.fulfill({ json: { data: [] } });
+
+    const body = request.postData() ?? '';
+
+    if (body.includes('You are a title generator')) {
+      titles.push(body);
+
+      return route.fulfill({ json: titleReply('Open tabs') });
+    }
+
+    bodies.push(body);
+
+    const next = script.shift() ?? reply('(script ended)');
+
+    return route.fulfill({
+      contentType: 'text/event-stream',
+      body: typeof next === 'string' ? next : await next(),
+    });
+  });
+
+  return { bodies, titles };
+}
 
 /** The ref on the snapshot line that has `label` in quotes. */
 export function refFor(snapshot: string, label: string) {

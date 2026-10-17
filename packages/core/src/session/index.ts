@@ -1,21 +1,11 @@
-export type {
-  Clock,
-  CreateInput,
-  PromptInput,
-  Queued,
-  SessionEngine,
-  SessionEngineOptions,
-  SessionLocks,
-} from './engine';
-export {
-  createSessionEngine,
-  MAX_STEPS_PROMPT,
-  realClock,
-  STEP_INTERRUPTED,
-  webLocks,
-} from './engine';
+export type { Clock, CreateInput, SessionEngine, SessionEngineOptions } from './engine';
+export { createSessionEngine, MAX_STEPS_PROMPT, realClock, STEP_INTERRUPTED } from './engine';
+export type { Admitted, PromptInput, Queued, SessionLocks } from './queue';
+export { lockName, webLocks } from './queue';
 export type { Change, Projection, Reducer, ReducerTarget } from './reducer';
 export { apply, reduce, replay, targetOf } from './reducer';
+export type { SessionRelay } from './relay';
+export { broadcastRelay, RELAY_CHANNEL } from './relay';
 export type { ReasoningPolicy, RequestInput } from './request';
 export {
   buildRequest,
@@ -48,6 +38,9 @@ export type {
   PasteData,
   SessionDataParts,
   SessionUIMessage,
+  SessionUIMetadata,
   SessionUIPart,
+  ToolUIContent,
+  ToolUIOutput,
 } from './ui';
-export { fromUIParts, toUIMessages } from './ui';
+export { fromUIParts, toolOutput, toUIMessages, userUIParts } from './ui';

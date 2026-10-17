@@ -38,15 +38,17 @@ const [initialMode] = await Promise.all([theme.get(), provider.registerCustomPro
 
 void startCatalog();
 
-void chrome.windows
+const sessions = chrome.windows
   .getCurrent()
   .then(({ id }) => startSessions(worker, id))
-  .then((sessions) => {
-    if (import.meta.env.SIDEKICK_E2E) Object.assign(sidekick, sessions);
+  .then((started) => {
+    if (import.meta.env.SIDEKICK_E2E) Object.assign(sidekick, started);
+
+    return started;
   });
 
 createRoot(root).render(
   <StrictMode>
-    <App initialMode={initialMode} worker={worker} />
+    <App initialMode={initialMode} worker={worker} sessions={sessions} />
   </StrictMode>,
 );

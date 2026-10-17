@@ -1,14 +1,24 @@
 import { createHash } from 'node:crypto';
-import { existsSync, readdirSync, readFileSync, realpathSync } from 'node:fs';
+import {
+  existsSync,
+  lstatSync,
+  readdirSync,
+  readFileSync,
+  readlinkSync,
+  realpathSync,
+  symlinkSync,
+  unlinkSync,
+} from 'node:fs';
 import path from 'node:path';
 
+import { searchForWorkspaceRoot } from 'vite';
 import type { WxtViteConfig } from 'wxt';
 
-/** The WXT mode the `:local` commands pass. Only this mode turns the redirect on. */
-export const LINKED_MODE = 'linked';
-
-/** Carries the FrogBot checkout from the `:local` commands to `wxt.config.ts`. */
+/** Overrides the FrogBot checkout Sidekick builds against: a path, or a ticket key (`290`). */
 export const CHECKOUT_ENV = 'SIDEKICK_FROGBOT';
+
+/** The symlink at Sidekick's root that points at the FrogBot checkout; `link:` dependencies go through it. */
+export const LINK = '.frogbot';
 
 /** The Sidekick checkout this file belongs to. */
 export const SIDEKICK_ROOT = path.resolve(import.meta.dirname, '../../..');
@@ -17,7 +27,7 @@ const TICKET_KEY = /^\d+[a-z]?$/;
 
 const SCOPE = '@frogbotai/';
 
-type VitePlugin = Extract<NonNullable<WxtViteConfig['plugins']>[number], { name: string }>;
+const LINK_SPEC = 'link:';
 
 interface Manifest {
   name?: string;
@@ -26,13 +36,11 @@ interface Manifest {
   peerDependencies?: Record<string, string>;
 }
 
-/** A FrogBot package Sidekick depends on, served from the checkout in linked mode. */
+/** A FrogBot package Sidekick takes by `link:` from the checkout. */
 export interface LinkedPackage {
   name: string;
   /** The package's folder in the FrogBot checkout. */
   dir: string;
-  /** The `package.json` of the published copy Sidekick has installed. Peers resolve from it. */
-  installed: string;
   peers: string[];
   /** The Sidekick package folders that depend on it. */
   consumers: string[];
@@ -42,7 +50,8 @@ function readManifest(dir: string): Manifest {
   return JSON.parse(readFileSync(path.join(dir, 'package.json'), 'utf8'));
 }
 
-function packageDirs(root: string) {
+/** The folders under `packages/` that hold a `package.json`. */
+export function packageDirs(root: string) {
   const packages = path.join(root, 'packages');
 
   if (!existsSync(packages)) return [];
@@ -54,10 +63,10 @@ function packageDirs(root: string) {
     .map((entry) => path.join(packages, entry.name));
 }
 
-function packageName(id: string) {
-  const parts = id.split('/');
-
-  return id.startsWith('@') ? parts.slice(0, 2).join('/') : (parts[0] ?? id);
+function missingCheckout(checkout: string) {
+  return new Error(
+    `No FrogBot checkout at ${checkout}. Sidekick builds against a local FrogBot checkout: clone FrogBot there, or set ${CHECKOUT_ENV} to its path (or a ticket key, like 290).`,
+  );
 }
 
 /**
@@ -77,96 +86,145 @@ export function resolveCheckout(
   if (arg && TICKET_KEY.test(arg)) checkout = path.join(parent, `frogbot-ticket${arg}`);
   else if (arg) checkout = path.resolve(cwd, arg);
 
-  if (!existsSync(path.join(checkout, 'package.json'))) {
-    throw new Error(`No FrogBot checkout at ${checkout}`);
-  }
+  if (!existsSync(path.join(checkout, 'package.json'))) throw missingCheckout(checkout);
 
   return checkout;
 }
 
+function linkSpecs(sidekickRoot: string) {
+  return packageDirs(sidekickRoot).flatMap((consumer) => {
+    const manifest = readManifest(consumer);
+    const specs = { ...manifest.dependencies, ...manifest.devDependencies };
+
+    return Object.entries(specs)
+      .filter(([name, spec]) => name.startsWith(SCOPE) && spec.startsWith(LINK_SPEC))
+      .map(([name, spec]) => ({ consumer, name, target: spec.slice(LINK_SPEC.length) }));
+  });
+}
+
+/** Whether Sidekick takes any `@frogbotai/*` package from the FrogBot checkout, not npm. */
+export function isLinked(sidekickRoot: string) {
+  return linkSpecs(sidekickRoot).length > 0;
+}
+
 /**
- * Lists the `@frogbotai/*` packages Sidekick depends on that exist in the
- * checkout. Throws when the checkout or Sidekick is missing an installed dependency.
+ * Points `<sidekickRoot>/.frogbot` at the checkout `value` names (see
+ * `resolveCheckout`) and returns it. Returns `null` when every `@frogbotai/*`
+ * dependency comes from npm.
  */
-export function linkedPackages(checkout: string, sidekickRoot: string): LinkedPackage[] {
-  const local = new Map(packageDirs(checkout).map((dir) => [readManifest(dir).name, dir]));
+export function linkCheckout(
+  sidekickRoot: string,
+  value = process.env[CHECKOUT_ENV],
+  cwd = process.env.INIT_CWD,
+) {
+  if (!isLinked(sidekickRoot)) return null;
+
+  const checkout = resolveCheckout(value, sidekickRoot, cwd);
+  const link = path.join(sidekickRoot, LINK);
+  const target = path.relative(sidekickRoot, checkout);
+  const stat = lstatSync(link, { throwIfNoEntry: false });
+
+  if (stat && !stat.isSymbolicLink()) throw new Error(`${link} is not a symlink; remove it`);
+
+  if (stat && path.resolve(sidekickRoot, readlinkSync(link)) === checkout) return checkout;
+
+  if (stat) unlinkSync(link);
+
+  symlinkSync(target, link, 'dir');
+
+  return checkout;
+}
+
+/** The checkout `.frogbot` points at, failing with what to do when it points nowhere. */
+export function linkedCheckout(sidekickRoot: string) {
+  const link = path.join(sidekickRoot, LINK);
+  const stat = lstatSync(link, { throwIfNoEntry: false });
+
+  if (!stat) {
+    throw new Error(`${link} is missing; run \`pnpm install\` to link the FrogBot checkout`);
+  }
+
+  const checkout = path.resolve(sidekickRoot, readlinkSync(link));
+
+  if (!existsSync(path.join(checkout, 'package.json'))) throw missingCheckout(checkout);
+
+  return realpathSync(checkout);
+}
+
+/**
+ * Lists the `@frogbotai/*` packages Sidekick takes by `link:`. Throws when the
+ * link points nowhere or the checkout is missing an installed dependency.
+ */
+export function linkedPackages(sidekickRoot: string): LinkedPackage[] {
+  const specs = linkSpecs(sidekickRoot);
   const linked = new Map<string, LinkedPackage>();
 
-  for (const consumer of packageDirs(sidekickRoot)) {
-    const manifest = readManifest(consumer);
-    const names = Object.keys({ ...manifest.dependencies, ...manifest.devDependencies });
+  if (specs.length === 0) return [];
 
-    for (const name of names) {
-      const dir = local.get(name);
+  const checkout = linkedCheckout(sidekickRoot);
 
-      if (!name.startsWith(SCOPE) || !dir) continue;
+  for (const { consumer, name, target } of specs) {
+    const existing = linked.get(name);
 
-      const existing = linked.get(name);
-
-      if (existing) {
-        existing.consumers.push(consumer);
-        continue;
-      }
-
-      const installed = path.join(consumer, 'node_modules', name, 'package.json');
-
-      if (!existsSync(installed)) {
-        throw new Error(`${sidekickRoot}: ${name} is not installed; run \`pnpm install\` there`);
-      }
-
-      const own = readManifest(dir);
-      const missing = Object.keys(own.dependencies ?? {}).find(
-        (dep) => !existsSync(path.join(dir, 'node_modules', dep)),
-      );
-
-      if (missing) {
-        throw new Error(
-          `${checkout}: dependencies are not installed (${name} needs ${missing}); run \`pnpm install\` there`,
-        );
-      }
-
-      linked.set(name, {
-        name,
-        dir,
-        installed: realpathSync(installed),
-        peers: Object.keys(own.peerDependencies ?? {}),
-        consumers: [consumer],
-      });
+    if (existing) {
+      existing.consumers.push(consumer);
+      continue;
     }
+
+    const linkedDir = path.resolve(consumer, target);
+
+    if (!existsSync(path.join(linkedDir, 'package.json'))) {
+      throw new Error(`${checkout} has no ${name} (Sidekick links ${target})`);
+    }
+
+    const dir = realpathSync(linkedDir);
+    const own = readManifest(dir);
+    const missing = Object.keys(own.dependencies ?? {}).find(
+      (dep) => !existsSync(path.join(dir, 'node_modules', dep)),
+    );
+
+    if (missing) {
+      throw new Error(
+        `${checkout}: dependencies are not installed (${name} needs ${missing}); run \`pnpm install\` there`,
+      );
+    }
+
+    linked.set(name, {
+      name,
+      dir,
+      peers: Object.keys(own.peerDependencies ?? {}),
+      consumers: [consumer],
+    });
   }
 
   return [...linked.values()];
 }
 
-/**
- * Picks the importer a linked-mode import resolves from: the checkout package
- * for a linked id, and Sidekick's installed copy for a peer imported from the
- * checkout. Returns `undefined` when the import resolves as usual.
- */
-export function linkedImporter(
-  source: string,
-  importer: string | undefined,
-  packages: LinkedPackage[],
-  checkout: string,
-) {
-  const name = packageName(source);
-  const linked = packages.find((pkg) => pkg.name === name);
+/** The peers of the linked packages that Sidekick has installed, so one copy of each runs. */
+export function sharedPeers(packages: LinkedPackage[]) {
+  const peers = packages.flatMap((pkg) =>
+    pkg.peers.filter((peer) =>
+      pkg.consumers.some((consumer) =>
+        existsSync(path.join(consumer, 'node_modules', peer, 'package.json')),
+      ),
+    ),
+  );
 
-  if (linked) return path.join(linked.dir, 'package.json');
-
-  if (!importer?.startsWith(checkout + path.sep)) return undefined;
-
-  return packages.find((pkg) => pkg.peers.includes(name))?.installed;
+  return [...new Set(peers)].sort();
 }
 
 /**
- * The files WXT's auto-import transform skips in linked mode: its defaults plus
- * the checkout, whose source it would otherwise rewrite as if it were Sidekick's.
+ * The files WXT's auto-import transform skips: its defaults plus the checkout,
+ * whose source it would otherwise rewrite as if it were Sidekick's.
  */
-export function unimportExclude(checkout: string) {
-  const real = realpathSync(checkout).replaceAll(/[.*+?^${}()|[\]\\]/g, '\\$&');
+export function unimportExclude(sidekickRoot: string) {
+  const defaults = [/[\\/]node_modules[\\/]/, /[\\/]\.git[\\/]/];
 
-  return [/[\\/]node_modules[\\/]/, /[\\/]\.git[\\/]/, new RegExp(`^${real}[\\\\/]`)];
+  if (!isLinked(sidekickRoot)) return defaults;
+
+  const real = linkedCheckout(sidekickRoot).replaceAll(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+  return [...defaults, new RegExp(`^${real}[\\\\/]`)];
 }
 
 function cacheDir(checkout: string, sidekickRoot: string) {
@@ -178,52 +236,24 @@ function cacheDir(checkout: string, sidekickRoot: string) {
   return path.join(
     sidekickRoot,
     'packages/extension/node_modules/.vite',
-    `linked-${hash.digest('hex').slice(0, 8)}`,
+    `frogbot-${hash.digest('hex').slice(0, 8)}`,
   );
 }
 
-/** The Vite config that serves Sidekick's `@frogbotai/*` imports from the checkout. */
-export function linkedVite(checkout: string, sidekickRoot: string): WxtViteConfig {
-  const packages = linkedPackages(checkout, sidekickRoot);
-  const real = realpathSync(checkout);
+/**
+ * The Vite config for linked packages: their source is served from the
+ * checkout, while each shared peer (`react`, `ai`, …) resolves to Sidekick's copy.
+ */
+export function linkedVite(sidekickRoot: string, root: string): WxtViteConfig {
+  const packages = linkedPackages(sidekickRoot);
 
-  const target = (source: string, importer: string | undefined) =>
-    linkedImporter(source, importer, packages, real);
+  if (packages.length === 0) return {};
 
-  const plugin: VitePlugin = {
-    name: 'sidekick:linked',
-    enforce: 'pre',
-    async resolveId(source, importer, options) {
-      const from = target(source, importer);
-
-      if (!from) return null;
-
-      const resolved = await this.resolve(source, from, { ...options, skipSelf: true });
-
-      if (!resolved && packages.some((pkg) => pkg.name === packageName(source))) {
-        throw new Error(`${source} is not exported by ${path.dirname(from)}`);
-      }
-
-      return resolved;
-    },
-  };
+  const checkout = linkedCheckout(sidekickRoot);
 
   return {
-    cacheDir: cacheDir(real, sidekickRoot),
-    plugins: [plugin],
-    optimizeDeps: {
-      rolldownOptions: {
-        plugins: [
-          {
-            name: 'sidekick:linked-peers',
-            async resolveId(source, importer, options) {
-              const from = target(source, importer);
-
-              return from ? this.resolve(source, from, { ...options, skipSelf: true }) : null;
-            },
-          },
-        ],
-      },
-    },
+    cacheDir: cacheDir(checkout, sidekickRoot),
+    resolve: { dedupe: sharedPeers(packages) },
+    server: { fs: { allow: [searchForWorkspaceRoot(root), checkout] } },
   };
 }

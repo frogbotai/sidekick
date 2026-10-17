@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { openDatabase } from '../storage/database';
 import { reduce, replay } from './reducer';
+import { broadcastRelay } from './relay';
 import type { DurableEventBody, LogEvent, SessionInfo } from './schema';
 import { createSessionStore, type SessionStore } from './store';
 
@@ -189,6 +190,105 @@ describe('createSessionStore', () => {
       'session.text.delta',
       'session.renamed',
     ]);
+  });
+
+  it('follows from the head, seeing only events after the subscription', async () => {
+    const store = await open();
+
+    await record(store);
+
+    const head = await store.head('s1');
+    const controller = new AbortController();
+    const seen: string[] = [];
+    const log = store.log({
+      sessionID: 's1',
+      after: head,
+      follow: true,
+      signal: controller.signal,
+    });
+
+    const reading = (async () => {
+      for await (const event of log) {
+        seen.push(event.type);
+
+        if (event.type === 'session.renamed') controller.abort();
+      }
+    })();
+
+    expect(head).toBe(TURN.length + 1);
+    expect(await store.head('none')).toBe(0);
+
+    await store.publish('s1', { type: 'session.renamed', title: 'Flights' });
+    await reading;
+
+    expect(seen).toEqual(['session.renamed']);
+  });
+
+  it('relays one window’s live events to another’s followers, in order and never echoed', async () => {
+    const database = await openDatabase();
+    const channel = `sidekick.session.test.${crypto.randomUUID()}`;
+    const relays = [broadcastRelay(channel), broadcastRelay(channel)];
+    const [a, b] = relays.map((relay) => createSessionStore(database, { relay }));
+
+    opened.push(database);
+
+    if (!a || !b) throw new Error('No stores');
+
+    await a.publish('s1', { type: 'session.created', info: info('s1') });
+
+    const heard: string[] = [];
+    const own: string[] = [];
+    const listed: string[] = [];
+
+    a.watch((event) => own.push(event.type));
+    b.watch((event) => listed.push(`${event.sessionID}:${event.type}`));
+
+    const controller = new AbortController();
+
+    const log = b.log({
+      sessionID: 's1',
+      after: await b.head('s1'),
+      follow: true,
+      signal: controller.signal,
+    });
+
+    const reading = (async () => {
+      for await (const event of log) {
+        heard.push(event.type);
+
+        if (event.type === 'session.step.ended') controller.abort();
+      }
+    })();
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    await a.publish('s1', {
+      type: 'session.step.started',
+      messageID: 'msg_a1',
+      agent: 'build',
+      model: 'openai/gpt-5',
+    });
+
+    await a.publish('s1', { type: 'session.text.started', messageID: 'msg_a1', partID: 't1' });
+    a.emit('s1', { type: 'session.text.delta', messageID: 'msg_a1', partID: 't1', delta: 'He' });
+    a.emit('s1', { type: 'session.text.delta', messageID: 'msg_a1', partID: 't1', delta: 'y' });
+    await a.publish('s1', { type: 'session.step.ended', messageID: 'msg_a1', finish: 'stop' });
+    await a.publish('s2', { type: 'session.created', info: info('s2') });
+    await reading;
+
+    await expect.poll(() => listed.at(-1)).toBe('s2:session.created');
+
+    for (const relay of relays) relay.close();
+
+    expect(heard).toEqual([
+      'session.step.started',
+      'session.text.started',
+      'session.text.delta',
+      'session.text.delta',
+      'session.step.ended',
+    ]);
+
+    expect(own).toEqual([...heard, 'session.created']);
   });
 
   it('lists root sessions newest first, renames, and deletes events and projection', async () => {

@@ -96,7 +96,7 @@ test('a rejected key shows bad-key and is not stored', async ({ context, openPan
 
   const panel = await openPanel();
 
-  await panel.getByRole('tab', { name: 'Providers' }).click();
+  await panel.getByRole('button', { name: 'Providers', exact: true }).click();
 
   const openai = panel.getByRole('region', { name: 'OpenAI', exact: true });
 
@@ -108,7 +108,7 @@ test('a rejected key shows bad-key and is not stored', async ({ context, openPan
   expect(await panel.evaluate(() => chrome.storage.local.get('credentials'))).toEqual({});
 });
 
-test('a good key connects OpenAI, the picker groups catalog and custom models, Try it streams', async ({
+test('a good key connects OpenAI, the picker groups catalog and custom models, and the chat replies', async ({
   context,
   openPanel,
 }) => {
@@ -118,7 +118,7 @@ test('a good key connects OpenAI, the picker groups catalog and custom models, T
 
   const panel = await openPanel();
 
-  await panel.getByRole('tab', { name: 'Providers' }).click();
+  await panel.getByRole('button', { name: 'Providers', exact: true }).click();
 
   const openai = panel.getByRole('region', { name: 'OpenAI', exact: true });
 
@@ -145,7 +145,7 @@ test('a good key connects OpenAI, the picker groups catalog and custom models, T
   expect(await logo('OpenAI').innerHTML()).not.toBe(await logo('Fixture').innerHTML());
   served.push('echo-2');
 
-  await panel.getByRole('tab', { name: 'Try it' }).click();
+  await panel.getByRole('button', { name: 'Back' }).click();
 
   const trigger = panel.getByRole('button', { name: 'Fixture New' });
 
@@ -159,9 +159,11 @@ test('a good key connects OpenAI, the picker groups catalog and custom models, T
   await expect(panel.getByRole('group', { name: 'Fixture', exact: true })).toContainText('echo-2');
   await panel.keyboard.press('Escape');
 
-  await panel.getByRole('button', { name: 'Try it' }).click();
-  await expect(panel.getByRole('status', { name: 'Reply' })).toHaveText('Hello from the fixture');
+  await panel.getByRole('textbox').fill('Say hello');
+  await panel.getByRole('textbox').press('Enter');
+  await expect(panel.getByText('Hello from the fixture')).toBeVisible();
 
+  await panel.getByRole('button', { name: 'New chat' }).click();
   await panel.evaluate(() => chrome.storage.local.set({ model: 'openai/retired' }));
   await expect(panel.getByText('Model unavailable: openai/retired.')).toBeVisible();
   await expect(panel.getByRole('button', { name: 'Fixture New' })).toBeVisible();
@@ -175,7 +177,7 @@ test('an Ollama that refuses the extension shows the OLLAMA_ORIGINS fix', async 
 
   const panel = await openPanel();
 
-  await panel.getByRole('tab', { name: 'Providers' }).click();
+  await panel.getByRole('button', { name: 'Providers', exact: true }).click();
 
   const ollama = panel.getByRole('region', { name: 'Ollama' });
 
@@ -227,7 +229,7 @@ async function fakeFrogbot(context: BrowserContext) {
   });
 }
 
-test('a pasted FrogBot key connects, shows the balance and models, and web search asks once', async ({
+test('a pasted FrogBot key connects, shows the balance, the models and FrogBot’s logo, and web search asks once in the dock', async ({
   context,
   openPanel,
 }) => {
@@ -236,7 +238,7 @@ test('a pasted FrogBot key connects, shows the balance and models, and web searc
 
   const panel = await openPanel();
 
-  await panel.getByRole('tab', { name: 'Providers' }).click();
+  await panel.getByRole('button', { name: 'Providers', exact: true }).click();
 
   const frogbot = panel.getByRole('region', { name: 'FrogBot', exact: true });
 
@@ -250,7 +252,7 @@ test('a pasted FrogBot key connects, shows the balance and models, and web searc
   await expect(frogbot.getByText('Connected')).toBeVisible();
   await expect(frogbot.getByLabel('FrogBot balance')).toHaveText('Balance: $4.50');
 
-  await panel.getByRole('tab', { name: 'Try it' }).click();
+  await panel.getByRole('button', { name: 'Back' }).click();
   await panel.getByRole('button', { name: 'Claude Sonnet 5' }).click();
 
   await expect(
@@ -280,6 +282,17 @@ test('a pasted FrogBot key connects, shows the balance and models, and web searc
   });
 
   const prompt = panel.getByRole('region', { name: 'Web Search' });
+  const composer = panel.getByRole('textbox');
+
+  await expect(prompt).toBeVisible();
+
+  await expect(
+    panel.locator('.fb-chat__dock').getByRole('region', { name: 'Web Search' }),
+  ).toBeVisible();
+
+  await expect(composer).toBeHidden();
+
+  const dockTop = (await prompt.boundingBox())?.y ?? Infinity;
 
   await prompt.getByLabel('Allow search via FrogBot').click();
   await prompt.getByRole('button', { name: 'Continue' }).click();
@@ -290,12 +303,29 @@ test('a pasted FrogBot key connects, shows the balance and models, and web searc
   });
 
   await expect(prompt).toHaveCount(0);
+  await expect(composer).toBeVisible();
+  expect((await composer.boundingBox())?.y).toBeGreaterThan(dockTop);
 
   expect(await panel.evaluate(() => chrome.storage.local.get('websearch:provider'))).toEqual({
     'websearch:provider': 'random',
   });
 
-  await panel.getByRole('tab', { name: 'Providers' }).click();
+  await panel.getByRole('button', { name: 'Providers', exact: true }).click();
+
+  const custom = panel.getByRole('region', { name: 'OpenAI-compatible' });
+
+  await custom.getByLabel('Name').fill('Fixture');
+  await custom.getByLabel('Base URL').fill(COMPATIBLE);
+  await custom.getByRole('button', { name: 'Add provider' }).click();
+  await expect(panel.getByRole('region', { name: 'Fixture' })).toContainText('Connected');
+
+  const logo = (region: string) =>
+    panel.getByRole('region', { name: region, exact: true }).getByRole('heading').locator('svg');
+
+  await expect(logo('FrogBot')).toBeVisible();
+  await expect(logo('Fixture')).toBeVisible();
+  expect(await logo('FrogBot').innerHTML()).not.toBe(await logo('Fixture').innerHTML());
+
   await frogbot.getByRole('button', { name: 'Disconnect' }).click();
 
   await expect(frogbot.getByRole('link', { name: 'revoke it on FrogBot' })).toHaveAttribute(

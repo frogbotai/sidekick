@@ -16,16 +16,31 @@ interface PublishManifest {
 }
 
 interface TsconfigJson {
-  extends?: string;
+  extends?: string | string[];
   compilerOptions?: { baseUrl?: string; paths?: Paths };
 }
+
+/** Where a Sidekick package's `tsconfig.json` `extends` the generated paths, relative to the package. */
+export const TYPES_CONFIG = 'node_modules/.cache/frogbot/tsconfig.json';
 
 function readTsconfig(file: string): TsconfigJson {
   return ts.readConfigFile(file, ts.sys.readFile).config ?? {};
 }
 
-/** The `paths` a tsconfig inherits, made absolute so another config can merge them. */
-export function inheritedPaths(file: string): Paths {
+function extendsOf(file: string, config: TsconfigJson) {
+  const dir = path.dirname(file);
+  const parents = typeof config.extends === 'string' ? [config.extends] : (config.extends ?? []);
+
+  return parents
+    .map((parent) => path.resolve(dir, parent))
+    .map((parent) => (parent.endsWith('.json') ? parent : `${parent}.json`));
+}
+
+/**
+ * The `paths` a tsconfig inherits, made absolute so another config can merge
+ * them. `skip` is left out of its `extends`.
+ */
+export function inheritedPaths(file: string, skip?: string): Paths {
   const config = readTsconfig(file);
   const dir = path.dirname(file);
   const paths = config.compilerOptions?.paths;
@@ -41,11 +56,9 @@ export function inheritedPaths(file: string): Paths {
     );
   }
 
-  if (!config.extends) return {};
+  const parents = extendsOf(file, config).filter((parent) => parent !== skip);
 
-  const parent = path.resolve(dir, config.extends);
-
-  return inheritedPaths(parent.endsWith('.json') ? parent : `${parent}.json`);
+  return Object.assign({}, ...parents.map((parent) => inheritedPaths(parent)));
 }
 
 /**
@@ -84,19 +97,14 @@ function typesName(peer: string) {
   return peer.startsWith('@') ? `@types/${peer.slice(1).replace('/', '__')}` : `@types/${peer}`;
 }
 
-/** Points each peer of a linked package at the copy Sidekick has installed. */
+/** Points each peer of a linked package at the copy the consumer has installed. */
 export function peerPaths(pkg: LinkedPackage, consumer: string): Paths {
-  const installedDir = path.dirname(pkg.installed);
-  const store = installedDir.slice(0, -pkg.name.length - 1);
   const paths: Paths = {};
 
   for (const peer of pkg.peers) {
-    const dir = [
-      path.join(consumer, 'node_modules', typesName(peer)),
-      path.join(consumer, 'node_modules', peer),
-      path.join(store, typesName(peer)),
-      path.join(store, peer),
-    ].find((candidate) => existsSync(path.join(candidate, 'package.json')));
+    const dir = [typesName(peer), peer]
+      .map((name) => path.join(consumer, 'node_modules', name))
+      .find((candidate) => existsSync(path.join(candidate, 'package.json')));
 
     if (!dir) continue;
 
@@ -108,38 +116,35 @@ export function peerPaths(pkg: LinkedPackage, consumer: string): Paths {
 }
 
 /**
- * Writes a non-composite tsconfig into each Sidekick package that depends on
- * a linked package, under its `node_modules/.cache` so `types` still resolve
- * from the package. Linked packages resolve to the checkout's built
- * declarations. Returns the written files.
+ * Writes `TYPES_CONFIG` into each Sidekick package whose `tsconfig.json`
+ * extends it: the `paths` that point its linked packages at the checkout's
+ * built declarations (the ones npm users get) and their peers at the package's
+ * own copies. With nothing linked it adds no paths. Returns the written files.
  */
-export function writeLinkedTsconfigs(packages: LinkedPackage[]) {
-  const consumers = [...new Set(packages.flatMap((pkg) => pkg.consumers))];
-
-  return consumers.map((consumer) => {
+export function writeTypesConfigs(packageDirs: string[], packages: LinkedPackage[]) {
+  return packageDirs.flatMap((consumer) => {
     const tsconfig = path.join(consumer, 'tsconfig.json');
+    const file = path.join(consumer, TYPES_CONFIG);
+
+    if (!existsSync(tsconfig) || !extendsOf(tsconfig, readTsconfig(tsconfig)).includes(file)) {
+      return [];
+    }
+
     const linked = packages.filter((pkg) => pkg.consumers.includes(consumer));
-    const paths: Paths = { ...inheritedPaths(tsconfig) };
+    const paths: Paths = {};
 
     for (const pkg of linked) {
       Object.assign(paths, peerPaths(pkg, consumer), declarationPaths(pkg.dir));
     }
 
-    const file = path.join(consumer, 'node_modules/.cache/typecheck-linked/tsconfig.json');
-    const config = {
-      extends: tsconfig,
-      compilerOptions: {
-        composite: false,
-        incremental: false,
-        tsBuildInfoFile: null,
-        noEmit: true,
-        paths,
-      },
-    };
+    const config =
+      linked.length > 0
+        ? { compilerOptions: { paths: { ...inheritedPaths(tsconfig, file), ...paths } } }
+        : {};
 
     mkdirSync(path.dirname(file), { recursive: true });
     writeFileSync(file, `${JSON.stringify(config, null, 2)}\n`);
 
-    return file;
+    return [file];
   });
 }

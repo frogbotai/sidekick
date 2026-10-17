@@ -6,35 +6,41 @@ Built by [FrogBot](https://github.com/frogbotai/frogbot). Early development; not
 
 ## Development
 
-```sh
-pnpm install
-pnpm check
-pnpm dev          # wxt dev against the published @frogbotai/* packages
-```
-
-### Working against local FrogBot
-
-Sidekick pins published `@frogbotai/*` packages. To try a FrogBot change before it's released, point Sidekick at a FrogBot checkout:
+Sidekick builds against a local FrogBot checkout, never an npm release. By default that's `../frogbot` (`~/code/frogbot/frogbot` beside `~/code/frogbot/sidekick` or `sidekick-ticket<n>`). Clone FrogBot there and run `pnpm install` in it first.
 
 ```sh
-pnpm dev:local                  # ../frogbot
-pnpm dev:local 272              # ../frogbot-ticket272
-pnpm test:e2e:local 272 -- --grep panel
-pnpm typecheck:local 272
+pnpm install      # links ../frogbot, builds the FrogBot packages Sidekick uses
+pnpm check        # format, eslint, oxlint, typecheck
+pnpm dev          # wxt dev
+pnpm test:unit
+pnpm test:e2e
 ```
 
-- `dev:local` and `test:e2e:local` serve every `@frogbotai/*` package Sidekick uses from the checkout's TypeScript source, so an edit there updates the open side panel with no build or release. Peers (`react`, `ai`, …) stay on Sidekick's copies.
-- `typecheck:local` builds those packages in the checkout and checks Sidekick against their `dist/*.d.ts`, the same declarations npm users will get. The editor and `pnpm check` keep the published types.
-- Run `pnpm install` in the checkout first; the commands stop and say so when its dependencies are missing.
-- Nothing tracked changes: no lockfile or `package.json` edits. Linked builds go to their own `.output/*-linked` folders.
-- Only these commands turn local mode on. `build`, `test:e2e`, `check`, `pnpm ticket verify` and `land` stay on the published packages even with `SIDEKICK_FROGBOT` exported.
+To use another checkout, set `SIDEKICK_FROGBOT` to its path, or to a ticket key for a FrogBot worktree (`290` means `../frogbot-ticket290`):
 
-A change that spans both repos lands in this order:
+```sh
+SIDEKICK_FROGBOT=290 pnpm dev
+SIDEKICK_FROGBOT=~/src/frogbot pnpm test:e2e --grep panel
+```
 
-1. The FrogBot ticket lands on FrogBot's local `main`.
-2. The Sidekick work runs on `dev:local`, `test:e2e:local` and `typecheck:local` against that `main`.
-3. The owner runs `pnpm bump` and `pnpm release` in FrogBot.
-4. A Sidekick commit bumps the `@frogbotai/*` pin, then goes through `pnpm ticket verify` and `land`.
+How it works:
+
+- `@frogbotai/ui` is a `link:../../.frogbot/packages/ui` dependency, and `.frogbot` (git-ignored) is a symlink to the checkout. `pnpm install` and the root commands (`dev`, `check`, `typecheck`, `test`, `test:unit`, `test:e2e`) first point `.frogbot` at `SIDEKICK_FROGBOT`, or `../frogbot` without it, so the link follows the last command you ran.
+- `dev`, `build` and `test:e2e` bundle the checkout's TypeScript source, so an edit there shows in the open side panel with no build. Its peers (`react`, `ai`, …) resolve to Sidekick's own copies.
+- `pnpm install`, `check`, `typecheck` and `dev` run FrogBot's incremental build for those packages (about a second when nothing changed), and point TypeScript and the editor at their `dist/*.d.ts`, the declarations npm users get.
+- Every command stops with one message when the checkout is missing (where it looked, and the variable to set), or when its dependencies aren't installed (run `pnpm install` there).
+
+`pnpm ticket verify` and `pnpm ticket land` run these same commands, so a Sidekick ticket lands on what's on FrogBot's local `main`. Nothing waits for a FrogBot release.
+
+## Releasing
+
+A Sidekick release builds against a published `@frogbotai/ui`, never the local checkout. On the release commit, not on `main`:
+
+1. Pin the FrogBot release that has everything Sidekick's `main` uses: `pnpm --filter @frogbotai/sidekick-extension add --save-exact @frogbotai/ui@<version>`.
+2. Run `pnpm install`, `pnpm check`, `pnpm test:unit` and `pnpm test:e2e`. They print `FrogBot packages: from npm` and don't touch `.frogbot` or a checkout.
+3. Build with `pnpm --filter @frogbotai/sidekick-extension build`.
+
+`main` keeps the `link:` dependency.
 
 ## License
 

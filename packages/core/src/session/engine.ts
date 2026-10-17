@@ -4,6 +4,16 @@ import { type AgentInfo, offersTool } from '../agent/agent';
 import type { PermissionSeam } from '../permission/seam';
 import type { Registry } from '../registry/registry';
 import type { ToolDefinition } from '../tool/tool';
+import {
+  type Admitted,
+  createSessionQueue,
+  type Entry,
+  lockName,
+  type PromptInput,
+  type Queued,
+  type SessionLocks,
+  webLocks,
+} from './queue';
 import { buildRequest, TOOL_INTERRUPTED } from './request';
 import { classify, MAX_RETRIES, retryDelay, sessionError } from './retry';
 import {
@@ -46,27 +56,12 @@ export interface Clock {
   random: () => number;
 }
 
-/** One exclusive lock per name across windows, as Web Locks give; `ifAvailable` skips a held one. */
-export interface SessionLocks {
-  run: <T>(name: string, ifAvailable: boolean, work: () => Promise<T>) => Promise<T | undefined>;
-}
-
 export const realClock: Clock = {
   now: () => Date.now(),
   random: () => Math.random(),
   sleep: (ms, signal) =>
     abortable(new Promise<void>((resolve) => void setTimeout(resolve, ms)), signal),
 };
-
-/** `navigator.locks`, as the engine uses it. */
-export function webLocks(manager: LockManager = navigator.locks): SessionLocks {
-  return {
-    run: (name, ifAvailable, work) =>
-      manager.request(name, { ifAvailable }, (lock) =>
-        lock ? work() : Promise.resolve(undefined),
-      ),
-  };
-}
 
 export interface SessionEngineOptions {
   store: SessionStore;
@@ -91,42 +86,25 @@ export interface CreateInput {
   windowId?: number;
 }
 
-export interface PromptInput {
-  sessionID: string;
-  parts: UserPart[];
-  /** Edits from this message: it and every later message are deleted first. */
-  from?: string;
-  /** Switches the session's model first, writing `model-switched`. */
-  model?: string;
-  agent?: string;
-}
-
-export interface Queued {
-  messageID: string;
-  parts: UserPart[];
-}
-
 export interface SessionEngine {
   create: (input: CreateInput) => Promise<SessionInfo>;
   /** Queues a message; it runs once the session's current turn, in any window, ends. */
-  prompt: (input: PromptInput) => Promise<{ messageID: string; done: Promise<void> }>;
+  prompt: (input: PromptInput) => Promise<Admitted>;
   abort: (sessionID: string) => void;
+  /** Takes back a queued message before it runs; false once it has started. */
+  cancel: (sessionID: string, messageID: string) => boolean;
   /** Fails tools a closed panel left `streaming` or `running`, and ends their turns `interrupted`. */
   sweep: () => Promise<void>;
   queued: (sessionID: string) => Queued[];
   busy: (sessionID: string) => boolean;
   log: SessionStore['log'];
+  head: SessionStore['head'];
+  watch: SessionStore['watch'];
   messages: SessionStore['messages'];
   sessions: SessionList;
 }
 
 type Outcome = IdleMessage['outcome'];
-
-interface Entry extends PromptInput {
-  messageID: string;
-}
-
-const lockName = (sessionID: string) => `sidekick.session.${sessionID}`;
 
 function unsettled(message: SessionMessage): message is AssistantMessage {
   return (
@@ -151,15 +129,16 @@ export function createSessionEngine(options: SessionEngineOptions): SessionEngin
   const locks = options.locks ?? webLocks();
   const defaultAgent = options.defaultAgent ?? 'build';
   const titleAgent = options.titleAgent ?? 'title';
-  const waiting = new Map<string, Entry[]>();
   const controllers = new Map<string, AbortController>();
-  const holding = new Set<string>();
   const deleted = new Set<string>();
   const titled = new Set<string>();
 
   const publish = (sessionID: string, body: DurableEventBody) => store.publish(sessionID, body);
 
   const id = () => ascending('msg', clock.now());
+
+  const stored = async (sessionID: string, messageID: string) =>
+    (await store.messages(sessionID)).some((message) => message.id === messageID);
 
   const agentOf = (session: SessionInfo) => agents.get(session.agent) ?? agents.get(defaultAgent);
 
@@ -362,6 +341,8 @@ export function createSessionEngine(options: SessionEngineOptions): SessionEngin
 
     if (!session || deleted.has(sessionID)) return;
 
+    if (!entry.from && (await stored(sessionID, entry.messageID))) return;
+
     await recover(sessionID);
 
     if (entry.from) await publish(sessionID, { type: 'session.truncated', messageID: entry.from });
@@ -411,6 +392,8 @@ export function createSessionEngine(options: SessionEngineOptions): SessionEngin
     }
   };
 
+  const queue = createSessionQueue({ locks, run, stored });
+
   const sweepOne = async (session: SessionInfo) => {
     const last = await store.last(session.id);
 
@@ -444,44 +427,24 @@ export function createSessionEngine(options: SessionEngineOptions): SessionEngin
         throw new Error(`No session ${input.sessionID}`);
       }
 
-      const entry: Entry = { ...input, messageID: id() };
-      const queue = waiting.get(input.sessionID) ?? [];
-
-      queue.push(entry);
-      waiting.set(input.sessionID, queue);
-
-      const done = locks
-        .run(lockName(input.sessionID), false, async () => {
-          queue.splice(queue.indexOf(entry), 1);
-          holding.add(input.sessionID);
-
-          try {
-            await run(entry);
-          } finally {
-            holding.delete(input.sessionID);
-          }
-        })
-        .then(
-          () => undefined,
-          () => undefined,
-        );
-
-      return { messageID: entry.messageID, done };
+      return queue.admit({ ...input, messageID: input.messageID ?? id() });
     },
     abort: (sessionID) => controllers.get(sessionID)?.abort(),
+    cancel: queue.cancel,
     sweep: async () => {
       for (const session of await store.all()) await sweepOne(session);
     },
-    queued: (sessionID) =>
-      (waiting.get(sessionID) ?? []).map(({ messageID, parts }) => ({ messageID, parts })),
+    queued: queue.queued,
     busy: (sessionID) => controllers.has(sessionID),
     log: store.log,
+    head: store.head,
+    watch: store.watch,
     messages: store.messages,
     sessions: {
       ...store.sessions,
       delete: async (sessionID) => {
         deleted.add(sessionID);
-        waiting.delete(sessionID);
+        queue.drop(sessionID);
         controllers.get(sessionID)?.abort();
 
         const remove = async () => {
@@ -490,7 +453,7 @@ export function createSessionEngine(options: SessionEngineOptions): SessionEngin
           return true;
         };
 
-        if (holding.has(sessionID)) {
+        if (queue.holding(sessionID)) {
           await locks.run(lockName(sessionID), false, remove);
 
           return;

@@ -10,7 +10,14 @@ import tseslint from 'typescript-eslint';
 import sidekick from './scripts/eslint-plugin/index.mjs';
 import { reactA11yRules } from './scripts/lib/eslint-react-a11y.mjs';
 
-const IGNORES = ['**/node_modules/*', '**/dist/*', '**/build/*', '**/.output/*', '**/.wxt/*'];
+const IGNORES = [
+  '**/node_modules/*',
+  '**/dist/*',
+  '**/build/*',
+  '**/.output/*',
+  '**/.wxt/*',
+  '.frogbot/',
+];
 
 const SPECS = ['**/*.spec.ts', '**/*.spec.tsx'];
 

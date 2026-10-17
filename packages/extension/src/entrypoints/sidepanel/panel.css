@@ -1,20 +1,61 @@
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
 html,
 body,
-#root {
+#root,
+#root > * {
   height: 100%;
   margin: 0;
 }
 
-.fb-theme {
+.sidekick-panel {
+  height: 100%;
+  background: var(--theme-base-0);
+}
+
+.sidekick-panel__chat {
   height: 100%;
 }
 
-.sidekick-panel {
-  box-sizing: border-box;
+.sidekick-panel__view {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
   height: 100%;
   padding: 1rem;
   overflow-y: auto;
-  background: var(--theme-base-0);
+}
+
+.sidekick-chat-header {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.25rem 0.5rem;
+}
+
+.sidekick-chat-header__fill {
+  flex: 1;
+}
+
+.sidekick-connect {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.sidekick-connect__body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  padding: 1rem;
+  text-align: center;
 }
 
 .sidekick-stack {

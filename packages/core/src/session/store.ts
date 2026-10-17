@@ -1,5 +1,6 @@
 import { complete, MESSAGE_ORDER, SESSION_STORES, settle } from '../storage/database';
 import { reduce, type Reducer, targetOf } from './reducer';
+import type { SessionRelay } from './relay';
 import type {
   DurableEventBody,
   EphemeralEvent,
@@ -17,7 +18,7 @@ const ALL = [EVENTS, SESSIONS, MESSAGES];
 
 export interface LogOptions {
   sessionID: string;
-  /** Replays events with a larger `seq`; 0 replays them all. */
+  /** Replays events with a larger `seq`; 0 replays them all, `head` replays none. */
   after?: number;
   /** Keeps yielding live events, deltas included, until `signal` aborts. */
   follow?: boolean;
@@ -39,6 +40,10 @@ export interface SessionStore {
   /** Tells followers about a live-only event; nothing is stored. */
   emit: (sessionID: string, body: EphemeralEventBody) => void;
   log: (options: LogOptions) => AsyncGenerator<LogEvent>;
+  /** The session's last stored `seq`, or 0. */
+  head: (sessionID: string) => Promise<number>;
+  /** Hears every session's live events, from this window and the relay. */
+  watch: (listener: (event: LogEvent) => void) => () => void;
   events: (sessionID: string, after?: number) => Promise<SessionEvent[]>;
   messages: (sessionID: string) => Promise<SessionMessage[]>;
   /** The session's latest message, read without loading the rest. */
@@ -51,6 +56,8 @@ export interface SessionStore {
 export interface SessionStoreOptions {
   reducer?: Reducer;
   now?: () => number;
+  /** Shares live events with other windows' stores. */
+  relay?: SessionRelay;
 }
 
 function sessionRange(sessionID: string, after = 0) {
@@ -74,13 +81,23 @@ async function commit(transaction: IDBTransaction, work: () => Promise<void>) {
 
 export function createSessionStore(
   database: IDBDatabase,
-  { reducer = reduce, now = Date.now }: SessionStoreOptions = {},
+  { reducer = reduce, now = Date.now, relay }: SessionStoreOptions = {},
 ): SessionStore {
   const listeners = new Map<string, Set<(event: LogEvent) => void>>();
+  const watchers = new Set<(event: LogEvent) => void>();
+
+  const deliver = (event: LogEvent) => {
+    for (const listener of [...(listeners.get(event.sessionID) ?? [])]) listener(event);
+
+    for (const watcher of [...watchers]) watcher(event);
+  };
 
   const notify = (event: LogEvent) => {
-    for (const listener of [...(listeners.get(event.sessionID) ?? [])]) listener(event);
+    deliver(event);
+    relay?.post(event);
   };
+
+  relay?.listen(deliver);
 
   const listen = (sessionID: string, listener: (event: LogEvent) => void) => {
     const set = listeners.get(sessionID) ?? new Set();
@@ -210,6 +227,14 @@ export function createSessionStore(
     }
   }
 
+  const head = async (sessionID: string) => {
+    const transaction = database.transaction(EVENTS, 'readonly');
+    const range = sessionRange(sessionID);
+    const cursor = await settle(transaction.objectStore(EVENTS).openCursor(range, 'prev'));
+
+    return cursor ? (cursor.value as SessionEvent).seq : 0;
+  };
+
   const messages = async (sessionID: string) => {
     const transaction = database.transaction(MESSAGES, 'readonly');
     const range = IDBKeyRange.bound([sessionID, 0], [sessionID, Infinity]);
@@ -244,6 +269,12 @@ export function createSessionStore(
     publish,
     emit,
     log,
+    head,
+    watch: (listener) => {
+      watchers.add(listener);
+
+      return () => void watchers.delete(listener);
+    },
     events,
     messages,
     last,

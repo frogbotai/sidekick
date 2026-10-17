@@ -1,14 +1,14 @@
 import { theme } from '@frogbotai/sidekick-core';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@frogbotai/ui';
+import { Button } from '@frogbotai/ui';
+import { ChevronLeftIcon } from '@frogbotai/ui/icons';
 import type { ThemeMode, ThemeStorage } from '@frogbotai/ui/theme';
 import { ThemeProvider } from '@frogbotai/ui/theme';
-import { useEffect, useState } from 'react';
+import { Suspense, use, useEffect, useState } from 'react';
 
-import { PendingFormCard } from '../../form/PendingFormCard';
-import { ModelPicker } from '../../providers/ModelPicker';
+import { ChatPanel } from '../../chat/ChatPanel';
 import { ProvidersScreen } from '../../providers/ProvidersScreen';
-import { TryIt } from '../../providers/TryIt';
-import { useModels } from '../../providers/useModels';
+import { type Models, useModels } from '../../providers/useModels';
+import type { Sessions } from '../../session';
 import { type SidekickWorker, WorkerContext } from './worker';
 
 const themeStorage: ThemeStorage = {
@@ -16,9 +16,23 @@ const themeStorage: ThemeStorage = {
   set: (_key, mode) => theme.set(mode),
 };
 
-export function App({ initialMode, worker }: { initialMode: ThemeMode; worker: SidekickWorker }) {
+function SessionChat(props: {
+  sessions: Promise<Sessions>;
+  models: Models;
+  onProviders: () => void;
+}) {
+  return <ChatPanel {...props} sessions={use(props.sessions)} />;
+}
+
+export interface AppProps {
+  initialMode: ThemeMode;
+  worker: SidekickWorker;
+  sessions: Promise<Sessions>;
+}
+
+export function App({ initialMode, worker, sessions }: AppProps) {
   const [mode, setMode] = useState(initialMode);
-  const [tab, setTab] = useState('try');
+  const [view, setView] = useState<'chat' | 'providers'>('chat');
   const models = useModels();
 
   useEffect(() => theme.watch(setMode), []);
@@ -27,21 +41,26 @@ export function App({ initialMode, worker }: { initialMode: ThemeMode; worker: S
     <WorkerContext value={worker}>
       <ThemeProvider mode={mode} onModeChange={setMode} storage={themeStorage}>
         <main className="sidekick-panel">
-          <h1>Sidekick</h1>
-          <PendingFormCard />
-          <Tabs value={tab} onValueChange={setTab}>
-            <TabsList>
-              <TabsTrigger value="try">Try it</TabsTrigger>
-              <TabsTrigger value="providers">Providers</TabsTrigger>
-            </TabsList>
-            <TabsContent value="try" className="sidekick-stack">
-              <ModelPicker models={models} onConnect={() => setTab('providers')} />
-              {models.connected.size > 0 ? <TryIt modelRef={models.selection.ref} /> : null}
-            </TabsContent>
-            <TabsContent value="providers">
+          <div className="sidekick-panel__chat" hidden={view !== 'chat'}>
+            <Suspense fallback={null}>
+              <SessionChat
+                sessions={sessions}
+                models={models}
+                onProviders={() => setView('providers')}
+              />
+            </Suspense>
+          </div>
+          {view === 'providers' ? (
+            <section className="sidekick-panel__view" aria-label="Provider settings">
+              <div className="sidekick-row">
+                <Button variant="ghost" size="sm" onClick={() => setView('chat')}>
+                  <ChevronLeftIcon />
+                  Back
+                </Button>
+              </div>
               <ProvidersScreen models={models} />
-            </TabsContent>
-          </Tabs>
+            </section>
+          ) : null}
         </main>
       </ThemeProvider>
     </WorkerContext>

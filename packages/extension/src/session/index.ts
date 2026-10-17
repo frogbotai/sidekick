@@ -1,5 +1,6 @@
 import {
   agents,
+  broadcastRelay,
   CONNECTED,
   createSessionEngine,
   createSessionStore,
@@ -16,6 +17,7 @@ import {
 } from '@frogbotai/sidekick-core';
 import { availableModels, parseModelRef, resolveModel } from '@frogbotai/sidekick-core/provider';
 
+import type { WindowChat } from '../chat/transport';
 import type { SidekickWorker } from '../entrypoints/sidepanel/worker';
 import { currentCatalog } from '../providers/catalog';
 
@@ -63,6 +65,30 @@ export interface Sessions {
   engine: SessionEngine;
   /** Ends a chat's tab group, for New chat or when the chat closes (278 D1). */
   close: (sessionID: string) => Promise<void>;
+  /** This window's open chat. */
+  chat: WindowChat;
+}
+
+/** The open chat of one window: opening another, or none, ends the previous chat's run. */
+export async function windowChat(
+  windowId: number | undefined,
+  close: (sessionID: string) => Promise<void>,
+): Promise<WindowChat> {
+  let current = windowId === undefined ? undefined : await openChat.get(windowId);
+
+  return {
+    current: () => current,
+    open: async (sessionID) => {
+      const previous = current;
+
+      current = sessionID;
+
+      await Promise.all([
+        previous && previous !== sessionID ? close(previous) : undefined,
+        windowId === undefined ? undefined : openChat.set(windowId, sessionID),
+      ]);
+    },
+  };
 }
 
 /**
@@ -92,7 +118,7 @@ export async function startSessions(
   const prompted = new Set<string>();
 
   const base = createSessionEngine({
-    store: createSessionStore(await openDatabase()),
+    store: createSessionStore(await openDatabase(), { relay: broadcastRelay() }),
     models: modelSource(),
     tools,
     agents,
@@ -137,5 +163,5 @@ export async function startSessions(
 
   void engine.sweep();
 
-  return { engine, close };
+  return { engine, close, chat: await windowChat(windowId, close) };
 }

@@ -1,15 +1,9 @@
 import path from 'node:path';
 
+import { mergeConfig } from 'vite';
 import { defineConfig } from 'wxt';
 
-import {
-  CHECKOUT_ENV,
-  LINKED_MODE,
-  linkedVite,
-  resolveCheckout,
-  SIDEKICK_ROOT,
-  unimportExclude,
-} from './scripts/linked.ts';
+import { linkedVite, SIDEKICK_ROOT, unimportExclude } from './scripts/linked.ts';
 
 const STORE_KEY =
   'MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAwDBUC+bdAZwnXyO6CRfN75935fUiW92B+Tp+iLYqrFyEJHYL1a4hcS16SsEsHSUqxuutL3e6iP72yAg6PowXWNASsjm0Aj+3NXP1CI0thE3Rgi1ahZSmaIZXmtLv+x5g4LrIrYZ6VWLx96VC7mc5UgyjHc8p7drBWlquEy6fzB+8K4S8WScGTA3j6KegIFApLiXle59XrLSxhCPwm6pnTsXn02R6xihd4ZFcz9D3P1R1XlofulPgD9voFe9FnYBYm+mQpU2nvZNPfQc5J5qJAvFwp9CfB0k0LUeMa6iF909h4gcl8O/hN1Kmg52lY/Cismz15uYJwhhPjBC31oqt4wIDAQAB';
@@ -40,21 +34,22 @@ const e2e = live || process.env.SIDEKICK_E2E === '1';
 
 const outSuffix = live ? '-live' : e2e ? '-e2e' : '';
 
-const checkout = () => resolveCheckout(process.env[CHECKOUT_ENV], SIDEKICK_ROOT);
-
 export default defineConfig({
   srcDir: 'src',
   outDirTemplate: `{{browser}}-mv{{manifestVersion}}${outSuffix}{{modeSuffix}}`,
   imports: false,
   modules: ['@wxt-dev/module-react'],
-  vite: ({ mode }) => ({
-    define: { 'import.meta.env.SIDEKICK_E2E': JSON.stringify(e2e) },
-    build: { cssTarget: `chrome${MINIMUM_CHROME}` },
-    resolve: {
-      alias: { '@ai-sdk/gateway': path.resolve(import.meta.dirname, 'src/stubs/gateway.ts') },
-    },
-    ...(mode === LINKED_MODE ? linkedVite(checkout(), SIDEKICK_ROOT) : {}),
-  }),
+  vite: () =>
+    mergeConfig(
+      {
+        define: { 'import.meta.env.SIDEKICK_E2E': JSON.stringify(e2e) },
+        build: { cssTarget: `chrome${MINIMUM_CHROME}` },
+        resolve: {
+          alias: { '@ai-sdk/gateway': path.resolve(import.meta.dirname, 'src/stubs/gateway.ts') },
+        },
+      },
+      linkedVite(SIDEKICK_ROOT, import.meta.dirname),
+    ),
   manifest: {
     name: 'FrogBot Sidekick',
     description: 'Your AI work assistant, right in your browser.',
@@ -84,9 +79,7 @@ export default defineConfig({
   },
   hooks: {
     'config:resolved': (wxt) => {
-      if (wxt.config.mode !== LINKED_MODE) return;
-
-      Object.assign(wxt.config.imports, { exclude: unimportExclude(checkout()) });
+      Object.assign(wxt.config.imports, { exclude: unimportExclude(SIDEKICK_ROOT) });
     },
     'entrypoints:resolved': (_wxt, entrypoints) => {
       const dropped = [...(e2e ? [] : E2E_ONLY), ...(live ? [] : LIVE_ONLY)];

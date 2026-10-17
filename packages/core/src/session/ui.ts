@@ -1,5 +1,6 @@
 import type { DynamicToolUIPart, UIMessage, UIMessagePart, UITools } from 'ai';
 
+import type { ToolContent } from '../tool/tool';
 import type { AssistantContent, AssistantTool, SessionMessage, UserPart } from './schema';
 
 /** `@frogbotai/ui`'s pasted-text part data. */
@@ -24,9 +25,61 @@ export interface FileReferenceUIPart {
 
 export type SessionUIPart = UIMessagePart<SessionDataParts, UITools> | FileReferenceUIPart;
 
+/** A message's stored time, in ms, which `@frogbotai/ui` shows. */
+export interface SessionUIMetadata {
+  createdAt: number;
+}
+
 /** A `UIMessage` whose parts may include `file-reference`. */
-export interface SessionUIMessage extends Omit<UIMessage<unknown, SessionDataParts>, 'parts'> {
+export interface SessionUIMessage extends Omit<
+  UIMessage<SessionUIMetadata, SessionDataParts>,
+  'parts'
+> {
   parts: SessionUIPart[];
+}
+
+/** A tool result's extra content in MCP's shapes, which `@frogbotai/ui`'s tool display reads. */
+export type ToolUIContent =
+  | { type: 'text'; text: string }
+  | { type: 'image'; data: string; mimeType: string }
+  | { type: 'resource_link'; uri: string; name: string; mimeType: string };
+
+/** A tool result that carried content, MCP-style: the output's fields beside `content`. */
+export type ToolUIOutput = Record<string, unknown> & { content: ToolUIContent[] };
+
+const DATA_URI = /^data:([^;,]+);base64,(.*)$/s;
+
+function contentPart(part: ToolContent): ToolUIContent {
+  if (part.type === 'text') return part;
+
+  const image = DATA_URI.exec(part.uri);
+
+  if (image?.[1]?.startsWith('image/') && image[2] !== undefined) {
+    return { type: 'image', data: image[2], mimeType: image[1] };
+  }
+
+  return { type: 'resource_link', uri: part.uri, name: part.name ?? part.uri, mimeType: part.mime };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+/**
+ * A tool result as the UI part's `output`, the same live and reloaded. With content, such as a
+ * screenshot, it is MCP's `{ ...fields, content }`; an output that isn't a plain object, or that
+ * has its own `content`, sits under `output`.
+ */
+export function toolOutput(output: unknown, content?: readonly ToolContent[]): unknown {
+  if (!content?.length) return output;
+
+  const parts = content.map(contentPart);
+  const result: ToolUIOutput =
+    isRecord(output) && !('content' in output)
+      ? { ...output, content: parts }
+      : { output, content: parts };
+
+  return result;
 }
 
 function userPart(part: UserPart): SessionUIPart {
@@ -47,6 +100,11 @@ function userPart(part: UserPart): SessionUIPart {
   }
 }
 
+/** Stored user parts as UI parts, as `toUIMessages` gives them. */
+export function userUIParts(parts: readonly UserPart[]): SessionUIPart[] {
+  return parts.map(userPart);
+}
+
 function toolPart(tool: AssistantTool): DynamicToolUIPart {
   const common = {
     type: 'dynamic-tool' as const,
@@ -65,7 +123,7 @@ function toolPart(tool: AssistantTool): DynamicToolUIPart {
         ...common,
         state: 'output-available',
         input: tool.state.input,
-        output: tool.state.output,
+        output: toolOutput(tool.state.output, tool.state.content),
       };
     case 'error':
       return {
@@ -102,7 +160,8 @@ function assistantPart(part: AssistantContent): SessionUIPart {
 /**
  * A session's messages as AI SDK `UIMessage`s for `@frogbotai/ui`. A user message keeps its id; a
  * turn's assistant steps join into one message with the first step's id, each opening with
- * `step-start`, and tool parts keep their call ids. Other message kinds don't render.
+ * `step-start`, and tool parts keep their call ids. Each carries its stored time as
+ * `metadata.createdAt`. Other message kinds don't render.
  */
 export function toUIMessages(messages: readonly SessionMessage[]): SessionUIMessage[] {
   const result: SessionUIMessage[] = [];
@@ -111,14 +170,27 @@ export function toUIMessages(messages: readonly SessionMessage[]): SessionUIMess
   for (const message of messages) {
     if (message.type === 'user') {
       turn = undefined;
-      result.push({ id: message.id, role: 'user', parts: message.parts.map(userPart) });
+
+      result.push({
+        id: message.id,
+        role: 'user',
+        metadata: { createdAt: message.time.created },
+        parts: userUIParts(message.parts),
+      });
+
       continue;
     }
 
     if (message.type !== 'assistant') continue;
 
     if (!turn) {
-      turn = { id: message.id, role: 'assistant', parts: [] };
+      turn = {
+        id: message.id,
+        role: 'assistant',
+        metadata: { createdAt: message.time.created },
+        parts: [],
+      };
+
       result.push(turn);
     }
 
@@ -126,10 +198,6 @@ export function toUIMessages(messages: readonly SessionMessage[]): SessionUIMess
   }
 
   return result;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null;
 }
 
 function fromUIPart(part: unknown): UserPart[] {

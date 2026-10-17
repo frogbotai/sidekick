@@ -19,6 +19,7 @@
     "**/build/*",
     "**/.output/*",
     "**/.wxt/*",
+    ".frogbot/**",
     "**/*.tsbuildinfo",
     "**/*.{js,mjs,cjs}"
   ],
