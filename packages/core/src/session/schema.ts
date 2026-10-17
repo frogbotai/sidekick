@@ -1,6 +1,6 @@
 import type { ProviderMetadata } from 'ai';
 
-import type { ToolContent, ToolErrorDetail } from '../tool/tool';
+import type { ToolContent, ToolErrorDetail, ToolMetadata } from '../tool/tool';
 
 /**
  * A chat, after OpenCode v2's `session_v2` row. `model` is a `provider/model#variant` ref; `mode`
@@ -70,6 +70,8 @@ export interface AssistantTool {
   name: string;
   state: ToolState;
   providerState?: ProviderState;
+  /** The tool's latest `progress`, such as a subagent's child session. */
+  metadata?: ToolMetadata;
   time: { created: number; ran?: number; completed?: number };
 }
 
@@ -230,6 +232,7 @@ export type DurableEventBody =
       input: unknown;
       providerState?: ProviderState;
     }>
+  | WithTool<{ type: 'session.tool.progress'; metadata: ToolMetadata }>
   | WithTool<{ type: 'session.tool.success'; output: unknown; content?: ToolContent[] }>
   | WithTool<{ type: 'session.tool.failed'; error: ToolFailure }>
   | WithMessage<{ type: 'session.compaction.started'; reason: CompactionMessage['reason'] }>

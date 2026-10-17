@@ -23,6 +23,7 @@ export type {
   ToolDefinition,
   ToolErrorCode,
   ToolErrorDetail,
+  ToolMetadata,
   ToolResult,
 } from './tool';
 export {

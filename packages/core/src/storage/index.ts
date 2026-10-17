@@ -13,6 +13,7 @@ export type {
   WebSearchChoice,
 } from './items';
 export {
+  agentModels,
   agentPrompts,
   autoModeWarned,
   blockedSites,

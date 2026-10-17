@@ -86,6 +86,16 @@ async function read(stream: ReadableStream<UIMessageChunk>) {
 
 const SCREENSHOT = 'data:image/png;base64,iVBORw0K';
 
+function streamOf(chunks: readonly UIMessageChunk[]) {
+  return new ReadableStream<UIMessageChunk>({
+    start: (controller) => {
+      for (const chunk of chunks) controller.enqueue(chunk);
+
+      controller.close();
+    },
+  });
+}
+
 describe('createSessionTransport', () => {
   it('maps every research-table event to its chunk, in order, from a recorded turn', async () => {
     const { send, play, prompts } = setup();
@@ -264,6 +274,46 @@ describe('createSessionTransport', () => {
       },
       { type: 'tool-output-denied', toolCallId: 'c1' },
     ]);
+  });
+
+  it('re-sends a tool’s input with its progress as toolMetadata, as a reload has it', async () => {
+    const { send, play } = setup();
+    const reading = read(await send([user('msg_u1')]));
+    const input = { agent: 'research', description: 'Chrome 142', prompt: 'Go' };
+
+    play(
+      { type: 'session.prompted', messageID: 'msg_u1', parts: [] },
+      { type: 'session.step.started', messageID: 'msg_a1', agent: 'build', model: 'openai/gpt-5' },
+      { type: 'session.tool.called', messageID: 'msg_a1', callID: 'c1', name: 'subagent', input },
+      {
+        type: 'session.tool.progress',
+        messageID: 'msg_a1',
+        callID: 'c1',
+        metadata: { sessionID: 'ses_child' },
+      },
+      { type: 'session.idle', messageID: 'msg_i', outcome: 'interrupted' },
+    );
+
+    const chunks = await reading;
+
+    expect(chunks[3]).toEqual({
+      type: 'tool-input-available',
+      toolCallId: 'c1',
+      toolName: 'subagent',
+      input,
+      dynamic: true,
+      toolMetadata: { sessionID: 'ses_child' },
+    });
+
+    const parts: unknown[] = [];
+
+    for await (const message of readUIMessageStream({ stream: streamOf(chunks) })) {
+      parts.splice(0, parts.length, ...message.parts);
+    }
+
+    expect(parts).toContainEqual(
+      expect.objectContaining({ toolCallId: 'c1', toolMetadata: { sessionID: 'ses_child' } }),
+    );
   });
 
   it('sends an edit as from, keeping the message id', async () => {

@@ -5,6 +5,7 @@ import {
   cleanupLegacyPanel,
   connectWorker,
   registerBuiltinSearchProviders,
+  registerWebfetchTool,
   registerWebSearchTool,
   sidekickProtocol,
   theme,
@@ -34,6 +35,7 @@ provider.registerBuiltinProviders();
 registerBuiltinSearchProviders();
 registerFrogbotSearch();
 registerWebSearchTool();
+registerWebfetchTool();
 void cleanupLegacyPanel({ localStorage, document });
 
 const [initialMode] = await Promise.all([theme.get(), provider.registerCustomProviders()]);

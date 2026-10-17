@@ -1,4 +1,11 @@
-import { type AgentInfo, agentPrompts } from '@frogbotai/sidekick-core';
+import {
+  type AgentInfo,
+  agentModels,
+  agentPrompts,
+  providers,
+  TITLE_AGENT,
+} from '@frogbotai/sidekick-core';
+import { modelKey } from '@frogbotai/sidekick-core/provider';
 import {
   Badge,
   Button,
@@ -7,12 +14,20 @@ import {
   CardHeader,
   CardTitle,
   Label,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
   Textarea,
 } from '@frogbotai/ui';
 import { useId, useState } from 'react';
 
+import type { Models } from '../providers/useModels';
 import { useStored } from '../providers/useStored';
 import { useAgents } from './useAgents';
+
+const CHAT_MODEL = 'chat';
 
 async function savePrompt(id: string, system: string | undefined) {
   const { [id]: _replaced, ...rest } = await agentPrompts.get();
@@ -20,7 +35,62 @@ async function savePrompt(id: string, system: string | undefined) {
   await agentPrompts.set(system === undefined ? rest : { ...rest, [id]: system });
 }
 
-function AgentCard({ agent, overridden }: { agent: AgentInfo; overridden: boolean }) {
+async function saveModel(id: string, model: string | undefined) {
+  const { [id]: _replaced, ...rest } = await agentModels.get();
+
+  await agentModels.set(model === undefined ? rest : { ...rest, [id]: model });
+}
+
+/** Whether an agent's own model is used: subagents' and the title's; a primary agent runs on the chat's. */
+export function picksModel(agent: Pick<AgentInfo, 'id' | 'mode'>) {
+  return agent.mode !== 'primary' || agent.id === TITLE_AGENT;
+}
+
+function ModelSelect({ agent, models }: { agent: AgentInfo; models: Models }) {
+  const id = useId();
+  const listed = models.available.map((model) => ({
+    key: modelKey(model),
+    label: `${model.name} (${providers.get(model.providerID)?.name ?? model.providerID})`,
+  }));
+
+  const current = agent.model;
+  const known = current === undefined || listed.some(({ key }) => key === current);
+
+  return (
+    <div className="sidekick-row">
+      <Label htmlFor={id}>Model</Label>
+      <Select
+        value={current ?? CHAT_MODEL}
+        onValueChange={(value) =>
+          void saveModel(agent.id, value === CHAT_MODEL ? undefined : value)
+        }
+      >
+        <SelectTrigger id={id} aria-label={`${agent.name} model`}>
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value={CHAT_MODEL}>The chat’s model</SelectItem>
+          {known ? null : <SelectItem value={current}>{current} (not connected)</SelectItem>}
+          {listed.map(({ key, label }) => (
+            <SelectItem key={key} value={key}>
+              {label}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    </div>
+  );
+}
+
+function AgentCard({
+  agent,
+  overridden,
+  models,
+}: {
+  agent: AgentInfo;
+  overridden: boolean;
+  models: Models;
+}) {
   const id = useId();
   const [draft, setDraft] = useState<string>();
   const system = agent.system ?? '';
@@ -40,7 +110,11 @@ function AgentCard({ agent, overridden }: { agent: AgentInfo; overridden: boolea
       </CardHeader>
       <CardContent className="sidekick-stack">
         {agent.description ? <p>{agent.description}</p> : null}
-        <small>Model: {agent.model ?? 'the chat’s model'}</small>
+        {picksModel(agent) ? (
+          <ModelSelect agent={agent} models={models} />
+        ) : (
+          <small>Model: {agent.model ?? 'the chat’s model'}</small>
+        )}
         <h4>Rules</h4>
         {agent.permissions.length === 0 ? (
           <p>None: the chat’s mode decides.</p>
@@ -109,8 +183,11 @@ function AgentCard({ agent, overridden }: { agent: AgentInfo; overridden: boolea
   );
 }
 
-/** Every agent, hidden ones included, with its rules and full system prompt; prompts can be replaced. */
-export function AgentsScreen() {
+/**
+ * Every agent, hidden ones included, with its rules and full system prompt; prompts can be
+ * replaced, and subagents and the title agent can run on their own model.
+ */
+export function AgentsScreen({ models }: { models: Models }) {
   const list = useAgents();
   const prompts = useStored(agentPrompts) ?? {};
 
@@ -119,7 +196,7 @@ export function AgentsScreen() {
       <h2>Agents</h2>
       <p>An edited prompt replaces the built-in one until you reset it.</p>
       {list.map((agent) => (
-        <AgentCard key={agent.id} agent={agent} overridden={agent.id in prompts} />
+        <AgentCard key={agent.id} agent={agent} overridden={agent.id in prompts} models={models} />
       ))}
     </div>
   );

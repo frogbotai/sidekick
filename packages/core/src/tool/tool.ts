@@ -1,6 +1,16 @@
 import { z } from 'zod';
 
-export const PERMISSION_ACTIONS = ['read', 'input', 'navigate', 'tabs', 'websearch'] as const;
+import type { AgentInfo } from '../agent/agent';
+
+export const PERMISSION_ACTIONS = [
+  'read',
+  'input',
+  'navigate',
+  'tabs',
+  'websearch',
+  'webfetch',
+  'subagent',
+] as const;
 
 export type PermissionAction = (typeof PERMISSION_ACTIONS)[number];
 
@@ -11,16 +21,24 @@ export interface PermissionRequest {
   frameOrigin?: string;
 }
 
-/** What a tool call gets, after v2's tool context: its session, message, call and agent. */
+/** What a tool reports while it runs, kept on its tool part: `subagent` reports its child's `sessionID`. */
+export type ToolMetadata = Record<string, string>;
+
+/**
+ * What a tool call gets, after v2's tool context: its session, message, call and agent. `rootID` is
+ * the chat a subagent's session belongs to, its own id when unset.
+ */
 export interface ToolContext {
   signal: AbortSignal;
-  session: { id: string };
+  session: { id: string; rootID?: string };
   messageID: string;
   callID: string;
   agent: string;
   /** The browser run a worker tool acts in; the worker sets it (278 D1). */
   run?: { id: string };
   permission: { assert: (request: PermissionRequest) => Promise<void> };
+  /** Publishes `session.tool.progress`; unset where no session records it. */
+  progress?: (metadata: ToolMetadata) => Promise<void>;
 }
 
 export type ToolContent =
@@ -38,6 +56,8 @@ export interface ToolDefinition<I extends z.ZodType = z.ZodType, O extends z.Zod
   input: I;
   output: O;
   permission: PermissionAction;
+  /** The description one agent sees, when it depends on the caller, as `subagent`'s list of agents. */
+  describe?: (agent: AgentInfo) => string;
   execute(input: z.output<I>, ctx: ToolContext): Promise<ToolResult<z.input<O>>>;
 }
 

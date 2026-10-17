@@ -2,6 +2,7 @@ import { readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 
 import {
+  agentModels,
   agentPrompts,
   agents,
   BUILTIN_COMMANDS,
@@ -80,10 +81,11 @@ describe('windowChat', () => {
 });
 
 describe('registerPanelExtensions', () => {
-  it('registers built-in commands, then user commands, then prompt overrides after the built-in agents', async () => {
+  it('registers built-in commands, then user commands, then prompt and model overrides after the built-in agents', async () => {
     installFakeChrome();
     await userCommands.set([{ name: 'sum', template: 'Summarize $1' }]);
     await agentPrompts.set({ build: 'Answer in French.', compaction: 'Summarize in French.' });
+    await agentModels.set({ research: 'google/gemini-flash' });
 
     const dispose = registerPanelExtensions();
 
@@ -94,8 +96,16 @@ describe('registerPanelExtensions', () => {
       'sum',
     ]);
 
-    expect(agents.list().map(({ id }) => id)).toEqual(['build', 'explore', 'title', 'compaction']);
+    expect(agents.list().map(({ id }) => id)).toEqual([
+      'build',
+      'explore',
+      'research',
+      'title',
+      'compaction',
+    ]);
+
     expect(agents.get('build')?.system).toBe('Answer in French.');
+    expect(agents.get('research')?.model).toBe('google/gemini-flash');
     expect(agents.get('compaction')?.system).toBe('Summarize in French.');
     expect(permissionModes.list().length).toBeGreaterThan(0);
 

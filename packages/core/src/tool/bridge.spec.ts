@@ -273,6 +273,20 @@ describe('the worker tool bridge', () => {
     expect(runs.list()).toHaveLength(0);
   });
 
+  it('runs a subagent’s browser call in its root chat’s run', async () => {
+    const { runs } = boot();
+    const { tool } = await panel();
+
+    await tool('tabs_list').execute({}, context('c1'));
+
+    await tool('tabs_list').execute(
+      {},
+      { ...context('c2'), session: { id: 'ses-child', rootID: 'ses-1' } },
+    );
+
+    expect(runs.list()).toEqual([expect.objectContaining({ sessionID: 'ses-1' })]);
+  });
+
   it('fails a call not_connected when the worker restarts, and the next call starts a new run', async () => {
     const tabs = fakeTabs([], [START_TAB, OUTSIDE_TAB]);
     const first = boot(tabs);

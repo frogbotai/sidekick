@@ -51,13 +51,15 @@ function tokensOf(tokens: TokenUsage | undefined) {
 
 /**
  * Turns one turn's engine events into `useChat` chunks, after the research table. A compaction is
- * a `data-compaction` part with the compaction's id, so each update replaces it in place.
+ * a `data-compaction` part with the compaction's id, so each update replaces it in place; a tool's
+ * progress re-sends its input with the progress as `toolMetadata`.
  */
 export function chunker() {
   let started = false;
   let open = false;
   let failure: string | undefined;
   const reasons = new Map<string, CompactionData['reason']>();
+  const calls = new Map<string, { name: string; input: unknown }>();
 
   const head = (messageID: string): UIMessageChunk[] => {
     if (started) return [];
@@ -150,6 +152,8 @@ export function chunker() {
           ],
         };
       case 'session.tool.called':
+        calls.set(event.callID, { name: event.name, input: event.input });
+
         return {
           chunks: [
             {
@@ -162,6 +166,25 @@ export function chunker() {
             },
           ],
         };
+      case 'session.tool.progress': {
+        const call = calls.get(event.callID);
+
+        if (!call) return { chunks: [] };
+
+        return {
+          chunks: [
+            {
+              type: 'tool-input-available',
+              toolCallId: event.callID,
+              toolName: call.name,
+              input: call.input,
+              dynamic: true,
+              toolMetadata: event.metadata,
+            },
+          ],
+        };
+      }
+
       case 'session.tool.success':
         return {
           chunks: [

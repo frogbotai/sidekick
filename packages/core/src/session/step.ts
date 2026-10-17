@@ -41,6 +41,8 @@ Any attempt to use tools is a critical violation. Respond with text ONLY.`;
 export interface StepInput {
   store: SessionStore;
   sessionID: string;
+  /** The chat a subagent's session belongs to; `sessionID` when unset. */
+  rootID?: string;
   messageID: string;
   agent: AgentInfo;
   language: LanguageModel;
@@ -201,11 +203,16 @@ export async function runStep(input: StepInput): Promise<StepResult> {
       const result = await abortable(
         definition.execute(parsed.data, {
           signal,
-          session: { id: sessionID },
+          session: { id: sessionID, rootID: input.rootID ?? sessionID },
           messageID,
           callID,
           agent: agent.id,
           permission: { assert: (request) => input.permission.assert(request, scope, signal) },
+          progress: async (metadata) => {
+            if (!signal.aborted) {
+              await publish({ type: 'session.tool.progress', messageID, callID, metadata });
+            }
+          },
         }),
         signal,
       );

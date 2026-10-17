@@ -12,4 +12,6 @@ export * from './rpc';
 export * from './search';
 export * from './session';
 export * from './storage';
+export * from './subagent';
 export * from './tool';
+export * from './webfetch';

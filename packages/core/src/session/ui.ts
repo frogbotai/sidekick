@@ -134,6 +134,7 @@ function toolPart(tool: AssistantTool): DynamicToolUIPart {
     toolName: tool.name,
     toolCallId: tool.id,
     ...(tool.providerState ? { callProviderMetadata: tool.providerState } : {}),
+    ...(tool.metadata ? { toolMetadata: tool.metadata } : {}),
   };
 
   switch (tool.state.status) {

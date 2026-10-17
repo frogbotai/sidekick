@@ -6,7 +6,9 @@ export {
   COMPACTION_AGENT,
   EXPLORE_AGENT,
   registerBuiltinAgents,
+  RESEARCH_AGENT,
+  RESEARCH_STEPS,
   TITLE_AGENT,
 } from './builtin';
-export { BUILD_PROMPT, EXPLORE_PROMPT, TITLE_PROMPT } from './prompts';
-export { registerAgentPrompts } from './user';
+export { BUILD_PROMPT, EXPLORE_PROMPT, RESEARCH_PROMPT, TITLE_PROMPT } from './prompts';
+export { registerAgentModels, registerAgentPrompts } from './user';

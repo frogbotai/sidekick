@@ -23,10 +23,11 @@ import {
   CompactionPart,
   type DataRenderer,
   emitChatMutation,
+  type ToolRenderer,
   useChats,
 } from '@frogbotai/ui/chat';
 import { ListIcon, MagicWandIcon, PlusSignIcon, RobotIcon, SettingIcon } from '@frogbotai/ui/icons';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { useAgents } from '../agents/useAgents';
 import { useComposerCommands } from '../commands/useComposerCommands';
@@ -38,11 +39,15 @@ import type { Models } from '../providers/useModels';
 import { useStored } from '../providers/useStored';
 import type { Sessions } from '../session';
 import { chatManifest, createChatAdapter } from './adapter';
+import { SubagentCard, SubagentContext } from './SubagentCard';
+import { SubagentView } from './SubagentView';
 import type { RetryNotice } from './transport';
 
 const RELOAD_DELAY = 100;
 
 const DATA_RENDERERS: readonly DataRenderer[] = [{ kind: 'compaction', render: CompactionPart }];
+
+const TOOL_RENDERERS: readonly ToolRenderer[] = [{ kind: 'subagent', render: SubagentCard }];
 
 const LISTED = new Set<LogEvent['type']>(['session.created', 'session.renamed', 'session.deleted']);
 
@@ -81,13 +86,19 @@ export function ChatPanel({ sessions, models, onView }: ChatPanelProps) {
   const [retry, setRetry] = useState<RetryNotice>();
   const [historyOpen, setHistoryOpen] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [child, setChild] = useState<string>();
   const streaming = useRef(new Set<string>());
   const reload = useRef<ReturnType<typeof setTimeout>>(undefined);
   const registered = useAgents();
   const selection = chatSelection(models, pick);
   const form = usePendingForm();
   const open = chatId === undefined ? undefined : String(chatId);
-  const ask = usePermissionAsk(permissions, open ?? chat.current());
+  const parentOf = useCallback(
+    async (sessionID: string) => (await engine.sessions.get(sessionID))?.parentID,
+    [engine],
+  );
+
+  const ask = usePermissionAsk(permissions, open ?? chat.current(), parentOf);
   const mode = modePick ?? (open ? BUILD_MODE : (lastMode ?? BUILD_MODE));
   const modeRef = useRef(mode);
 
@@ -186,6 +197,7 @@ export function ChatPanel({ sessions, models, onView }: ChatPanelProps) {
   const chats = useChats({ adapter, revalidate: true });
 
   const switchTo = (next: ChatId | undefined) => {
+    setChild(undefined);
     setHistoryOpen(false);
     setRetry(undefined);
     setChatId(next);
@@ -317,52 +329,75 @@ export function ChatPanel({ sessions, models, onView }: ChatPanelProps) {
     </div>
   );
 
-  return (
-    <ChatProvider adapter={adapter} dataRenderers={DATA_RENDERERS} commands={composerCommands}>
-      <Chat
-        agent={manifest?.defaultAgent ?? 'build'}
-        {...(selection.model ? { model: selection.ref?.split('#')[0] } : {})}
-        {...(selection.ref?.includes('#') ? { reasoning: selection.ref.split('#')[1] } : {})}
-        chatId={chatId}
-        onChatIdChange={(next) => {
-          setChatId(next);
+  const links = useMemo(() => ({ engine, open: setChild }), [engine]);
 
-          if (next === undefined) void chat.open(undefined);
-        }}
-        headerSlot={header}
-        composerStartSlot={
-          <>
-            <ModelPicker
-              models={models}
-              selection={selection}
-              onChange={choose}
-              open={pickerOpen}
-              onOpenChange={setPickerOpen}
-            />
-            <ModeSelect mode={mode} onChange={chooseMode} />
-          </>
-        }
-        warningContent={warnings}
-        dockSlot={dock}
-        dockBlocking={dock !== null}
-        disabledContent={models.loading ? null : connect}
-        loadingContent={null}
-      />
-      <Sheet open={historyOpen} onOpenChange={setHistoryOpen}>
-        <SheetContent side="left" aria-describedby={undefined}>
-          <SheetHeader>
-            <SheetTitle>Chats</SheetTitle>
-          </SheetHeader>
-          <ChatHistory
-            adapter={adapter}
-            chats={chats.docs ?? []}
-            activeChatId={chatId}
-            fallbackTitle="Untitled"
-            onChatChange={switchTo}
-            onNewChat={() => switchTo(undefined)}
+  return (
+    <SubagentContext value={links}>
+      <div className="sidekick-panel__chat" hidden={child !== undefined}>
+        <ChatProvider
+          adapter={adapter}
+          dataRenderers={DATA_RENDERERS}
+          toolRenderers={TOOL_RENDERERS}
+          commands={composerCommands}
+        >
+          <Chat
+            agent={manifest?.defaultAgent ?? 'build'}
+            {...(selection.model ? { model: selection.ref?.split('#')[0] } : {})}
+            {...(selection.ref?.includes('#') ? { reasoning: selection.ref.split('#')[1] } : {})}
+            chatId={chatId}
+            onChatIdChange={(next) => {
+              setChatId(next);
+
+              if (next === undefined) void chat.open(undefined);
+            }}
+            headerSlot={header}
+            composerStartSlot={
+              <>
+                <ModelPicker
+                  models={models}
+                  selection={selection}
+                  onChange={choose}
+                  open={pickerOpen}
+                  onOpenChange={setPickerOpen}
+                />
+                <ModeSelect mode={mode} onChange={chooseMode} />
+              </>
+            }
+            warningContent={warnings}
+            dockSlot={dock}
+            dockBlocking={dock !== null}
+            disabledContent={models.loading ? null : connect}
+            loadingContent={null}
           />
-        </SheetContent>
-      </Sheet>
-    </ChatProvider>
+          <Sheet open={historyOpen} onOpenChange={setHistoryOpen}>
+            <SheetContent side="left" aria-describedby={undefined}>
+              <SheetHeader>
+                <SheetTitle>Chats</SheetTitle>
+              </SheetHeader>
+              <ChatHistory
+                adapter={adapter}
+                chats={chats.docs ?? []}
+                activeChatId={chatId}
+                fallbackTitle="Untitled"
+                onChatChange={switchTo}
+                onNewChat={() => switchTo(undefined)}
+              />
+            </SheetContent>
+          </Sheet>
+        </ChatProvider>
+      </div>
+      {child ? (
+        <div className="sidekick-panel__chat">
+          <SubagentView
+            engine={engine}
+            adapter={base}
+            agent={manifest?.defaultAgent ?? 'build'}
+            sessionID={child}
+            dock={dock}
+            onBack={() => setChild(undefined)}
+          />
+        </div>
+      ) : null}
+    </SubagentContext>
   );
 }

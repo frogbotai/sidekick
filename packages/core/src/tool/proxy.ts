@@ -67,6 +67,9 @@ function proxy(
             tool: info.id,
             input,
             ...(windowId === undefined ? {} : { windowId }),
+            ...(ctx.session.rootID && ctx.session.rootID !== ctx.session.id
+              ? { runSessionID: ctx.session.rootID }
+              : {}),
           },
           { timeout: false },
         );

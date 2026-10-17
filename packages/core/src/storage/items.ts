@@ -89,6 +89,13 @@ export const agentPrompts = defineStorageItem<Record<string, string>>(
   {},
 );
 
+/** Users' models for agents, as v2's `agents.<id>.model`: `provider/model#variant` refs by agent id; clearing deletes the key. */
+export const agentModels = defineStorageItem<Record<string, string>>(
+  'agent:models',
+  z.record(z.string(), z.string().min(1)),
+  {},
+);
+
 /** The agent apps an MCP pairing is for; each gets its own copied command. */
 export const MCP_CLIENTS = ['claude-code', 'codex', 'opencode', 'other'] as const;
 

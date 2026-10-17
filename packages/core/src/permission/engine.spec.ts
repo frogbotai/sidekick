@@ -253,6 +253,40 @@ describe('the permission engine', () => {
     expect(await permissionGrants.get()).toHaveLength(1);
   });
 
+  it('treats a webfetch origin as a site: blocked denies, sensitive always asks, others run', async () => {
+    const { engine, asked } = setup();
+    const fetch = (resource: string) => ({ action: 'webfetch' as const, resource });
+
+    await blockedSites.set([{ site: 'bank.example', created: 1 }]);
+
+    expect(await outcome(engine.assert(fetch('https://bank.example'), scope()))).toBe('denied');
+
+    expect(
+      await outcome(
+        engine.assert(fetch('https://developer.chrome.com'), scope({ agent: 'research' })),
+      ),
+    ).toBe('allowed');
+
+    const sensitive = engine.assert(fetch('https://js.stripe.com'), scope({ mode: 'auto' }));
+
+    expect(await pending(sensitive)).toBe(true);
+
+    expect(asked()).toEqual([
+      expect.objectContaining({ action: 'webfetch', site: 'js.stripe.com', always: false }),
+    ]);
+  });
+
+  it('allows subagent in every mode, and research and explore deny it', async () => {
+    const { engine } = setup();
+    const dispatch = { action: 'subagent' as const, resource: 'research' };
+
+    for (const mode of ['build', 'plan', 'auto']) {
+      expect(await outcome(engine.assert(dispatch, scope({ mode })))).toBe('allowed');
+    }
+
+    expect(await outcome(engine.assert(dispatch, scope({ agent: 'research' })))).toBe('denied');
+  });
+
   it('checks a cross-site frame on its own site, and names the page it sits in', async () => {
     const { engine, asked } = setup();
     const call = engine.assert(input('https://shop.example', 'https://js.stripe.com'), scope());

@@ -1,7 +1,7 @@
 import type { PermissionAction, PermissionAsk, PermissionReply } from '@frogbotai/sidekick-core';
 import { Button, Input } from '@frogbotai/ui';
 import { ChatDock } from '@frogbotai/ui/chat';
-import { useId, useState, useSyncExternalStore } from 'react';
+import { useEffect, useId, useState, useSyncExternalStore } from 'react';
 
 import type { PermissionRequests } from './requests';
 
@@ -11,6 +11,8 @@ const VERBS: Record<PermissionAction, string> = {
   navigate: 'open',
   tabs: 'switch tabs on',
   websearch: 'search the web for',
+  webfetch: 'read pages on',
+  subagent: 'start the subagent',
 };
 
 /** What Deny sends: a note turns it into a rejection that only fails this call. */
@@ -81,9 +83,50 @@ export function PermissionCard({ ask, onReply }: PermissionCardProps) {
   );
 }
 
-/** The open chat's oldest waiting ask. */
-export function usePermissionAsk(requests: PermissionRequests, sessionID: string | undefined) {
-  const asks = useSyncExternalStore(requests.subscribe, requests.list);
+/** The oldest ask from `sessionID` or one of its subagents, whose parents `parents` maps. */
+export function askFor(
+  asks: readonly PermissionAsk[],
+  sessionID: string | undefined,
+  parents: ReadonlyMap<string, string | undefined>,
+) {
+  if (sessionID === undefined) return undefined;
 
-  return sessionID === undefined ? undefined : asks.find((ask) => ask.sessionID === sessionID);
+  return asks.find(
+    (ask) => ask.sessionID === sessionID || parents.get(ask.sessionID) === sessionID,
+  );
+}
+
+/**
+ * The open chat's oldest waiting ask, its subagents' included: `parentOf` names an ask's session's
+ * parent, looked up once per session.
+ */
+export function usePermissionAsk(
+  requests: PermissionRequests,
+  sessionID: string | undefined,
+  parentOf?: (sessionID: string) => Promise<string | undefined>,
+) {
+  const asks = useSyncExternalStore(requests.subscribe, requests.list);
+  const [parents, setParents] = useState<ReadonlyMap<string, string | undefined>>(new Map());
+
+  useEffect(() => {
+    if (!parentOf) return undefined;
+
+    const unknown = [...new Set(asks.map((ask) => ask.sessionID))].filter((id) => !parents.has(id));
+
+    if (unknown.length === 0) return undefined;
+
+    let live = true;
+
+    void Promise.all(
+      unknown.map(async (id) => [id, await parentOf(id).catch(() => undefined)] as const),
+    ).then((found) => {
+      if (live) setParents((known) => new Map([...known, ...found]));
+    });
+
+    return () => {
+      live = false;
+    };
+  }, [asks, parentOf, parents]);
+
+  return askFor(asks, sessionID, parents);
 }

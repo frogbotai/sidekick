@@ -8,10 +8,12 @@ import {
   openDatabase,
   providers,
   reasoningPolicy,
+  registerAgentModels,
   registerAgentPrompts,
   registerBuiltinAgents,
   registerBuiltinCommands,
   registerBuiltinModes,
+  registerSubagentTool,
   registerUserCommands,
   registerWorkerTools,
   type SessionEngine,
@@ -109,7 +111,7 @@ export async function windowChat(
 
 /**
  * Registers the panel's agents, modes and commands: the built-ins, then the user's templates, then
- * the user's prompt overrides, which must follow every built-in agent.
+ * the user's prompt and model overrides, which must follow every built-in agent.
  */
 export function registerPanelExtensions() {
   const disposers = [
@@ -118,6 +120,7 @@ export function registerPanelExtensions() {
     registerBuiltinCommands(),
     registerUserCommands(),
     registerAgentPrompts(),
+    registerAgentModels(),
   ];
 
   return () => {
@@ -127,8 +130,9 @@ export function registerPanelExtensions() {
 
 /**
  * Starts the panel's session engine: built-in agents, modes and commands, the worker's tools as proxies, the
- * worker's permission seam and asks, and the sweep for turns a closed panel left behind. Each
- * message carries the active tab's page, whose site joins the chat's sites.
+ * worker's permission seam and asks, `subagent` over the engine itself, and the sweep for turns a
+ * closed panel left behind. Each message carries the active tab's page, whose site joins the chat's
+ * sites; a subagent's messages don't.
  */
 export async function startSessions(
   worker: SidekickWorker,
@@ -151,10 +155,11 @@ export async function startSessions(
   await refresh();
 
   const prompted = new Set<string>();
+  const models = modelSource();
 
   const base = createSessionEngine({
     store: createSessionStore(await openDatabase(), { relay: broadcastRelay() }),
-    models: modelSource(),
+    models,
     tools,
     agents,
     permission: workerPermission(worker),
@@ -163,6 +168,8 @@ export async function startSessions(
       worker.call('run.end', { sessionID, close: false }).catch(() => undefined);
     },
   });
+
+  registerSubagentTool({ engine: base, agents, models });
 
   const endRun = (sessionID: string) =>
     worker.call('run.end', { sessionID, close: true }).catch(() => undefined);

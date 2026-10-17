@@ -30,7 +30,6 @@ import { buildRequest, TOOL_INTERRUPTED } from './request';
 import { classify, MAX_RETRIES, retryDelay, sessionError } from './retry';
 import {
   ascending,
-  type AssistantMessage,
   type CompactionMessage,
   type DurableEventBody,
   type IdleMessage,
@@ -38,6 +37,7 @@ import {
   type SessionMessage,
   type UserPart,
 } from './schema';
+import { modelOf, running, stranded, unsettled } from './state';
 import { type Clock, MAX_STEPS_PROMPT, realClock, runStep } from './step';
 
 export type { Clock } from './step';
@@ -75,11 +75,13 @@ export interface SessionEngineOptions {
   onIdle?: (sessionID: string) => void;
 }
 
+/** A new session; a child (`parentID`) takes its parent's mode unless `mode` is given. */
 export interface CreateInput {
   model: string;
   agent?: string;
   mode?: string;
   parentID?: string;
+  title?: string;
   windowId?: number;
 }
 
@@ -106,32 +108,6 @@ export interface SessionEngine {
 type Outcome = IdleMessage['outcome'];
 
 type Resolved = Awaited<ReturnType<ModelSource['resolve']>>;
-
-function running(message: SessionMessage | undefined): message is CompactionMessage {
-  return message?.type === 'compaction' && message.status === 'running';
-}
-
-function stranded(last: SessionMessage | undefined) {
-  return (
-    last !== undefined &&
-    (last.type === 'assistant' ||
-      last.type === 'user' ||
-      last.type === 'synthetic' ||
-      running(last))
-  );
-}
-
-function unsettled(message: SessionMessage): message is AssistantMessage {
-  return (
-    message.type === 'assistant' &&
-    (message.time.completed === undefined ||
-      message.content.some(
-        (part) =>
-          part.type === 'tool' &&
-          (part.state.status === 'streaming' || part.state.status === 'running'),
-      ))
-  );
-}
 
 /**
  * The agent loop, after OpenCode v2's runner. It uses no extension API, so it can move to the worker
@@ -212,7 +188,10 @@ export function createSessionEngine(options: SessionEngineOptions): SessionEngin
     return 'failed';
   };
 
-  const offeredTo = (agent: AgentInfo, mode: string) => offeredTools(tools, modes, agent, mode);
+  const offeredTo = (agent: AgentInfo, mode: string) =>
+    offeredTools(tools, modes, agent, mode).map((tool) =>
+      tool.describe ? { ...tool, description: tool.describe(agent) } : tool,
+    );
 
   const remind = async (sessionID: string, mode: string) => {
     const text = modeReminder(await store.messages(sessionID), modes, mode);
@@ -258,7 +237,7 @@ export function createSessionEngine(options: SessionEngineOptions): SessionEngin
 
     if (!session) return 'failed';
 
-    const ref = agent.model ?? session.model;
+    const ref = modelOf(agent, session);
     let messageID = id();
     let retries = 0;
     let recovered = false;
@@ -316,6 +295,7 @@ export function createSessionEngine(options: SessionEngineOptions): SessionEngin
       const result = await runStep({
         store,
         sessionID,
+        rootID: session.parentID ?? sessionID,
         messageID,
         agent,
         language: model.language,
@@ -449,7 +429,7 @@ export function createSessionEngine(options: SessionEngineOptions): SessionEngin
 
     await recover(sessionID);
 
-    const ref = agent.model ?? session.model;
+    const ref = modelOf(agent, session);
     const controller = new AbortController();
 
     controllers.set(sessionID, controller);
@@ -550,16 +530,43 @@ export function createSessionEngine(options: SessionEngineOptions): SessionEngin
     await locks.run(lockName(session.id), true, () => recover(session.id));
   };
 
+  const deleteSession = async (sessionID: string): Promise<void> => {
+    deleted.add(sessionID);
+    queue.drop(sessionID);
+    controllers.get(sessionID)?.abort();
+
+    for (const child of await store.sessions.list({ parentID: sessionID })) {
+      await deleteSession(child.id);
+    }
+
+    const remove = async () => {
+      await store.sessions.delete(sessionID);
+
+      return true;
+    };
+
+    if (queue.holding(sessionID)) {
+      await locks.run(lockName(sessionID), false, remove);
+
+      return;
+    }
+
+    if (!(await locks.run(lockName(sessionID), true, remove))) await remove();
+  };
+
   return {
-    create: async ({ model, agent, mode, parentID, windowId }) => {
+    create: async ({ model, agent, mode, parentID, title, windowId }) => {
+      const parent = parentID ? await store.sessions.get(parentID) : undefined;
+      const chosen = mode ?? parent?.mode;
       const now = clock.now();
 
       const info: SessionInfo = {
         id: ascending('ses', now),
         agent: agent ?? defaultAgent,
         model,
-        ...(mode ? { mode } : {}),
+        ...(chosen ? { mode: chosen } : {}),
         ...(parentID ? { parentID } : {}),
+        ...(title ? { title } : {}),
         ...(windowId === undefined ? {} : { windowId }),
         created: now,
         updated: now,
@@ -606,25 +613,7 @@ export function createSessionEngine(options: SessionEngineOptions): SessionEngin
     messages: store.messages,
     sessions: {
       ...store.sessions,
-      delete: async (sessionID) => {
-        deleted.add(sessionID);
-        queue.drop(sessionID);
-        controllers.get(sessionID)?.abort();
-
-        const remove = async () => {
-          await store.sessions.delete(sessionID);
-
-          return true;
-        };
-
-        if (queue.holding(sessionID)) {
-          await locks.run(lockName(sessionID), false, remove);
-
-          return;
-        }
-
-        if (!(await locks.run(lockName(sessionID), true, remove))) await remove();
-      },
+      delete: deleteSession,
     },
   };
 }

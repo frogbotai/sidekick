@@ -24,9 +24,10 @@ export type BridgeHandlers = Pick<
   | 'permission.list'
 >;
 
-/** A worker tool call, as the panel sends it. */
+/** A worker tool call, as the panel sends it: a subagent's call names its root chat as `runSessionID`. */
 export interface BridgeCall extends PermissionScope {
   windowId?: number;
+  runSessionID?: string;
 }
 
 export interface ToolBridgeOptions {
@@ -183,7 +184,11 @@ export function createToolBridge({ tools, permission, run }: ToolBridgeOptions):
         input: schemaOf(tool.input),
         output: schemaOf(tool.output),
       })),
-    'tool.call': (call) => caller.call(call, run ? { run: () => run(call) } : {}),
+    'tool.call': ({ runSessionID, ...call }) =>
+      caller.call(
+        call,
+        run ? { run: () => run({ ...call, sessionID: runSessionID ?? call.sessionID }) } : {},
+      ),
     'tool.cancel': ({ callID }) => {
       caller.cancel(callID);
 

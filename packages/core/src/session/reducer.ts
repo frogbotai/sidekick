@@ -237,6 +237,8 @@ function messageChange(target: ReducerTarget, event: SessionEvent): SessionMessa
       );
     }
 
+    case 'session.tool.progress':
+      return editTool(message, event.callID, (tool) => ({ ...tool, metadata: event.metadata }));
     case 'session.tool.success':
       return editTool(message, event.callID, (tool) => ({
         ...tool,

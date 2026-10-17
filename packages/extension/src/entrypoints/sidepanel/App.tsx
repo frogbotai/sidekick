@@ -91,7 +91,7 @@ export function App({ initialMode, worker, sessions }: AppProps) {
             <PanelSection view={view} onBack={() => setView('chat')}>
               {view === 'providers' ? <ProvidersScreen models={models} /> : null}
               {view === 'commands' ? <CommandsScreen /> : null}
-              {view === 'agents' ? <AgentsScreen /> : null}
+              {view === 'agents' ? <AgentsScreen models={models} /> : null}
               {view === 'help' ? <HelpScreen commands={help} /> : null}
             </PanelSection>
           )}

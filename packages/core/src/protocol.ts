@@ -121,7 +121,13 @@ export const sidekickProtocol = defineProtocol({
       ),
     },
     'tool.call': {
-      input: z.object({ ...scope, tool: id, input: z.unknown(), windowId: z.optional(z.int()) }),
+      input: z.object({
+        ...scope,
+        tool: id,
+        input: z.unknown(),
+        windowId: z.optional(z.int()),
+        runSessionID: z.optional(id),
+      }),
       output: outcome(z.object({ output: z.unknown(), content: z.optional(z.array(toolContent)) })),
     },
     'tool.cancel': { input: z.object({ callID: id }), output: z.object({}) },

@@ -2,7 +2,7 @@ import type { PermissionAsk } from '@frogbotai/sidekick-core';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 
-import { denial, PermissionCard } from './PermissionCard';
+import { askFor, denial, PermissionCard } from './PermissionCard';
 
 const ask: PermissionAsk = {
   id: 'per_1',
@@ -37,5 +37,18 @@ describe('the permission card', () => {
     });
 
     expect(denial('  ')).toEqual({ reply: 'reject' });
+  });
+
+  it('shows a subagent’s ask in its root chat, and only there', () => {
+    const child = { ...ask, id: 'per_2', sessionID: 'ses_child' };
+    const parents = new Map([
+      ['ses_child', 'ses_1'],
+      ['ses_1', undefined],
+    ]);
+
+    expect(askFor([child], 'ses_1', parents)).toBe(child);
+    expect(askFor([child], 'ses_2', parents)).toBeUndefined();
+    expect(askFor([child], 'ses_1', new Map())).toBeUndefined();
+    expect(askFor([ask, child], 'ses_1', parents)).toBe(ask);
   });
 });
