@@ -26,6 +26,7 @@ function start() {
     },
     runtime: {
       id: 'sidekicktestid',
+      getManifest: () => ({ version: '0.9.0' }),
       onConnect: { addListener: () => void calls.push('onConnect') },
       onMessage: { addListener: () => void calls.push('onMessage') },
       onMessageExternal: { addListener: () => void calls.push('onMessageExternal') },

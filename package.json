@@ -18,13 +18,14 @@
     "typecheck": "node packages/extension/scripts/linked-cli.ts prepare && tsc -b",
     "test": "node packages/extension/scripts/linked-cli.ts link && vitest run",
     "test:unit": "node packages/extension/scripts/linked-cli.ts link && vitest run --project unit",
-    "test:e2e": "node packages/extension/scripts/linked-cli.ts link && pnpm --filter @frogbotai/sidekick-extension build:e2e && pnpm --filter @frogbotai/sidekick-extension build:live && playwright test",
+    "test:e2e": "node packages/extension/scripts/linked-cli.ts link && pnpm --filter @frogbotai/sidekick-mcp build && pnpm --filter @frogbotai/sidekick-extension build:e2e && pnpm --filter @frogbotai/sidekick-extension build:live && playwright test",
     "lint-staged": "lint-staged",
     "prepare": "husky",
     "ticket": "node ../frogbot/scripts/ticket.mjs"
   },
   "devDependencies": {
     "@eslint/js": "^9.16.0",
+    "@modelcontextprotocol/client": "2.3.1",
     "@playwright/test": "1.63.0",
     "@stylistic/eslint-plugin": "5.10.0",
     "@types/node": "^22.10.2",

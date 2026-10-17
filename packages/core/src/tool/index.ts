@@ -1,5 +1,12 @@
-export type { BridgeCall, BridgeHandlers, ToolBridgeOptions } from './bridge';
-export { createToolBridge } from './bridge';
+export type {
+  BridgeCall,
+  BridgeHandlers,
+  ToolBridgeOptions,
+  ToolCall,
+  ToolCaller,
+  ToolOutcome,
+} from './bridge';
+export { createToolBridge, createToolCaller, schemaOf } from './bridge';
 export type { SidekickClient, WorkerToolOptions } from './proxy';
 export {
   NOT_CONNECTED,

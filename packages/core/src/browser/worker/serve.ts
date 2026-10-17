@@ -13,6 +13,15 @@ type ContentMethods = (typeof contentProtocol)['methods'];
 /** The tab group label of a chat's run. */
 export const RUN_LABEL = 'Sidekick';
 
+export interface ClientRunCall {
+  connectionID: string;
+  label: string;
+  /** The connect tab, for a connection's first run; a tab in another run is never taken. */
+  tabId?: number;
+  /** The last-focused normal window, where a later run opens its tab. */
+  lastWindow?: () => Promise<number | undefined>;
+}
+
 export interface BrowserWorker {
   handlers: Pick<Handlers<SidekickMethods>, 'run.start' | 'run.stop' | 'run.end'>;
   /**
@@ -20,6 +29,13 @@ export interface BrowserWorker {
    * the active tab of the panel's window. Its indicator shows again for each message.
    */
   sessionRun: (call: { sessionID: string; windowId?: number }) => Promise<{ id: string }>;
+  /**
+   * The run an MCP connection's calls act in, grouped under its pairing's name: its own while it
+   * lasts, else a new one on `tabId` (the connect tab) or a new tab in `windowId`.
+   */
+  clientRun: (call: ClientRunCall) => Promise<{ id: string }>;
+  /** Stops a connection's run, when its socket closes. */
+  endClient: (connectionID: string) => void;
   content: (sender: ContentSender) => Handlers<ContentMethods>;
   connect: (server: Server<typeof sidekickProtocol>) => void;
   dispose: () => void;
@@ -35,6 +51,8 @@ export function createBrowserWorker({ env }: BrowserRuntime): BrowserWorker {
   const hidden = new Set<string>();
   const bySession = new Map<string, string>();
   const starting = new Map<string, Promise<Run>>();
+  const byClient = new Map<string, string>();
+  const clientStarting = new Map<string, Promise<Run>>();
 
   const show = (tabId: number, visible: boolean) => {
     void page.indicator(tabId, { visible }).catch(() => undefined);
@@ -69,6 +87,32 @@ export function createBrowserWorker({ env }: BrowserRuntime): BrowserWorker {
     return run;
   };
 
+  const openTab = async (windowId: number | undefined) => {
+    if (windowId === undefined) {
+      throw new ToolError(
+        'invalid_target',
+        'There is no browser window to work in. Open one first.',
+      );
+    }
+
+    return tabs.create({ windowId, url: 'about:blank', active: true });
+  };
+
+  const startClient = async ({ connectionID, label, tabId, lastWindow }: ClientRunCall) => {
+    const existing = tabId === undefined ? undefined : await tabs.get(tabId).catch(() => undefined);
+
+    const tab =
+      existing && !runs.list().some((run) => runs.owns(run, existing))
+        ? existing
+        : await openTab(await lastWindow?.());
+
+    const run = await runs.start({ tabId: tab.id, label });
+
+    byClient.set(connectionID, run.id);
+
+    return run;
+  };
+
   const unsubscribers = [
     runs.onJoined((run, tabId) => {
       shown.set(run.id, new Set([...(shown.get(run.id) ?? []), tabId]));
@@ -81,6 +125,8 @@ export function createBrowserWorker({ env }: BrowserRuntime): BrowserWorker {
       hidden.delete(runId);
 
       if (sessionID && bySession.get(sessionID) === runId) bySession.delete(sessionID);
+
+      for (const [connectionID, id] of byClient) if (id === runId) byClient.delete(connectionID);
     }),
   ];
 
@@ -131,6 +177,29 @@ export function createBrowserWorker({ env }: BrowserRuntime): BrowserWorker {
       } finally {
         starting.delete(sessionID);
       }
+    },
+    clientRun: async (call) => {
+      const known = byClient.get(call.connectionID);
+      const current = known === undefined ? undefined : runs.get(known);
+
+      if (current) return { id: current.id };
+
+      const pending = clientStarting.get(call.connectionID) ?? startClient(call);
+
+      clientStarting.set(call.connectionID, pending);
+
+      try {
+        return { id: (await pending).id };
+      } finally {
+        clientStarting.delete(call.connectionID);
+      }
+    },
+    endClient: (connectionID) => {
+      const runId = byClient.get(connectionID);
+
+      byClient.delete(connectionID);
+
+      if (runId) runs.stop(runId, 'user');
     },
     content: ({ tabId, frameId }) => ({
       'frame.identify': () => ({ frameId, key: page.key }),

@@ -152,6 +152,8 @@ function boot(
     sidekickProtocol,
     {
       'tab.ping': () => Promise.reject(new Error('unused')),
+      'mcp.connect': () => Promise.reject(new Error('unused')),
+      'mcp.disconnect': () => Promise.reject(new Error('unused')),
       ...browser.handlers,
       ...bridge,
     },
@@ -396,6 +398,21 @@ describe('the worker tool bridge', () => {
     expect(asserts).toEqual([{ request: { action: 'websearch', resource: 'chrome mv3' }, scope }]);
 
     dispose();
+  });
+
+  it('drops a client a page puts in its scope, so only the MCP host can skip asks', async () => {
+    const { asserts } = boot();
+    const { client } = await panel();
+    const scope = { sessionID: 'ses-1', messageID: 'msg-1', callID: 'call-x', agent: 'build' };
+
+    await workerPermission(client).assert(
+      { action: 'input', resource: 'https://example.com' },
+      { ...scope, client: { id: 'pair-1', name: 'OpenCode' } },
+    );
+
+    expect(asserts).toEqual([
+      { request: { action: 'input', resource: 'https://example.com' }, scope },
+    ]);
   });
 
   it('waits past 31 s on a panel assert’s ask, and tool.cancel drops it', async () => {

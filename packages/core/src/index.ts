@@ -3,6 +3,7 @@ export * from './browser/content';
 export * from './browser/worker';
 export * from './form';
 export * from './legacy';
+export * from './mcp';
 export * from './permission';
 export * from './protocol';
 export * from './registry';

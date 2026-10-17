@@ -43,7 +43,6 @@ const scope = {
   agent: id,
   mode: z.optional(id),
   sites: z.optional(z.array(z.string())),
-  client: z.optional(z.object({ id, name: z.string() })),
 };
 
 const jsonSchema = z.record(z.string(), z.unknown());
@@ -142,6 +141,17 @@ export const sidekickProtocol = defineProtocol({
       input: z.object({ sessionID: z.optional(id) }),
       output: z.array(permissionAsk),
     },
+    'mcp.connect': {
+      input: z.object({ hub: z.string(), token: z.string(), tabId: z.optional(tabId) }),
+      output: z.union([
+        z.object({ connected: z.literal(true), name: z.string(), adopted: z.boolean() }),
+        z.object({
+          connected: z.literal(false),
+          reason: z.enum(['not_loopback', 'unknown_token', 'unreachable']),
+        }),
+      ]),
+    },
+    'mcp.disconnect': { input: z.object({ pairingID: id }), output: z.object({}) },
   },
   events: {
     'run.stopped': z.object({

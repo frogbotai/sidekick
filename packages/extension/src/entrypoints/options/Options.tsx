@@ -5,6 +5,7 @@ import { ThemeProvider } from '@frogbotai/ui/theme';
 import { useEffect, useId, useState } from 'react';
 
 import { GrantsSection } from '../../permission/GrantsSection';
+import { ConnectedAgents } from './ConnectedAgents';
 
 const themeStorage: ThemeStorage = {
   get: () => null,
@@ -21,8 +22,14 @@ function isMode(value: string): value is ThemeMode {
   return MODES.some((mode) => mode.value === value);
 }
 
-/** Sidekick's options page: the theme, then grants and blocked sites. Providers stay in the panel (D1). */
-export function Options({ initialMode }: { initialMode: ThemeMode }) {
+/** Sidekick's options page: the theme, grants and blocked sites, then Connected agents. Providers stay in the panel (D1). */
+export function Options({
+  initialMode,
+  disconnect,
+}: {
+  initialMode: ThemeMode;
+  disconnect: (pairingID: string) => void;
+}) {
   const id = useId();
   const [mode, setMode] = useState(initialMode);
 
@@ -53,6 +60,7 @@ export function Options({ initialMode }: { initialMode: ThemeMode }) {
           </RadioGroup>
         </fieldset>
         <GrantsSection />
+        <ConnectedAgents disconnect={disconnect} />
       </main>
     </ThemeProvider>
   );

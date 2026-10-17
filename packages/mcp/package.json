@@ -1,0 +1,29 @@
+{
+  "name": "@frogbotai/sidekick-mcp",
+  "version": "0.1.0",
+  "description": "Lets an MCP client (Claude Code, Codex, OpenCode) drive FrogBot Sidekick in Chrome.",
+  "license": "MIT",
+  "type": "module",
+  "bin": {
+    "sidekick-mcp": "dist/cli.js"
+  },
+  "files": [
+    "dist",
+    "!dist/**/*.spec.*",
+    "!dist/**/*.map",
+    "!dist/**/*.tsbuildinfo"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "tsc -b"
+  },
+  "dependencies": {
+    "ws": "8.22.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "@types/ws": "8.18.2"
+  }
+}

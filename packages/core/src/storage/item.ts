@@ -9,10 +9,14 @@ export interface StorageItem<T> {
   watch: (listener: (value: T) => void) => () => void;
 }
 
+/** A `chrome.storage` area: `local` persists, `session` lasts until the browser quits. */
+export type StorageArea = 'local' | 'session';
+
 export function defineStorageItem<T>(
   key: string,
   schema: z.ZodType<T>,
   fallback: T,
+  area: StorageArea = 'local',
 ): StorageItem<T> {
   let warned = false;
 
@@ -39,14 +43,17 @@ export function defineStorageItem<T>(
   return {
     key,
     fallback,
-    get: async () => parse((await chrome.storage.local.get(key))[key]),
-    set: async (value) => chrome.storage.local.set({ [key]: schema.parse(value) }),
-    remove: async () => chrome.storage.local.remove(key),
+    get: async () => parse((await chrome.storage[area].get(key))[key]),
+    set: async (value) => chrome.storage[area].set({ [key]: schema.parse(value) }),
+    remove: async () => chrome.storage[area].remove(key),
     watch: (listener) => {
-      const onChanged = (changes: Record<string, chrome.storage.StorageChange>, area: string) => {
+      const onChanged = (
+        changes: Record<string, chrome.storage.StorageChange>,
+        changed: string,
+      ) => {
         const change = changes[key];
 
-        if (area === 'local' && change) listener(parse(change.newValue));
+        if (changed === area && change) listener(parse(change.newValue));
       };
 
       chrome.storage.onChanged.addListener(onChanged);

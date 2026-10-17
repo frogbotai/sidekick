@@ -27,6 +27,22 @@ describe('defineStorageItem', () => {
     expect(fake.data.has('count')).toBe(false);
   });
 
+  it('keeps a session item in storage.session, and watches only that area', async () => {
+    const item = defineStorageItem('live', z.array(z.string()), [], 'session');
+    const listener = vi.fn();
+    const stop = item.watch(listener);
+
+    await item.set(['a']);
+    fake.emit({ live: { newValue: ['b'] } }, 'local');
+
+    expect(fake.session.get('live')).toEqual(['a']);
+    expect(fake.data.has('live')).toBe(false);
+    expect(await item.get()).toEqual(['a']);
+    expect(listener.mock.calls).toEqual([[['a']]]);
+
+    stop();
+  });
+
   it('reads a missing value as the fallback without logging', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
 

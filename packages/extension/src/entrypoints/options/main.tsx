@@ -1,7 +1,7 @@
 import '@frogbotai/ui/styles.css';
 import '../sidepanel/panel.css';
 
-import { theme } from '@frogbotai/sidekick-core';
+import { connectWorker, sidekickProtocol, theme } from '@frogbotai/sidekick-core';
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 
@@ -13,8 +13,14 @@ if (!root) throw new Error('Missing #root');
 
 const initialMode = await theme.get();
 
+const worker = connectWorker(sidekickProtocol);
+
+const disconnect = (pairingID: string) => {
+  void worker.call('mcp.disconnect', { pairingID }).catch(() => undefined);
+};
+
 createRoot(root).render(
   <StrictMode>
-    <Options initialMode={initialMode} />
+    <Options initialMode={initialMode} disconnect={disconnect} />
   </StrictMode>,
 );

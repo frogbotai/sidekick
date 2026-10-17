@@ -52,3 +52,45 @@ export const permissionUsage = defineStorageItem<Record<string, number>>(
 export const permissionMode = defineStorageItem('permission:mode', z.string().min(1), 'build');
 
 export const autoModeWarned = defineStorageItem('permission:autoWarned', z.boolean(), false);
+
+/** The agent apps an MCP pairing is for; each gets its own copied command. */
+export const MCP_CLIENTS = ['claude-code', 'codex', 'opencode', 'other'] as const;
+
+export type McpClientKind = (typeof MCP_CLIENTS)[number];
+
+/** One outside agent allowed to drive Sidekick over MCP: its name, and its token's SHA-256. */
+export interface McpPairing {
+  id: string;
+  name: string;
+  client: McpClientKind;
+  hash: string;
+  created: number;
+}
+
+export const mcpPairings = defineStorageItem<McpPairing[]>(
+  'mcp:pairings',
+  z.array(
+    z.object({
+      id: z.string().min(1),
+      name: z.string().min(1),
+      client: z.enum(MCP_CLIENTS),
+      hash: z.string().regex(/^[0-9a-f]{64}$/),
+      created: z.number(),
+    }),
+  ),
+  [],
+);
+
+/** A helper's hub the worker is connected to, kept for the worker's next start. */
+export interface McpHub {
+  hub: string;
+  token: string;
+  pairingID: string;
+}
+
+export const mcpHubs = defineStorageItem<McpHub[]>(
+  'mcp:hubs',
+  z.array(z.object({ hub: z.string().min(1), token: z.string().min(1), pairingID: z.string() })),
+  [],
+  'session',
+);

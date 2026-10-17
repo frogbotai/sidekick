@@ -9,8 +9,10 @@ import {
   contentProtocol,
   createBrowserRuntime,
   createBrowserWorker,
+  createMcpHost,
   createPermissionEngine,
   createToolBridge,
+  createToolCaller,
   frameProtocol,
   permissionModes,
   registerBuiltinAgents,
@@ -41,6 +43,14 @@ async function injectIntoOpenTabs() {
           }),
     ),
   );
+}
+
+async function lastWindow() {
+  try {
+    return (await chrome.windows.getLastFocused({ windowTypes: ['normal'] })).id;
+  } catch {
+    return undefined;
+  }
 }
 
 async function injectFrame(tabId: number, frameId: number) {
@@ -79,6 +89,14 @@ export default defineBackground(() => {
 
   const bridge = createToolBridge({ tools, permission, run: browser.sessionRun });
 
+  const mcp = createMcpHost({
+    tools,
+    caller: createToolCaller({ tools, permission }),
+    worker: browser,
+    lastWindow,
+    version: chrome.runtime.getManifest().version,
+  });
+
   tools.register('builtin', (draft) => {
     for (const tool of runtime.tools) draft.add(tool);
   });
@@ -98,6 +116,7 @@ export default defineBackground(() => {
         return browser.handlers['run.end'](input);
       },
       ...bridge,
+      ...mcp.handlers,
     },
     { bootId },
   );
@@ -108,6 +127,7 @@ export default defineBackground(() => {
   if (import.meta.env.SIDEKICK_E2E) answerTestRequests(runtime);
 
   void runtime.start();
+  void mcp.restore();
 
   listenForConnect();
 
