@@ -1,8 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { z } from 'zod';
 
+import { race } from '../browser/worker/abort';
+import { type BrowserEnv, runOf } from '../browser/worker/env';
 import { mcpHubs, mcpPairings } from '../storage/items';
+import { defineTool } from '../tool/tool';
 import { type FakeSocket, fakeSocket, flush, setupWorker } from './fakes';
-import { createMcpHost, isLoopbackHub } from './hubs';
+import { createMcpHost, groupTitle, isLoopbackHub } from './hubs';
 import { addPairing, renewPairing, revokePairing } from './pairings';
 import { KEEPALIVE } from './server';
 
@@ -10,8 +14,32 @@ const HUB = 'ws://127.0.0.1:4100/secret-a';
 
 const OTHER_HUB = 'ws://127.0.0.1:4200/secret-b';
 
+const held: (() => void)[] = [];
+
+let holdEnv: BrowserEnv | undefined;
+
+const hold = defineTool({
+  id: 'hold',
+  description: 'Holds the call until the test releases it or the run stops.',
+  input: z.object({}),
+  output: z.object({}),
+  permission: 'read',
+  execute: async (_input, ctx) => {
+    if (!holdEnv) throw new Error('No env');
+
+    const { signal } = runOf(holdEnv, ctx);
+
+    await race(ctx.permission.assert({ action: 'tabs', resource: '*' }), signal);
+    await race(new Promise<void>((resolve) => void held.push(resolve)), signal);
+
+    return { output: {} };
+  },
+});
+
 function setup({ refuse = [] as string[] } = {}) {
-  const worker = setupWorker();
+  const worker = setupWorker({ tools: [hold] });
+
+  holdEnv = worker.runtime.env;
   const sockets: FakeSocket[] = [];
 
   const host = createMcpHost({
@@ -36,7 +64,11 @@ function setup({ refuse = [] as string[] } = {}) {
   return { ...worker, host, sockets };
 }
 
-function initialize(socket: FakeSocket, id = 1) {
+function initialize(
+  socket: FakeSocket,
+  id = 1,
+  clientInfo: { name: string; title?: string } = { name: 'x' },
+) {
   socket.peer.send({
     jsonrpc: '2.0',
     id,
@@ -44,16 +76,18 @@ function initialize(socket: FakeSocket, id = 1) {
     params: {
       protocolVersion: '2025-11-25',
       capabilities: {},
-      clientInfo: { name: 'x', version: '1' },
+      clientInfo: { ...clientInfo, version: '1' },
     },
   });
 
   socket.peer.send({ jsonrpc: '2.0', method: 'notifications/initialized' });
 }
 
-async function call(socket: FakeSocket, id: number, name: string, args: Record<string, unknown>) {
+function send(socket: FakeSocket, id: number, name: string, args: Record<string, unknown>) {
   socket.peer.send({ jsonrpc: '2.0', id, method: 'tools/call', params: { name, arguments: args } });
+}
 
+async function reply(socket: FakeSocket, id: number) {
   await vi.waitFor(() => {
     if (!socket.peer.received.some((message) => (message as { id?: number }).id === id)) {
       throw new Error('no reply yet');
@@ -65,12 +99,20 @@ async function call(socket: FakeSocket, id: number, name: string, args: Record<s
   };
 }
 
+async function call(socket: FakeSocket, id: number, name: string, args: Record<string, unknown>) {
+  send(socket, id, name, args);
+
+  return reply(socket, id);
+}
+
 beforeEach(() => {
   vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
 });
 
 afterEach(() => {
   vi.useRealTimers();
+  holdEnv = undefined;
+  held.length = 0;
 });
 
 describe('the MCP host', () => {
@@ -255,5 +297,127 @@ describe('the MCP host', () => {
 
     expect(runtime.env.runs.list()).toEqual([]);
     expect(await mcpHubs.get()).toEqual([]);
+  });
+});
+
+describe('a connection’s group title', () => {
+  it.each([
+    [
+      'an Other pairing adds the client’s name',
+      'other',
+      'researcher',
+      undefined,
+      'FrogBot · researcher',
+    ],
+    [
+      'a name that repeats the pairing’s, ignoring case, is dropped',
+      'other',
+      'frogbot',
+      undefined,
+      'FrogBot',
+    ],
+    ['a named app’s pairing keeps its name', 'opencode', 'opencode', undefined, 'FrogBot'],
+    ['title beats name', 'other', 'researcher', 'Researcher agent', 'FrogBot · Researcher agent'],
+    [
+      'control characters and runs of whitespace collapse',
+      'other',
+      ' re\u0000search\n\t er ',
+      undefined,
+      'FrogBot · re search er',
+    ],
+    [
+      'a long name is cut to 32 characters',
+      'other',
+      'a'.repeat(40),
+      undefined,
+      `FrogBot · ${'a'.repeat(31)}…`,
+    ],
+    ['an empty name gives the pairing’s name', 'other', ' \u0007 ', undefined, 'FrogBot'],
+  ] as const)('%s', (_case, client, name, title, expected) => {
+    expect(
+      groupTitle({ name: 'FrogBot', client }, { name, ...(title === undefined ? {} : { title }) }),
+    ).toBe(expected);
+  });
+
+  it('is the pairing’s name when the client sent no info', () => {
+    expect(groupTitle({ name: 'FrogBot', client: 'other' }, undefined)).toBe('FrogBot');
+  });
+
+  it('titles an OpenCode pairing whose client sends opencode just OpenCode', async () => {
+    const { host, sockets, runtime } = setup();
+    const { token } = await addPairing({ name: 'OpenCode', client: 'opencode' });
+
+    await host.connect({ hub: HUB, token });
+    initialize(sockets[0], 1, { name: 'opencode' });
+    await call(sockets[0], 2, 'tabs_list', {});
+
+    expect(runtime.env.runs.list().map((run) => run.label)).toEqual(['OpenCode']);
+  });
+
+  it('gives two agents on one Other token a group each, named by their client', async () => {
+    const { host, sockets, runtime } = setup();
+    const { token } = await addPairing({ name: 'FrogBot', client: 'other' });
+
+    await host.connect({ hub: HUB, token });
+    await host.connect({ hub: OTHER_HUB, token });
+
+    initialize(sockets[0], 1, { name: 'researcher' });
+    initialize(sockets[1], 1, { name: 'support' });
+    await call(sockets[0], 2, 'tabs_list', {});
+    await call(sockets[1], 2, 'tabs_list', {});
+
+    const runs = runtime.env.runs.list();
+
+    expect(runs.map((run) => run.label)).toEqual(['FrogBot · researcher', 'FrogBot · support']);
+    expect(new Set(runs.map((run) => run.groupId)).size).toBe(2);
+  });
+
+  it('stops only one agent’s call, keeps its title on the next run and the pairing in the scope', async () => {
+    const { host, sockets, runtime, permission } = setup();
+    const { token, pairing } = await addPairing({ name: 'FrogBot', client: 'other' });
+    const scopes: unknown[] = [];
+    const { assert } = permission;
+
+    permission.assert = (request, scope, signal) => {
+      scopes.push(scope);
+
+      return assert(request, scope, signal);
+    };
+
+    await host.connect({ hub: HUB, token });
+    await host.connect({ hub: OTHER_HUB, token });
+
+    const [researcher, support] = sockets;
+
+    initialize(researcher, 1, { name: 'researcher' });
+    initialize(support, 1, { name: 'support' });
+    send(researcher, 2, 'hold', {});
+    await vi.waitFor(() => expect(runtime.env.runs.list()).toHaveLength(1));
+    send(support, 2, 'hold', {});
+    await vi.waitFor(() => expect(held).toHaveLength(2));
+
+    const first = runtime.env.runs.list().find((run) => run.label === 'FrogBot · researcher');
+
+    runtime.env.runs.stop(first?.id ?? '', 'user');
+
+    expect((await reply(researcher, 2)).result).toEqual({
+      isError: true,
+      content: [{ type: 'text', text: expect.stringContaining('The run was stopped') }],
+    });
+
+    for (const release of held) release();
+
+    expect((await reply(support, 2)).result.isError).toBeUndefined();
+
+    await call(researcher, 3, 'tabs_list', {});
+
+    const next = runtime.env.runs.list().find((run) => run.label === 'FrogBot · researcher');
+
+    expect(next?.id).not.toBe(first?.id);
+    expect(scopes.length).toBeGreaterThanOrEqual(3);
+
+    for (const scope of scopes) {
+      expect(scope).toMatchObject({ client: { id: pairing.id, name: 'FrogBot' } });
+    }
   });
 });

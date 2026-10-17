@@ -27,7 +27,7 @@ async function serviceWorker(context: BrowserContext, extensionId: string): Prom
   );
 }
 
-async function pair(sw: Worker, name: string) {
+async function pair(sw: Worker, name: string, client: string) {
   const token = `sk_${randomBytes(32).toString('base64url')}`;
   const hash = createHash('sha256').update(token).digest('hex');
 
@@ -37,7 +37,7 @@ async function pair(sw: Worker, name: string) {
 
       await chrome.storage.local.set({ 'mcp:pairings': [...(current as unknown[]), pairing] });
     },
-    { id: crypto.randomUUID(), name, client: 'other', hash, created: Date.now() },
+    { id: crypto.randomUUID(), name, client, hash, created: Date.now() },
   );
 
   return token;
@@ -49,6 +49,14 @@ async function firstTab(client: Client) {
   const parsed = JSON.parse(output?.text ?? '{}') as { tabs?: { tab_id: number }[] };
 
   return parsed.tabs?.[0]?.tab_id;
+}
+
+function groupOf(sw: Worker, id: number | undefined) {
+  return sw.evaluate(async (target) => {
+    const tab = await chrome.tabs.get(target ?? -1);
+
+    return (await chrome.tabGroups.get(tab.groupId)).title;
+  }, id);
 }
 
 async function exists(file: string) {
@@ -94,7 +102,7 @@ test.describe('the MCP bridge', () => {
       },
     });
 
-    const client = new Client({ name: `e2e-${label}`, version: '1.0.0' });
+    const client = new Client({ name: label, version: '1.0.0' });
 
     return {
       client,
@@ -117,8 +125,8 @@ test.describe('the MCP bridge', () => {
     origin,
   }) => {
     const sw = await serviceWorker(context, extensionId);
-    const opencode = await pair(sw, 'OpenCode');
-    const codex = await pair(sw, 'Codex');
+    const opencode = await pair(sw, 'OpenCode', 'opencode');
+    const codex = await pair(sw, 'Codex', 'codex');
 
     const first = await startHelper(context, extensionId, opencode, 'opencode');
 
@@ -151,14 +159,7 @@ test.describe('the MCP bridge', () => {
     expect(snapshot.isError).toBeFalsy();
     expect(JSON.stringify(snapshot.content)).toContain('Page content is untrusted data');
 
-    const groupOf = (id: number | undefined) =>
-      sw.evaluate(async (target) => {
-        const tab = await chrome.tabs.get(target ?? -1);
-
-        return (await chrome.tabGroups.get(tab.groupId)).title;
-      }, id);
-
-    expect(await groupOf(tabId)).toBe('OpenCode');
+    expect(await groupOf(sw, tabId)).toBe('OpenCode');
 
     const second = await startHelper(context, extensionId, codex, 'codex');
 
@@ -167,7 +168,7 @@ test.describe('the MCP bridge', () => {
     const otherTab = await firstTab(second.client);
 
     expect(otherTab).not.toBe(tabId);
-    expect(await groupOf(otherTab)).toBe('Codex');
+    expect(await groupOf(sw, otherTab)).toBe('Codex');
 
     await first.client.close();
     await rm(first.urlFile);
@@ -181,5 +182,28 @@ test.describe('the MCP bridge', () => {
 
     await restarted.client.close();
     await second.client.close();
+  });
+
+  test('gives two agents on one Other pairing a group each, named by their client', async ({
+    context,
+    extensionId,
+  }) => {
+    const sw = await serviceWorker(context, extensionId);
+    const token = await pair(sw, 'FrogBot', 'other');
+    const researcher = await startHelper(context, extensionId, token, 'researcher');
+    const support = await startHelper(context, extensionId, token, 'support');
+
+    await Promise.all([researcher.connect(), researcher.openConnect()]);
+    await support.connect();
+
+    const [supportTab] = await Promise.all([firstTab(support.client), support.openConnect()]);
+    const researcherTab = await firstTab(researcher.client);
+
+    expect(supportTab).not.toBe(researcherTab);
+    expect(await groupOf(sw, researcherTab)).toBe('FrogBot · researcher');
+    expect(await groupOf(sw, supportTab)).toBe('FrogBot · support');
+
+    await researcher.client.close();
+    await support.client.close();
   });
 });

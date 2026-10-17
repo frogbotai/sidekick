@@ -25,6 +25,36 @@ export function isLoopbackHub(hub: string) {
   }
 }
 
+const NAME_LENGTH = 32;
+
+function clientName(info: { name: string; title?: string } | undefined) {
+  const name = (info?.title ?? info?.name ?? '')
+    .replaceAll(/\p{Cc}/gu, ' ')
+    .replaceAll(/\s+/g, ' ')
+    .trim();
+
+  const chars = [...name];
+
+  return chars.length > NAME_LENGTH ? `${chars.slice(0, NAME_LENGTH - 1).join('')}…` : name;
+}
+
+/**
+ * A connection's tab group title: the pairing's name, then the client's `title` or `name`
+ * from `initialize` when the pairing is Other and the client names itself differently.
+ */
+export function groupTitle(
+  pairing: Pick<McpPairing, 'name' | 'client'>,
+  info: { name: string; title?: string } | undefined,
+) {
+  const name = clientName(info);
+
+  if (pairing.client !== 'other' || !name) return pairing.name;
+
+  return name.toLowerCase() === pairing.name.toLowerCase()
+    ? pairing.name
+    : `${pairing.name} · ${name}`;
+}
+
 export type McpHandlers = Pick<
   Handlers<(typeof sidekickProtocol)['methods']>,
   'mcp.connect' | 'mcp.disconnect'
@@ -140,7 +170,7 @@ export function createMcpHost(options: McpHostOptions): McpHost {
       run: async () => {
         const run = await worker.clientRun({
           connectionID: connection.id,
-          label: pairing.name,
+          label: groupTitle(pairing, server.getClientVersion()),
           ...(connection.started || connection.tabId === undefined
             ? {}
             : { tabId: connection.tabId }),
