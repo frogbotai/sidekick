@@ -53,6 +53,42 @@ export const permissionMode = defineStorageItem('permission:mode', z.string().mi
 
 export const autoModeWarned = defineStorageItem('permission:autoWarned', z.boolean(), false);
 
+/** A command name: letters, digits, `-` and `_`, in `/`-separated parts, as `review/pr`. */
+export const COMMAND_NAME = /^[\w-]+(?:\/[\w-]+)*$/;
+
+/** A user's `/` template, after OpenCode v2's command files. */
+export interface UserCommand {
+  name: string;
+  description?: string;
+  template: string;
+  /** A `provider/model#variant` ref the chat switches to first. */
+  model?: string;
+}
+
+export const userCommands = defineStorageItem<UserCommand[]>(
+  'commands',
+  z
+    .array(
+      z.object({
+        name: z.string().regex(COMMAND_NAME),
+        description: z.string().min(1).optional(),
+        template: z.string().min(1),
+        model: z.string().min(1).optional(),
+      }),
+    )
+    .refine((list) => new Set(list.map(({ name }) => name)).size === list.length, {
+      message: 'Command names must be unique',
+    }),
+  [],
+);
+
+/** Users' replacements for agents' system prompts, by agent id; Reset deletes the key. */
+export const agentPrompts = defineStorageItem<Record<string, string>>(
+  'agent:prompts',
+  z.record(z.string(), z.string().min(1)),
+  {},
+);
+
 /** The agent apps an MCP pairing is for; each gets its own copied command. */
 export const MCP_CLIENTS = ['claude-code', 'codex', 'opencode', 'other'] as const;
 

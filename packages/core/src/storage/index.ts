@@ -9,11 +9,14 @@ export type {
   McpHub,
   McpPairing,
   PermissionGrant,
+  UserCommand,
   WebSearchChoice,
 } from './items';
 export {
+  agentPrompts,
   autoModeWarned,
   blockedSites,
+  COMMAND_NAME,
   MCP_CLIENTS,
   mcpHubs,
   mcpPairings,
@@ -21,5 +24,6 @@ export {
   permissionMode,
   permissionUsage,
   theme,
+  userCommands,
   webSearchProvider,
 } from './items';

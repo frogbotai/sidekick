@@ -1,10 +1,18 @@
 import { readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 
+import {
+  agentPrompts,
+  agents,
+  BUILTIN_COMMANDS,
+  commands,
+  permissionModes,
+  userCommands,
+} from '@frogbotai/sidekick-core';
 import { installFakeChrome } from '@frogbotai/sidekick-core/testing';
 import { describe, expect, it } from 'vitest';
 
-import { openChat, windowChat } from '.';
+import { openChat, registerPanelExtensions, windowChat } from '.';
 
 const SESSION = path.resolve(import.meta.dirname, '../../../core/src/session');
 
@@ -68,5 +76,32 @@ describe('windowChat', () => {
 
     expect(closed).toEqual(['ses_a', 'ses_b']);
     expect(await openChat.get(7)).toBeUndefined();
+  });
+});
+
+describe('registerPanelExtensions', () => {
+  it('registers built-in commands, then user commands, then prompt overrides after the built-in agents', async () => {
+    installFakeChrome();
+    await userCommands.set([{ name: 'sum', template: 'Summarize $1' }]);
+    await agentPrompts.set({ build: 'Answer in French.', compaction: 'Summarize in French.' });
+
+    const dispose = registerPanelExtensions();
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(commands.list().map(({ id }) => id)).toEqual([
+      ...BUILTIN_COMMANDS.map(({ id }) => id),
+      'sum',
+    ]);
+
+    expect(agents.list().map(({ id }) => id)).toEqual(['build', 'explore', 'title', 'compaction']);
+    expect(agents.get('build')?.system).toBe('Answer in French.');
+    expect(agents.get('compaction')?.system).toBe('Summarize in French.');
+    expect(permissionModes.list().length).toBeGreaterThan(0);
+
+    dispose();
+
+    expect(commands.list()).toEqual([]);
+    expect(agents.list()).toEqual([]);
   });
 });

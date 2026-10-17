@@ -1,11 +1,11 @@
 import {
-  type AgentInfo,
-  agents,
   BUILD_MODE,
+  type ComposerCommandLike,
   type LogEvent,
+  type PanelView,
   permissionMode,
 } from '@frogbotai/sidekick-core';
-import { selectModel } from '@frogbotai/sidekick-core/provider';
+import { modelKey, selectModel } from '@frogbotai/sidekick-core/provider';
 import {
   Alert,
   AlertDescription,
@@ -25,13 +25,15 @@ import {
   emitChatMutation,
   useChats,
 } from '@frogbotai/ui/chat';
-import { ListIcon, PlusSignIcon, SettingIcon } from '@frogbotai/ui/icons';
-import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import { ListIcon, MagicWandIcon, PlusSignIcon, RobotIcon, SettingIcon } from '@frogbotai/ui/icons';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
+import { useAgents } from '../agents/useAgents';
+import { useComposerCommands } from '../commands/useComposerCommands';
 import { PendingFormCard, usePendingForm } from '../form/PendingFormCard';
 import { ModeSelect } from '../permission/ModeSelect';
 import { PermissionCard, usePermissionAsk } from '../permission/PermissionCard';
-import { chatSelection, ModelNotice, ModelPicker } from '../providers/ModelPicker';
+import { chatSelection, findModel, ModelNotice, ModelPicker } from '../providers/ModelPicker';
 import type { Models } from '../providers/useModels';
 import { useStored } from '../providers/useStored';
 import type { Sessions } from '../session';
@@ -43,16 +45,6 @@ const RELOAD_DELAY = 100;
 const DATA_RENDERERS: readonly DataRenderer[] = [{ kind: 'compaction', render: CompactionPart }];
 
 const LISTED = new Set<LogEvent['type']>(['session.created', 'session.renamed', 'session.deleted']);
-
-let listed: { revision: number; agents: AgentInfo[] } | undefined;
-
-function agentList() {
-  const revision = agents.revision();
-
-  if (listed?.revision !== revision) listed = { revision, agents: agents.list() };
-
-  return listed.agents;
-}
 
 function RetryBanner({ notice }: { notice: RetryNotice }) {
   const [now, setNow] = useState(Date.now);
@@ -75,11 +67,12 @@ function RetryBanner({ notice }: { notice: RetryNotice }) {
 export interface ChatPanelProps {
   sessions: Sessions;
   models: Models;
-  onProviders: () => void;
+  /** Opens a full-panel view; Help gets the commands that can run now. */
+  onView: (view: PanelView, commands?: readonly ComposerCommandLike[]) => void;
 }
 
 /** `@frogbotai/ui`'s chat at full panel height, over this window's engine and open chat. */
-export function ChatPanel({ sessions, models, onProviders }: ChatPanelProps) {
+export function ChatPanel({ sessions, models, onView }: ChatPanelProps) {
   const { engine, chat, permissions } = sessions;
   const [chatId, setChatId] = useState<ChatId | undefined>(chat.current);
   const [pick, setPick] = useState<string>();
@@ -87,9 +80,10 @@ export function ChatPanel({ sessions, models, onProviders }: ChatPanelProps) {
   const lastMode = useStored(permissionMode);
   const [retry, setRetry] = useState<RetryNotice>();
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [pickerOpen, setPickerOpen] = useState(false);
   const streaming = useRef(new Set<string>());
   const reload = useRef<ReturnType<typeof setTimeout>>(undefined);
-  const registered = useSyncExternalStore(agents.subscribe, agentList);
+  const registered = useAgents();
   const selection = chatSelection(models, pick);
   const form = usePendingForm();
   const open = chatId === undefined ? undefined : String(chatId);
@@ -208,6 +202,43 @@ export function ChatPanel({ sessions, models, onProviders }: ChatPanelProps) {
     void permissionMode.set(next);
   };
 
+  const composerCommands = useComposerCommands({
+    sessionID: open,
+    engine: {
+      prompt: (input) =>
+        engine.prompt({ ...(selection.ref ? { model: selection.ref } : {}), mode, ...input }),
+      compact: engine.compact,
+    },
+    ui: {
+      newChat: () => switchTo(undefined),
+      openView: (next) => onView(next, next === 'help' ? composerCommands : undefined),
+      pickModel: (query) => {
+        const found = query ? findModel(models, selection, query) : undefined;
+
+        if (found) choose(modelKey(found));
+        else setPickerOpen(true);
+      },
+      setMode: chooseMode,
+      openOptions: async (section) => {
+        await chrome.tabs.create({
+          url: chrome.runtime.getURL(`/options.html${section ? `#${section}` : ''}`),
+        });
+      },
+      open: async () => {
+        if (open) return open;
+
+        if (!selection.ref) throw new Error('Pick a model first.');
+
+        const created = await engine.create({ model: selection.ref, mode });
+
+        await chat.open(created.id);
+        setChatId(created.id);
+
+        return created.id;
+      },
+    },
+  });
+
   const dock = form ? (
     <PendingFormCard key={form.id} form={form} />
   ) : ask ? (
@@ -242,9 +273,27 @@ export function ChatPanel({ sessions, models, onProviders }: ChatPanelProps) {
       <Button
         variant="ghost"
         size="icon"
+        aria-label="Commands"
+        title="Commands"
+        onClick={() => onView('commands')}
+      >
+        <MagicWandIcon />
+      </Button>
+      <Button
+        variant="ghost"
+        size="icon"
+        aria-label="Agents"
+        title="Agents"
+        onClick={() => onView('agents')}
+      >
+        <RobotIcon />
+      </Button>
+      <Button
+        variant="ghost"
+        size="icon"
         aria-label="Providers"
         title="Providers"
-        onClick={onProviders}
+        onClick={() => onView('providers')}
       >
         <SettingIcon />
       </Button>
@@ -263,13 +312,13 @@ export function ChatPanel({ sessions, models, onProviders }: ChatPanelProps) {
       {header}
       <div className="sidekick-connect__body">
         <p>Connect a provider to start chatting.</p>
-        <Button onClick={onProviders}>Connect a provider</Button>
+        <Button onClick={() => onView('providers')}>Connect a provider</Button>
       </div>
     </div>
   );
 
   return (
-    <ChatProvider adapter={adapter} dataRenderers={DATA_RENDERERS}>
+    <ChatProvider adapter={adapter} dataRenderers={DATA_RENDERERS} commands={composerCommands}>
       <Chat
         agent={manifest?.defaultAgent ?? 'build'}
         {...(selection.model ? { model: selection.ref?.split('#')[0] } : {})}
@@ -283,7 +332,13 @@ export function ChatPanel({ sessions, models, onProviders }: ChatPanelProps) {
         headerSlot={header}
         composerStartSlot={
           <>
-            <ModelPicker models={models} selection={selection} onChange={choose} />
+            <ModelPicker
+              models={models}
+              selection={selection}
+              onChange={choose}
+              open={pickerOpen}
+              onOpenChange={setPickerOpen}
+            />
             <ModeSelect mode={mode} onChange={chooseMode} />
           </>
         }

@@ -138,7 +138,7 @@ describe('createRegistry', () => {
     expect(registry.revision()).toBe(3);
   });
 
-  it('exports the eight extension-point registries, empty', () => {
+  it('exports the eight extension-point registries, with nothing registered at import', () => {
     const named = [
       registries.providers,
       registries.tools,
@@ -162,5 +162,18 @@ describe('createRegistry', () => {
     ]);
 
     expect(named.map((registry) => registry.list())).toEqual(Array.from({ length: 8 }, () => []));
+  });
+
+  it('types commands as CommandInfo, which run with their context', async () => {
+    const execute = vi.fn();
+    const dispose = registries.commands.register('test', (draft) =>
+      draft.add({ id: 'hi', title: 'Hi', arguments: true, execute }),
+    );
+
+    await registries.commands.get('hi')?.execute('there', {} as never);
+
+    expect(execute).toHaveBeenCalledWith('there', {});
+
+    dispose();
   });
 });

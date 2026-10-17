@@ -1,4 +1,5 @@
 import type { AgentInfo } from '../agent/agent';
+import type { CommandInfo } from '../command/command';
 import type { PermissionMode } from '../permission/modes';
 import type { ProviderDefinition } from '../provider/definition';
 import type { SearchProvider } from '../search/registry';
@@ -18,7 +19,7 @@ export const providers = createRegistry<ProviderDefinition>('providers');
 export const tools = createRegistry<ToolDefinition>('tools', { check: checkTool });
 export const agents = createRegistry<AgentInfo>('agents');
 export const searchProviders = createRegistry<SearchProvider>('searchProviders');
-export const commands = createRegistry<{ id: string }>('commands');
+export const commands = createRegistry<CommandInfo>('commands');
 export const mentionSources = createRegistry<{ id: string }>('mentionSources');
 export const composerFeatures = createRegistry<{ id: string }>('composerFeatures');
 export const permissionModes = createRegistry<PermissionMode>('permissionModes');

@@ -1,11 +1,14 @@
-import { theme } from '@frogbotai/sidekick-core';
+import { type ComposerCommandLike, type PanelView, theme } from '@frogbotai/sidekick-core';
 import { Button } from '@frogbotai/ui';
 import { ChevronLeftIcon } from '@frogbotai/ui/icons';
 import type { ThemeMode, ThemeStorage } from '@frogbotai/ui/theme';
 import { ThemeProvider } from '@frogbotai/ui/theme';
-import { Suspense, use, useEffect, useState } from 'react';
+import { type ReactNode, Suspense, use, useEffect, useState } from 'react';
 
-import { ChatPanel } from '../../chat/ChatPanel';
+import { AgentsScreen } from '../../agents/AgentsScreen';
+import { ChatPanel, type ChatPanelProps } from '../../chat/ChatPanel';
+import { CommandsScreen } from '../../commands/CommandsScreen';
+import { HelpScreen } from '../../commands/HelpScreen';
 import { ProvidersScreen } from '../../providers/ProvidersScreen';
 import { type Models, useModels } from '../../providers/useModels';
 import type { Sessions } from '../../session';
@@ -19,9 +22,38 @@ const themeStorage: ThemeStorage = {
 function SessionChat(props: {
   sessions: Promise<Sessions>;
   models: Models;
-  onProviders: () => void;
+  onView: ChatPanelProps['onView'];
 }) {
   return <ChatPanel {...props} sessions={use(props.sessions)} />;
+}
+
+const LABELS: Record<PanelView, string> = {
+  providers: 'Provider settings',
+  commands: 'Commands',
+  agents: 'Agents',
+  help: 'Help',
+};
+
+function PanelSection({
+  view,
+  onBack,
+  children,
+}: {
+  view: PanelView;
+  onBack: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <section className="sidekick-panel__view" aria-label={LABELS[view]}>
+      <div className="sidekick-row">
+        <Button variant="ghost" size="sm" onClick={onBack}>
+          <ChevronLeftIcon />
+          Back
+        </Button>
+      </div>
+      {children}
+    </section>
+  );
 }
 
 export interface AppProps {
@@ -32,7 +64,8 @@ export interface AppProps {
 
 export function App({ initialMode, worker, sessions }: AppProps) {
   const [mode, setMode] = useState(initialMode);
-  const [view, setView] = useState<'chat' | 'providers'>('chat');
+  const [view, setView] = useState<'chat' | PanelView>('chat');
+  const [help, setHelp] = useState<readonly ComposerCommandLike[]>([]);
   const models = useModels();
 
   useEffect(() => theme.watch(setMode), []);
@@ -46,21 +79,22 @@ export function App({ initialMode, worker, sessions }: AppProps) {
               <SessionChat
                 sessions={sessions}
                 models={models}
-                onProviders={() => setView('providers')}
+                onView={(next, commands) => {
+                  if (commands) setHelp(commands);
+
+                  setView(next);
+                }}
               />
             </Suspense>
           </div>
-          {view === 'providers' ? (
-            <section className="sidekick-panel__view" aria-label="Provider settings">
-              <div className="sidekick-row">
-                <Button variant="ghost" size="sm" onClick={() => setView('chat')}>
-                  <ChevronLeftIcon />
-                  Back
-                </Button>
-              </div>
-              <ProvidersScreen models={models} />
-            </section>
-          ) : null}
+          {view === 'chat' ? null : (
+            <PanelSection view={view} onBack={() => setView('chat')}>
+              {view === 'providers' ? <ProvidersScreen models={models} /> : null}
+              {view === 'commands' ? <CommandsScreen /> : null}
+              {view === 'agents' ? <AgentsScreen /> : null}
+              {view === 'help' ? <HelpScreen commands={help} /> : null}
+            </PanelSection>
+          )}
         </main>
       </ThemeProvider>
     </WorkerContext>

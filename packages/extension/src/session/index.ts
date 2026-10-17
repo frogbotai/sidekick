@@ -8,8 +8,11 @@ import {
   openDatabase,
   providers,
   reasoningPolicy,
+  registerAgentPrompts,
   registerBuiltinAgents,
+  registerBuiltinCommands,
   registerBuiltinModes,
+  registerUserCommands,
   registerWorkerTools,
   type SessionEngine,
   tools,
@@ -105,7 +108,25 @@ export async function windowChat(
 }
 
 /**
- * Starts the panel's session engine: built-in agents and modes, the worker's tools as proxies, the
+ * Registers the panel's agents, modes and commands: the built-ins, then the user's templates, then
+ * the user's prompt overrides, which must follow every built-in agent.
+ */
+export function registerPanelExtensions() {
+  const disposers = [
+    registerBuiltinAgents(),
+    registerBuiltinModes(),
+    registerBuiltinCommands(),
+    registerUserCommands(),
+    registerAgentPrompts(),
+  ];
+
+  return () => {
+    for (const dispose of disposers.reverse()) dispose();
+  };
+}
+
+/**
+ * Starts the panel's session engine: built-in agents, modes and commands, the worker's tools as proxies, the
  * worker's permission seam and asks, and the sweep for turns a closed panel left behind. Each
  * message carries the active tab's page, whose site joins the chat's sites.
  */
@@ -113,8 +134,7 @@ export async function startSessions(
   worker: SidekickWorker,
   windowId: number | undefined,
 ): Promise<Sessions> {
-  registerBuiltinAgents();
-  registerBuiltinModes();
+  registerPanelExtensions();
 
   let unregister: (() => void) | undefined;
 

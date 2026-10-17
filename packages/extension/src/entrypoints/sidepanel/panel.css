@@ -109,3 +109,8 @@ body,
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
+
+.sidekick-prompt {
+  max-height: 16rem;
+  overflow-y: auto;
+}

@@ -8,7 +8,13 @@ import {
   type Selection,
 } from '@frogbotai/sidekick-core/provider';
 import { Alert, AlertDescription } from '@frogbotai/ui';
-import { ModelSelector, type ModelSelectorModel } from '@frogbotai/ui/chat';
+import {
+  compactModelSearch,
+  matchesModelSearch,
+  ModelSelector,
+  type ModelSelectorModel,
+  normalizeModelSearch,
+} from '@frogbotai/ui/chat';
 import type { SyntheticEvent } from 'react';
 
 import type { Models } from './useModels';
@@ -28,6 +34,24 @@ export function shownModels(models: Models, selection: Selection<ProviderModel>)
   const { model } = selection;
 
   return model && !models.visible.includes(model) ? [model, ...models.visible] : models.visible;
+}
+
+/**
+ * The first model the picker lists that `query` matches, searching the same name, id, provider and
+ * provider name the picker's own search does.
+ */
+export function findModel(models: Models, selection: Selection<ProviderModel>, query: string) {
+  return shownModels(models, selection).find((model) => {
+    const { id, name, provider, providerName } = option(model);
+
+    return matchesModelSearch(
+      query,
+      [name, id, provider ?? '', providerName ?? ''].map((value) => ({
+        normalized: normalizeModelSearch(value),
+        compact: compactModelSearch(value),
+      })),
+    );
+  });
 }
 
 /**
@@ -64,9 +88,11 @@ export interface ModelPickerProps {
   models: Models;
   selection: Selection<ProviderModel>;
   onChange: (ref: string) => void;
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
 }
 
-export function ModelPicker({ models, selection, onChange }: ModelPickerProps) {
+export function ModelPicker({ models, selection, onChange, open, onOpenChange }: ModelPickerProps) {
   if (models.loading || models.connected.size === 0) return null;
 
   const { ref, model } = selection;
@@ -90,6 +116,8 @@ export function ModelPicker({ models, selection, onChange }: ModelPickerProps) {
         {...(selected?.variant ? { selectedReasoning: selected.variant } : {})}
         onModelChange={onChange}
         onReasoningChange={(variant) => onChange(variant ? `${key}#${variant}` : key)}
+        {...(open === undefined ? {} : { open })}
+        {...(onOpenChange ? { onOpenChange } : {})}
       />
     </span>
   );
