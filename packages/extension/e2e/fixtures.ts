@@ -75,6 +75,18 @@ declare global {
 
 process.env.PW_CHROMIUM_ATTACH_TO_OTHER = '1';
 
+/** The built-in search providers' hosts. Every context aborts them, so no test reaches them unless it routes one. */
+export const SEARCH_HOSTS = [
+  'mcp.exa.ai',
+  'mcp.firecrawl.dev',
+  'search.parallel.ai',
+  'api.tavily.com',
+] as const;
+
+/** Matches any request to one of `SEARCH_HOSTS`. */
+export const searchHost = (host: (typeof SEARCH_HOSTS)[number]) => (url: URL) =>
+  url.hostname === host;
+
 function okOf(reply: TestReply, label: string) {
   if ('error' in reply) {
     throw new Error(`${label}: ${reply.error.code}: ${reply.error.message}`);
@@ -94,6 +106,11 @@ export const test = base.extend<Fixtures & Options>({
       channel: 'chromium',
       args: [`--disable-extensions-except=${extensions}`, `--load-extension=${extensions}`],
     });
+
+    await context.route(
+      (url) => (SEARCH_HOSTS as readonly string[]).includes(url.hostname),
+      (route) => route.abort(),
+    );
 
     await use(context);
     await context.close();

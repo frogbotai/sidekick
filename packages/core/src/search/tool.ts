@@ -5,6 +5,7 @@ import { saveGrant } from '../permission/engine';
 import { searchProviders, tools } from '../registry';
 import { webSearchProvider } from '../storage';
 import { defineTool, type ToolContext, ToolError } from '../tool/tool';
+import { SearchHttpError } from './http';
 import { SearchResult } from './registry';
 import {
   SearchDisabledError,
@@ -146,14 +147,29 @@ export function resultsContent({ results }: SearchResponse) {
   if (results.length === 0) return NO_RESULTS;
 
   return results
-    .map(
-      ({ url, title, content }) => `## [${title ?? url}](${url})${content ? `\n\n${content}` : ''}`,
-    )
+    .map(({ url, title, content, published }) => {
+      const time =
+        published === undefined ? '' : `\nPublished: ${new Date(published).toISOString()}`;
+
+      return `## [${title ?? url}](${url})${time}${content ? `\n\n${content}` : ''}`;
+    })
     .join('\n\n');
 }
 
+const HTTP_ERRORS = new Map([
+  [429, 'Web search rate limited (HTTP 429)'],
+  [401, 'Web search authentication failed (HTTP 401)'],
+]);
+
 function toolError(error: unknown, query: string) {
   if (error instanceof ToolError) return error;
+
+  if (error instanceof SearchHttpError) {
+    return new ToolError(
+      error.status === 429 ? 'rate_limited' : 'request_failed',
+      HTTP_ERRORS.get(error.status) ?? `Web search request failed (HTTP ${error.status})`,
+    );
+  }
 
   if (error instanceof SearchDisabledError) return new ToolError('search_disabled', error.message);
 
@@ -176,12 +192,13 @@ export function webSearchTool(forms: Forms = panelForms) {
       try {
         await ctx.permission.assert({ action: 'websearch', resource: query });
 
-        const response = await webSearch.query(query, ctx.signal).catch(async (error: unknown) => {
+        const search = () => webSearch.query(query, ctx.signal, ctx.session.id);
+        const response = await search().catch(async (error: unknown) => {
           if (!(error instanceof SearchProviderRequiredError)) throw error;
 
           await askForChoice(forms, ctx.signal);
 
-          return webSearch.query(query, ctx.signal);
+          return search();
         });
 
         return {

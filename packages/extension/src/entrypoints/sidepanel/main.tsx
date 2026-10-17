@@ -4,6 +4,7 @@ import './panel.css';
 import {
   cleanupLegacyPanel,
   connectWorker,
+  registerBuiltinSearchProviders,
   registerWebSearchTool,
   sidekickProtocol,
   theme,
@@ -30,6 +31,7 @@ const sidekick = { worker, provider, streamText, tools };
 if (import.meta.env.SIDEKICK_E2E) Object.assign(window, { sidekick });
 
 provider.registerBuiltinProviders();
+registerBuiltinSearchProviders();
 registerFrogbotSearch();
 registerWebSearchTool();
 void cleanupLegacyPanel({ localStorage, document });

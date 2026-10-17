@@ -10,8 +10,9 @@ import { createRegistry } from '../registry/registry';
 import { permissionGrants, webSearchProvider } from '../storage';
 import { installFakeChrome } from '../testing/fakeChrome';
 import { type ToolContext, ToolError } from '../tool/tool';
+import { SearchHttpError } from './http';
 import type { SearchProvider } from './registry';
-import { webSearch } from './service';
+import { MAX_CONTENT_CHARS, webSearch } from './service';
 import {
   CHOICE_TIMEOUT_MS,
   NO_RESULTS,
@@ -120,6 +121,12 @@ describe('web_search output', () => {
     expect((await run()).content).toEqual([{ type: 'text', text: NO_RESULTS }]);
   });
 
+  it('cuts each result’s content to 4,000 characters', async () => {
+    search.mockResolvedValue([{ url: 'https://a.example/', content: 'x'.repeat(5_000) }]);
+
+    expect((await run()).output.results[0]?.content).toHaveLength(MAX_CONTENT_CHARS);
+  });
+
   it('refuses results of the wrong shape', async () => {
     search.mockResolvedValue([{ title: 'no url' } as never]);
 
@@ -132,6 +139,47 @@ describe('web_search output', () => {
     );
 
     expect(await failure(run())).toMatchObject({ code: 'reconnect', message: /Reconnect/ });
+  });
+
+  it('prints each result’s published time', async () => {
+    search.mockResolvedValue([
+      {
+        url: 'https://a.example/',
+        title: 'A',
+        content: 'About A',
+        published: Date.UTC(2026, 6, 25),
+      },
+    ]);
+
+    expect((await run()).content).toEqual([
+      {
+        type: 'text',
+        text: '## [A](https://a.example/)\nPublished: 2026-07-25T00:00:00.000Z\n\nAbout A',
+      },
+    ]);
+  });
+
+  it('says what an HTTP failure was, with no URL', async () => {
+    for (const [status, code, message] of [
+      [429, 'rate_limited', 'Web search rate limited (HTTP 429)'],
+      [401, 'request_failed', 'Web search authentication failed (HTTP 401)'],
+      [503, 'request_failed', 'Web search request failed (HTTP 503)'],
+    ] as const) {
+      search.mockRejectedValue(new SearchHttpError(status));
+
+      expect(await failure(run())).toMatchObject({ code, message });
+    }
+  });
+
+  it('searches for the tool call’s session', async () => {
+    const query = vi.spyOn(webSearch, 'query');
+    const ctx = context();
+
+    await webSearchTool(forms).execute({ query: 'q' }, ctx);
+
+    expect(query).toHaveBeenCalledWith('q', ctx.signal, 'session-1');
+
+    query.mockRestore();
   });
 });
 

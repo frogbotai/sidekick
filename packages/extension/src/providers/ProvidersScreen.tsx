@@ -5,6 +5,7 @@ import {
   type ProviderDefinition,
   type ProviderSetting,
   providerSettings,
+  testKey,
 } from '@frogbotai/sidekick-core/provider';
 import {
   Alert,
@@ -22,9 +23,10 @@ import { CustomProviderForm } from './CustomProviderForm';
 import { FrogbotConnect } from './FrogbotConnect';
 import { KeyForm } from './KeyForm';
 import { ModelList } from './ModelList';
+import { SearchProviderCard } from './SearchProviderCard';
 import { ServerForm } from './ServerForm';
 import type { Models } from './useModels';
-import { allCredentials, useProviderList, useStored } from './useStored';
+import { allCredentials, useProviderList, useSearchProviderList, useStored } from './useStored';
 
 interface CardProps {
   definition: ProviderDefinition;
@@ -51,13 +53,32 @@ function ProviderCard({ definition, models, keys, settings, custom }: CardProps)
         {definition.id === FROGBOT_PROVIDER_ID ? (
           <FrogbotConnect connected={own.length > 0} />
         ) : definition.auth === 'key' ? (
-          <KeyForm definition={definition} keys={own} />
+          <KeyForm provider={definition} keys={own} test={(key) => testKey(definition, { key })} />
         ) : (
           <ServerForm definition={definition} setting={settings[definition.id]} custom={custom} />
         )}
         <ModelList providerID={definition.id} models={models} />
       </CardContent>
     </Card>
+  );
+}
+
+function WebSearchSection({ keys }: { keys: readonly Credential[] }) {
+  const keyed = useSearchProviderList().filter((provider) => provider.key);
+
+  if (keyed.length === 0) return null;
+
+  return (
+    <section className="sidekick-stack" aria-labelledby="web-search-title">
+      <h2 id="web-search-title">Web search</h2>
+      {keyed.map((provider) => (
+        <SearchProviderCard
+          key={provider.id}
+          provider={provider}
+          keys={keys.filter((credential) => credential.providerID === provider.id)}
+        />
+      ))}
+    </section>
   );
 }
 
@@ -92,6 +113,7 @@ export function ProvidersScreen({ models }: { models: Models }) {
           />
         ))}
       <CustomProviderForm />
+      <WebSearchSection keys={keys} />
     </section>
   );
 }

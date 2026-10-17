@@ -1,10 +1,4 @@
-import {
-  type Credential,
-  credentials,
-  type KeyTest,
-  type ProviderDefinition,
-  testKey,
-} from '@frogbotai/sidekick-core/provider';
+import { type Credential, credentials, type KeyTest } from '@frogbotai/sidekick-core/provider';
 import { Badge, Button, Input, Label } from '@frogbotai/ui';
 import { type FormEvent, useId, useState } from 'react';
 
@@ -41,12 +35,15 @@ function KeyRow({ credential }: { credential: Credential }) {
   );
 }
 
+/** The keys stored for one provider, with a form to add more. `test`, when given, checks a key before it is saved. */
 export function KeyForm({
-  definition,
+  provider,
   keys,
+  test,
 }: {
-  definition: ProviderDefinition;
+  provider: { id: string; name: string };
   keys: readonly Credential[];
+  test?: (key: string) => Promise<KeyTest>;
 }) {
   const id = useId();
   const [label, setLabel] = useState('');
@@ -54,10 +51,12 @@ export function KeyForm({
   const [result, setResult] = useState<KeyTest>();
   const [busy, setBusy] = useState(false);
 
-  const test = async () => {
+  const check = async () => {
+    if (!test) return undefined;
+
     setBusy(true);
 
-    const tested = await testKey(definition, { key: key.trim() });
+    const tested = await test(key.trim());
 
     setResult(tested);
     setBusy(false);
@@ -68,10 +67,12 @@ export function KeyForm({
   const add = async (event: FormEvent) => {
     event.preventDefault();
 
-    if ((await test()).status !== 'ok') return;
+    const tested = await check();
+
+    if (tested && tested.status !== 'ok') return;
 
     await credentials.add({
-      providerID: definition.id,
+      providerID: provider.id,
       label: label.trim() || `Key ${keys.length + 1}`,
       value: { type: 'key', key: key.trim() },
     });
@@ -83,7 +84,7 @@ export function KeyForm({
   return (
     <>
       {keys.length > 0 ? (
-        <ul className="sidekick-list" aria-label={`${definition.name} keys`}>
+        <ul className="sidekick-list" aria-label={`${provider.name} keys`}>
           {keys.map((credential) => (
             <KeyRow key={credential.id} credential={credential} />
           ))}
@@ -109,19 +110,21 @@ export function KeyForm({
           }}
         />
         <div className="sidekick-row">
-          <Button
-            type="button"
-            variant="outline"
-            disabled={busy || !key.trim()}
-            onClick={() => void test()}
-          >
-            Test
-          </Button>
+          {test ? (
+            <Button
+              type="button"
+              variant="outline"
+              disabled={busy || !key.trim()}
+              onClick={() => void check()}
+            >
+              Test
+            </Button>
+          ) : null}
           <Button type="submit" disabled={busy || !key.trim()}>
             Add key
           </Button>
         </div>
-        {result ? <KeyTestResult result={result} name={definition.name} /> : null}
+        {result ? <KeyTestResult result={result} name={provider.name} /> : null}
       </form>
     </>
   );

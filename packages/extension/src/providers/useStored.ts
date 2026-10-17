@@ -1,4 +1,4 @@
-import { providers } from '@frogbotai/sidekick-core';
+import { providers, searchProviders } from '@frogbotai/sidekick-core';
 import { type Credential, credentials } from '@frogbotai/sidekick-core/provider';
 import { useEffect, useState, useSyncExternalStore } from 'react';
 
@@ -40,4 +40,11 @@ export function useProviderList() {
   useSyncExternalStore(providers.subscribe, providers.revision);
 
   return providers.list();
+}
+
+/** The registered search providers, re-read whenever that registry changes. */
+export function useSearchProviderList() {
+  useSyncExternalStore(searchProviders.subscribe, searchProviders.revision);
+
+  return searchProviders.list();
 }

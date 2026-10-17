@@ -1,6 +1,6 @@
 import type { BrowserContext } from '@playwright/test';
 
-import { expect, test } from './fixtures';
+import { expect, SEARCH_HOSTS, searchHost, test } from './fixtures';
 
 const OPENAI = 'https://api.openai.com/v1';
 
@@ -236,6 +236,12 @@ test('a pasted FrogBot key connects, shows the balance, the models and FrogBotâ€
   await fakeProviders(context);
   await fakeFrogbot(context);
 
+  for (const host of SEARCH_HOSTS) {
+    await context.route(searchHost(host), (route) =>
+      route.fulfill({ status: 429, headers: { 'Retry-After': '600' }, body: 'slow down' }),
+    );
+  }
+
   const panel = await openPanel();
 
   await panel.getByRole('button', { name: 'Providers', exact: true }).click();
@@ -294,7 +300,7 @@ test('a pasted FrogBot key connects, shows the balance, the models and FrogBotâ€
 
   const dockTop = (await prompt.boundingBox())?.y ?? Infinity;
 
-  await prompt.getByLabel('Allow search via FrogBot').click();
+  await prompt.getByLabel('Allow search via Exa, Firecrawl, FrogBot, Parallel, Tavily').click();
   await prompt.getByRole('button', { name: 'Continue' }).click();
 
   expect(await search).toEqual({
@@ -333,5 +339,5 @@ test('a pasted FrogBot key connects, shows the balance, the models and FrogBotâ€
     'https://app.frogbot.ai/collections/api-keys',
   );
 
-  expect(await panel.evaluate(() => window.sidekick.tools.get('web_search'))).toBeUndefined();
+  expect(await panel.evaluate(() => Boolean(window.sidekick.tools.get('web_search')))).toBe(true);
 });

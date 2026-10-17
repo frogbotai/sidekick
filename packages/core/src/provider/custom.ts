@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-import { providers } from '../registry';
+import { providers, searchProviders } from '../registry';
 import { defineStorageItem } from '../storage';
 import { forgetProviderSetting, updateProviderSetting } from './connection';
 import { credentials } from './credentials';
@@ -71,7 +71,8 @@ export async function addCustomProvider({ name, baseURL, key }: AddCustomProvide
   const stored = await customProviders.get();
   const base = slug(name);
   const taken = (id: string) =>
-    Boolean(providers.get(id)) || stored.some((entry) => entry.id === id);
+    Boolean(providers.get(id) ?? searchProviders.get(id)) ||
+    stored.some((entry) => entry.id === id);
 
   let id = base;
 
