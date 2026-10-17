@@ -14,6 +14,8 @@ import {
   ChatHistory,
   type ChatId,
   ChatProvider,
+  CompactionPart,
+  type DataRenderer,
   emitChatMutation,
   useChats,
 } from '@frogbotai/ui/chat';
@@ -28,6 +30,8 @@ import { chatManifest, createChatAdapter } from './adapter';
 import type { RetryNotice } from './transport';
 
 const RELOAD_DELAY = 100;
+
+const DATA_RENDERERS: readonly DataRenderer[] = [{ kind: 'compaction', render: CompactionPart }];
 
 const LISTED = new Set<LogEvent['type']>(['session.created', 'session.renamed', 'session.deleted']);
 
@@ -229,7 +233,7 @@ export function ChatPanel({ sessions, models, onProviders }: ChatPanelProps) {
   );
 
   return (
-    <ChatProvider adapter={adapter}>
+    <ChatProvider adapter={adapter} dataRenderers={DATA_RENDERERS}>
       <Chat
         agent={manifest?.defaultAgent ?? 'build'}
         {...(selection.model ? { model: selection.ref?.split('#')[0] } : {})}

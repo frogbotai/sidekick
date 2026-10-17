@@ -39,6 +39,7 @@ export function modelSource(): ModelSource {
       return {
         language,
         reasoning: reasoningPolicy(providers.get(providerID), listed ?? { id: modelID }),
+        ...(listed?.limit ? { limit: listed.limit } : {}),
       };
     },
   };

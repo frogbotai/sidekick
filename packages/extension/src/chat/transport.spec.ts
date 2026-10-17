@@ -1,4 +1,11 @@
-import type { UIMessage, UIMessageChunk } from 'ai';
+import {
+  CHAT_FULL,
+  type DurableEventBody,
+  replay,
+  type SessionEvent,
+  toUIMessages,
+} from '@frogbotai/sidekick-core';
+import { readUIMessageStream, type UIMessage, type UIMessageChunk } from 'ai';
 import { describe, expect, it } from 'vitest';
 
 import { fakeEngine } from './fakeEngine';
@@ -311,5 +318,107 @@ describe('createSessionTransport', () => {
     const { transport } = setup();
 
     expect(await transport.reconnectToStream({ chatId: 'ses_1' })).toBeNull();
+  });
+
+  it('streams a compaction as data-compaction with its id, as a reload maps it', async () => {
+    const turns: DurableEventBody[][] = [
+      [
+        { type: 'session.prompted', messageID: 'msg_u1', parts: [] },
+        { type: 'session.compaction.started', messageID: 'msg_c1', reason: 'auto' },
+        {
+          type: 'session.compaction.ended',
+          messageID: 'msg_c1',
+          summary: '## Objective\n- Shop',
+          recent: '[User]: Shop',
+          model: 'openai/gpt-5',
+          tokens: { input: 900, output: 40, cacheRead: 800 },
+        },
+        { type: 'session.step.started', messageID: 'msg_a1', agent: 'build', model: 'm' },
+        { type: 'session.step.ended', messageID: 'msg_a1', finish: 'stop' },
+        { type: 'session.idle', messageID: 'msg_i1', outcome: 'succeeded' },
+      ],
+      [
+        { type: 'session.prompted', messageID: 'msg_u2', parts: [] },
+        { type: 'session.compaction.started', messageID: 'msg_c2', reason: 'auto' },
+        {
+          type: 'session.compaction.failed',
+          messageID: 'msg_c2',
+          error: { type: 'compaction', message: 'Compaction produced no summary' },
+        },
+        { type: 'session.idle', messageID: 'msg_i2', outcome: 'failed' },
+      ],
+    ];
+
+    const live: UIMessage[][] = [];
+    const chunks: UIMessageChunk[][] = [];
+
+    for (const [index, events] of turns.entries()) {
+      const { send, play } = setup();
+      const stream = await send([user(index === 0 ? 'msg_u1' : 'msg_u2')]);
+      const [forUI, forChunks] = stream.tee();
+      const seen: UIMessage[] = [];
+      const reading = (async () => {
+        for await (const message of readUIMessageStream({ stream: forUI })) {
+          seen.push(structuredClone(message));
+        }
+      })();
+
+      const read2 = read(forChunks);
+
+      play(...events);
+      chunks.push(await read2);
+      await reading;
+      live.push(seen);
+    }
+
+    let seq = 0;
+
+    const events = turns.flat().map((body): SessionEvent => ({
+      id: `e${++seq}`,
+      sessionID: 's1',
+      seq,
+      created: seq,
+      ...body,
+    }));
+
+    const reloaded = toUIMessages(
+      [...replay(events).messages.values()].sort((a, b) => a.seq - b.seq),
+    ).filter(({ role }) => role === 'assistant');
+
+    const compactionsOf = (message: { parts: readonly { type: string }[] } | undefined) =>
+      message?.parts.filter(({ type }) => type === 'data-compaction');
+
+    expect(compactionsOf(live[0]?.find((seen) => compactionsOf(seen)?.length))).toEqual([
+      { type: 'data-compaction', id: 'msg_c1', data: { status: 'running', reason: 'auto' } },
+    ]);
+
+    expect(live.map((seen) => seen.at(-1)?.id)).toEqual(['msg_c1', 'msg_c2']);
+    expect(reloaded.map(({ id }) => id)).toEqual(['msg_c1', 'msg_c2']);
+
+    expect(compactionsOf(live[0]?.at(-1))).toEqual(compactionsOf(reloaded[0]));
+    expect(compactionsOf(live[1]?.at(-1))).toEqual(compactionsOf(reloaded[1]));
+
+    expect(compactionsOf(reloaded[0])).toEqual([
+      {
+        type: 'data-compaction',
+        id: 'msg_c1',
+        data: {
+          status: 'completed',
+          reason: 'auto',
+          summary: '## Objective\n- Shop',
+          tokens: { input: 900, output: 40 },
+        },
+      },
+    ]);
+
+    expect(compactionsOf(reloaded[1])).toEqual([
+      {
+        type: 'data-compaction',
+        id: 'msg_c2',
+        data: { status: 'failed', reason: 'auto', error: 'Compaction produced no summary' },
+      },
+    ]);
+
+    expect(chunks[1]?.at(-1)).toEqual({ type: 'error', errorText: CHAT_FULL });
   });
 });

@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 
 import { agents } from '../registry';
 import { evaluate, offersTool } from './agent';
-import { BUILD_AGENT, registerBuiltinAgents, TITLE_AGENT } from './builtin';
+import { BUILD_AGENT, COMPACTION_AGENT, registerBuiltinAgents, TITLE_AGENT } from './builtin';
 
 let dispose: (() => void) | undefined;
 
@@ -48,6 +48,18 @@ describe('built-in agents', () => {
     expect(agents.get(BUILD_AGENT)?.steps).toBe(3);
 
     user();
+  });
+
+  it('registers a hidden compaction agent that offers no tool and holds the summary prompt', () => {
+    dispose = registerBuiltinAgents();
+
+    const compaction = agents.get(COMPACTION_AGENT);
+
+    if (!compaction) throw new Error('Missing the compaction agent');
+
+    expect(compaction).toMatchObject({ mode: 'primary', hidden: true });
+    expect(compaction.system).toContain('## Browser State');
+    expect(TOOLS.filter((tool) => offersTool(compaction, tool))).toEqual([]);
   });
 });
 

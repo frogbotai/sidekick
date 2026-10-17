@@ -1,7 +1,14 @@
 import type { DynamicToolUIPart, UIMessage, UIMessagePart, UITools } from 'ai';
 
 import type { ToolContent } from '../tool/tool';
-import type { AssistantContent, AssistantTool, SessionMessage, UserPart } from './schema';
+import type {
+  AssistantContent,
+  AssistantTool,
+  CompactionMessage,
+  SessionMessage,
+  TokenUsage,
+  UserPart,
+} from './schema';
 
 /** `@frogbotai/ui`'s pasted-text part data. */
 export interface PasteData {
@@ -9,9 +16,19 @@ export interface PasteData {
   filename: string;
 }
 
+/** `@frogbotai/ui`'s `CompactionPartData`: `tokens` are the summary call's own totals. */
+export interface CompactionData {
+  status: CompactionMessage['status'];
+  reason: CompactionMessage['reason'];
+  summary?: string;
+  error?: string;
+  tokens?: { input: number; output: number };
+}
+
 export interface SessionDataParts {
   [name: string]: unknown;
   paste: PasteData;
+  compaction: CompactionData;
 }
 
 /** `@frogbotai/ui`'s attachment part, which the AI SDK's part union doesn't have. */
@@ -159,9 +176,10 @@ function assistantPart(part: AssistantContent): SessionUIPart {
 
 /**
  * A session's messages as AI SDK `UIMessage`s for `@frogbotai/ui`. A user message keeps its id; a
- * turn's assistant steps join into one message with the first step's id, each opening with
- * `step-start`, and tool parts keep their call ids. Each carries its stored time as
- * `metadata.createdAt`. Other message kinds don't render.
+ * turn's assistant steps and compactions join into one message with the first one's id, each step
+ * opening with `step-start`, each compaction a `data-compaction` part with its own id, and tool
+ * parts keep their call ids. A compaction outside a turn opens its own message. Each carries its
+ * stored time as `metadata.createdAt`. Other message kinds don't render.
  */
 export function toUIMessages(messages: readonly SessionMessage[]): SessionUIMessage[] {
   const result: SessionUIMessage[] = [];
@@ -181,7 +199,9 @@ export function toUIMessages(messages: readonly SessionMessage[]): SessionUIMess
       continue;
     }
 
-    if (message.type !== 'assistant') continue;
+    if (message.type === 'idle') turn = undefined;
+
+    if (message.type !== 'assistant' && message.type !== 'compaction') continue;
 
     if (!turn) {
       turn = {
@@ -194,10 +214,32 @@ export function toUIMessages(messages: readonly SessionMessage[]): SessionUIMess
       result.push(turn);
     }
 
-    turn.parts.push({ type: 'step-start' }, ...message.content.map(assistantPart));
+    if (message.type === 'compaction') {
+      turn.parts.push({ type: 'data-compaction', id: message.id, data: compactionData(message) });
+    } else {
+      turn.parts.push({ type: 'step-start' }, ...message.content.map(assistantPart));
+    }
   }
 
   return result;
+}
+
+function compactionTokens(tokens: TokenUsage | undefined) {
+  return tokens ? { tokens: { input: tokens.input ?? 0, output: tokens.output ?? 0 } } : {};
+}
+
+/** A compaction message, or its events so far, as the `data-compaction` part's data. */
+export function compactionData(message: CompactionMessage): CompactionData {
+  const { status, reason } = message;
+
+  switch (message.status) {
+    case 'running':
+      return { status, reason };
+    case 'completed':
+      return { status, reason, summary: message.summary, ...compactionTokens(message.tokens) };
+    case 'failed':
+      return { status, reason, error: message.error.message, ...compactionTokens(message.tokens) };
+  }
 }
 
 function fromUIPart(part: unknown): UserPart[] {

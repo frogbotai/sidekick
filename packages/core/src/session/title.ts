@@ -1,7 +1,7 @@
 import { generateText, type LanguageModel } from 'ai';
 
 import type { AgentInfo } from '../agent/agent';
-import type { ProviderModel } from '../provider/definition';
+import type { ModelLimit, ProviderModel } from '../provider/definition';
 import { pickTitleModel } from '../provider/small';
 import type { ReasoningPolicy } from './request';
 import type { SessionInfo, UserPart } from './schema';
@@ -14,7 +14,10 @@ export const TITLE_INPUT_MAX_LENGTH = 2_000;
 
 /** Builds models for the engine; the extension reads keys and the catalog behind it. */
 export interface ModelSource {
-  resolve: (ref: string) => Promise<{ language: LanguageModel; reasoning: ReasoningPolicy }>;
+  /** `limit` is the model's known window, which automatic compaction needs. */
+  resolve: (
+    ref: string,
+  ) => Promise<{ language: LanguageModel; reasoning: ReasoningPolicy; limit?: ModelLimit }>;
   /** Every connected model, for the title's small-model fallback. */
   list: () => Promise<ProviderModel[]>;
 }

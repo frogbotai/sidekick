@@ -80,7 +80,8 @@ function failureOf(error: unknown): ToolFailure {
   return { message: error instanceof Error ? error.message : String(error) };
 }
 
-function toolSet(tools: readonly ToolDefinition[]): ToolSet {
+/** The tools as the AI SDK sends them, with no `execute`, so the engine runs every call. */
+export function toolSet(tools: readonly ToolDefinition[]): ToolSet {
   return Object.fromEntries(
     tools.map((definition) => [
       definition.id,
@@ -93,11 +94,12 @@ function toolSet(tools: readonly ToolDefinition[]): ToolSet {
   );
 }
 
-function usageOf(usage: {
+/** The AI SDK's usage as stored: totals, plus reasoning and cache details when reported. */
+export function usageOf(usage: {
   inputTokens?: number;
   outputTokens?: number;
   outputTokenDetails?: { reasoningTokens?: number };
-  inputTokenDetails?: { cacheReadTokens?: number };
+  inputTokenDetails?: { cacheReadTokens?: number; cacheWriteTokens?: number };
 }): TokenUsage {
   return {
     ...(usage.inputTokens === undefined ? {} : { input: usage.inputTokens }),
@@ -108,6 +110,9 @@ function usageOf(usage: {
     ...(usage.inputTokenDetails?.cacheReadTokens === undefined
       ? {}
       : { cacheRead: usage.inputTokenDetails.cacheReadTokens }),
+    ...(usage.inputTokenDetails?.cacheWriteTokens === undefined
+      ? {}
+      : { cacheWrite: usage.inputTokenDetails.cacheWriteTokens }),
   };
 }
 

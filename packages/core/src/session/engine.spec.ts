@@ -8,6 +8,7 @@ import { z } from 'zod';
 
 import type { AgentInfo } from '../agent/agent';
 import { BUILTIN_AGENTS } from '../agent/builtin';
+import type { ModelLimit } from '../provider/definition';
 import { createRegistry } from '../registry/registry';
 import { openDatabase } from '../storage/database';
 import { defineTool, type ToolDefinition } from '../tool/tool';
@@ -31,17 +32,25 @@ const USAGE = {
 
 type Script = LanguageModelV4StreamPart[] | Error | (() => Promise<LanguageModelV4StreamPart[]>);
 
-const finish = (unified: 'stop' | 'tool-calls' = 'stop'): LanguageModelV4StreamPart => ({
+const finish = (
+  unified: 'stop' | 'tool-calls' = 'stop',
+  usage = USAGE,
+): LanguageModelV4StreamPart => ({
   type: 'finish',
   finishReason: { unified, raw: unified },
-  usage: USAGE,
+  usage,
 });
 
-const text = (value: string, id = 't'): LanguageModelV4StreamPart[] => [
+const text = (value: string, id = 't', input?: number): LanguageModelV4StreamPart[] => [
   { type: 'text-start', id },
   { type: 'text-delta', id, delta: value },
   { type: 'text-end', id },
-  finish(),
+  finish(
+    'stop',
+    input === undefined
+      ? USAGE
+      : { ...USAGE, inputTokens: { ...USAGE.inputTokens, total: input, noCache: input } },
+  ),
 ];
 
 const call = (
@@ -163,9 +172,16 @@ interface Setup {
   title?: MockLanguageModelV4;
   store?: SessionStore;
   locks?: SessionLocks;
+  limit?: ModelLimit;
 }
 
-async function setup({ steps = [], agents = [...BUILTIN_AGENTS], title, ...rest }: Setup = {}) {
+async function setup({
+  steps = [],
+  agents = [...BUILTIN_AGENTS],
+  title,
+  limit,
+  ...rest
+}: Setup = {}) {
   let store = rest.store;
 
   if (!store) {
@@ -199,7 +215,8 @@ async function setup({ steps = [], agents = [...BUILTIN_AGENTS], title, ...rest 
 
         return Promise.resolve({
           language: title && ref.includes('haiku') ? title : model,
-          reasoning: 'strip',
+          reasoning: 'strip' as const,
+          ...(limit ? { limit } : {}),
         });
       },
       list: () =>
@@ -325,26 +342,6 @@ describe('the loop', () => {
     expect(kinds(messages)).toEqual(['user', 'assistant', 'idle:succeeded']);
     expect(assistants(messages)[0]).not.toHaveProperty('retry');
     expect(assistants(messages)[0]).not.toHaveProperty('error');
-  });
-
-  it('ends an overflow with "This chat is full"', async () => {
-    const overflow = new APICallError({
-      message: 'prompt is too long: 250000 tokens > 200000 maximum',
-      url: 'https://api.test',
-      requestBodyValues: {},
-      statusCode: 400,
-    });
-
-    const { engine, session, sleeps } = await setup({ steps: [overflow] });
-
-    await send(engine, session.id, 'Hi');
-
-    const messages = await engine.messages(session.id);
-
-    expect(sleeps).toEqual([]);
-    expect(kinds(messages)).toEqual(['user', 'assistant', 'idle:failed']);
-    expect(assistants(messages)[0]?.error).toEqual({ type: 'overflow', message: CHAT_FULL });
-    expect(CHAT_FULL).toBe('This chat is full. Start a new one.');
   });
 
   it('writes model-switched before the next turn, which uses the new model', async () => {
@@ -787,5 +784,198 @@ describe('titles', () => {
     await expect.poll(() => title.doGenerateCalls.length).toBe(1);
 
     expect((await store.sessions.get(session.id))?.title).toBeUndefined();
+  });
+});
+
+const overflow = () =>
+  new APICallError({
+    message: 'prompt is too long: 250000 tokens > 200000 maximum',
+    url: 'https://api.test',
+    requestBodyValues: {},
+    statusCode: 400,
+  });
+
+const SUMMARY = '## Objective\n- Say hi';
+
+const compactions = (messages: SessionMessage[]) =>
+  messages.flatMap((message) => (message.type === 'compaction' ? [message] : []));
+
+describe('compaction', () => {
+  const window = { context: 100_000, output: 8_000 };
+
+  it('compacts before the step once usage reaches the ceiling, and not one token below', async () => {
+    const at = await setup({
+      limit: window,
+      steps: [text('One', 't', 83_997), text(SUMMARY), text('Two')],
+    });
+
+    await send(at.engine, at.session.id, 'One');
+    await send(at.engine, at.session.id, 'Two');
+
+    const messages = await at.engine.messages(at.session.id);
+
+    expect(kinds(messages)).toEqual([
+      'user',
+      'assistant',
+      'idle:succeeded',
+      'user',
+      'compaction',
+      'assistant',
+      'idle:succeeded',
+    ]);
+
+    expect(compactions(messages)[0]).toMatchObject({
+      status: 'completed',
+      reason: 'auto',
+      summary: SUMMARY,
+      recent: '[User]: Two',
+    });
+
+    expect(promptOf(at.model.doStreamCalls[1])).toContain('You MUST summarize');
+    expect(promptOf(at.model.doStreamCalls[2])).toContain('<conversation-checkpoint>');
+    expect(promptOf(at.model.doStreamCalls[2])).not.toContain('"text":"One"');
+
+    const below = await setup({ limit: window, steps: [text('One', 't', 83_996), text('Two')] });
+
+    await send(below.engine, below.session.id, 'One');
+    await send(below.engine, below.session.id, 'Two');
+
+    expect(compactions(await below.engine.messages(below.session.id))).toEqual([]);
+    expect(below.model.doStreamCalls).toHaveLength(2);
+  });
+
+  it('never compacts on its own when the window is unknown', async () => {
+    const { engine, session, model } = await setup({
+      steps: [text('One', 't', 50_000_000), text('Two')],
+    });
+
+    await send(engine, session.id, 'One');
+    await send(engine, session.id, 'Two');
+
+    expect(compactions(await engine.messages(session.id))).toEqual([]);
+    expect(model.doStreamCalls).toHaveLength(2);
+  });
+
+  it('compacts once after an overflow and reruns the step as a new message', async () => {
+    const { engine, session, sleeps } = await setup({
+      steps: [overflow(), text(SUMMARY), text('Recovered')],
+    });
+
+    await send(engine, session.id, 'Hi');
+
+    const messages = await engine.messages(session.id);
+    const [failed, rerun] = assistants(messages);
+
+    expect(sleeps).toEqual([]);
+
+    expect(kinds(messages)).toEqual([
+      'user',
+      'assistant',
+      'compaction',
+      'assistant',
+      'idle:succeeded',
+    ]);
+
+    expect(failed?.error).toEqual({ type: 'overflow', message: CHAT_FULL });
+    expect(rerun?.id).not.toBe(failed?.id);
+    expect(rerun?.content).toMatchObject([{ type: 'text', text: 'Recovered' }]);
+  });
+
+  it('ends a second overflow, or a failed compaction, with "This chat is full"', async () => {
+    const twice = await setup({ steps: [overflow(), text(SUMMARY), overflow()] });
+
+    await send(twice.engine, twice.session.id, 'Hi');
+
+    const again = await twice.engine.messages(twice.session.id);
+
+    expect(kinds(again)).toEqual(['user', 'assistant', 'compaction', 'assistant', 'idle:failed']);
+    expect(assistants(again)[1]?.error).toEqual({ type: 'overflow', message: CHAT_FULL });
+
+    const unusable = await setup({ steps: [overflow(), text('no'), text('still no')] });
+
+    await send(unusable.engine, unusable.session.id, 'Hi');
+
+    const failed = await unusable.engine.messages(unusable.session.id);
+
+    expect(kinds(failed)).toEqual(['user', 'assistant', 'compaction', 'idle:failed']);
+
+    expect(compactions(failed)[0]).toMatchObject({
+      status: 'failed',
+      error: { type: 'compaction' },
+    });
+
+    expect(assistants(failed)[0]?.error?.message).toBe('This chat is full. Start a new one.');
+  });
+
+  it('runs engine.compact after the running turn’s idle, and writes nothing on a new chat', async () => {
+    const hold = gate();
+
+    const { engine, session } = await setup({
+      steps: [
+        async () => {
+          await hold.opened;
+
+          return text('First');
+        },
+        text(SUMMARY),
+      ],
+    });
+
+    const sent = await engine.prompt({
+      sessionID: session.id,
+      parts: [{ type: 'text', text: 'Hi' }],
+    });
+
+    await expect.poll(() => engine.busy(session.id)).toBe(true);
+
+    const compacted = engine.compact({ sessionID: session.id });
+
+    expect(engine.queued(session.id)).toEqual([]);
+
+    hold.open();
+    await sent.done;
+
+    expect(await compacted).toEqual({ status: 'completed' });
+
+    const messages = await engine.messages(session.id);
+
+    expect(kinds(messages)).toEqual(['user', 'assistant', 'idle:succeeded', 'compaction']);
+    expect(compactions(messages)[0]).toMatchObject({ status: 'completed', reason: 'manual' });
+
+    const fresh = await engine.create({ model: 'openai/gpt-5' });
+
+    expect(await engine.compact({ sessionID: fresh.id })).toEqual({
+      status: 'failed',
+      error: { type: 'compaction', message: 'Nothing to compact yet' },
+    });
+
+    expect(await engine.messages(fresh.id)).toEqual([]);
+  });
+
+  it('sweeps a compaction a closed panel left running', async () => {
+    const { engine, store, session } = await setup();
+
+    await store.publish(session.id, {
+      type: 'session.prompted',
+      messageID: 'u1',
+      parts: [{ type: 'text', text: 'Hi' }],
+    });
+
+    await store.publish(session.id, {
+      type: 'session.compaction.started',
+      messageID: 'c1',
+      reason: 'auto',
+    });
+
+    await engine.sweep();
+
+    const messages = await engine.messages(session.id);
+
+    expect(kinds(messages)).toEqual(['user', 'compaction', 'idle:interrupted']);
+
+    expect(compactions(messages)[0]).toMatchObject({
+      status: 'failed',
+      error: { type: 'aborted', message: 'Compaction was interrupted' },
+    });
   });
 });

@@ -37,7 +37,7 @@ export const CatalogModel = z.object({
   reasoning_options: ReasoningOptions.optional(),
   tool_call: z.boolean(),
   modalities: z.object({ input: z.array(z.string()), output: z.array(z.string()) }).optional(),
-  limit: z.object({ context: z.number(), output: z.number() }),
+  limit: z.object({ context: z.number(), input: z.number().optional(), output: z.number() }),
   status: z.string().optional(),
   provider: z.object({ npm: z.string().optional(), api: z.string().optional() }).optional(),
 });

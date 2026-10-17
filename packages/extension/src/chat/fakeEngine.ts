@@ -97,6 +97,11 @@ export function fakeEngine(sessionID = 'ses_1') {
 
       return Promise.resolve(admitted);
     },
+    compact: ({ sessionID: id }) => {
+      calls.push(`compact:${id}`);
+
+      return Promise.resolve({ status: 'completed' });
+    },
     abort: (id) => void calls.push(`abort:${id}`),
     cancel: (id, messageID) => {
       calls.push(`cancel:${messageID}`);

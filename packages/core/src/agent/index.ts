@@ -4,6 +4,7 @@ export {
   BUILD_AGENT,
   BUILD_PROMPT,
   BUILTIN_AGENTS,
+  COMPACTION_AGENT,
   registerBuiltinAgents,
   TITLE_AGENT,
   TITLE_PROMPT,

@@ -200,7 +200,21 @@ const created = event({
   response: { id: 'r1', created_at: 1, model: 'gpt-6-luna' },
 });
 
-const completed = [event({ type: 'response.completed', response: {} }), 'data: [DONE]\n\n'];
+/** The usage a scripted response reports, in the Responses API's fields. */
+export interface ScriptedUsage {
+  input: number;
+  output: number;
+}
+
+const completedWith = (usage?: ScriptedUsage) => [
+  event({
+    type: 'response.completed',
+    response: usage ? { usage: { input_tokens: usage.input, output_tokens: usage.output } } : {},
+  }),
+  'data: [DONE]\n\n',
+];
+
+const completed = completedWith();
 
 /** An OpenAI Responses stream that calls one tool. */
 export function callTool(name: string, input: Record<string, unknown>, callID = 'call_1') {
@@ -222,8 +236,8 @@ export function callTool(name: string, input: Record<string, unknown>, callID = 
   ].join('');
 }
 
-/** An OpenAI Responses stream that answers `text`. */
-export function reply(text: string) {
+/** An OpenAI Responses stream that answers `text`, reporting `usage` when given. */
+export function reply(text: string, { usage }: { usage?: ScriptedUsage } = {}) {
   return [
     created,
     event({
@@ -232,7 +246,7 @@ export function reply(text: string) {
       item: { type: 'message', id: 'm1' },
     }),
     event({ type: 'response.output_text.delta', item_id: 'm1', output_index: 0, delta: text }),
-    ...completed,
+    ...completedWith(usage),
   ].join('');
 }
 

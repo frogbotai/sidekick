@@ -25,9 +25,10 @@ export interface ProviderRequest {
   catalog?: CatalogSlice;
 }
 
-/** A model's context and output token limits. */
+/** A model's token limits, from models.dev: `input`, when set, caps the prompt below `context`. */
 export interface ModelLimit {
   context: number;
+  input?: number;
   output: number;
 }
 

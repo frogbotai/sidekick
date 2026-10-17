@@ -1,9 +1,12 @@
 import { agents } from '../registry';
+import { COMPACTION_PROMPT } from '../session/compaction-prompt';
 import type { AgentInfo } from './agent';
 
 export const BUILD_AGENT = 'build';
 
 export const TITLE_AGENT = 'title';
+
+export const COMPACTION_AGENT = 'compaction';
 
 /** A placeholder until 281 writes Sidekick's system prompt. */
 export const BUILD_PROMPT =
@@ -55,7 +58,7 @@ Your output must be:
 "@App.tsx add dark mode toggle" -> Dark mode toggle in App
 </examples>`;
 
-/** Sidekick's built-in agents: the primary `build`, and the hidden `title`, which may use no tool. */
+/** Sidekick's built-in agents: the primary `build`, and the hidden `title` and `compaction`, which may use no tool. */
 export const BUILTIN_AGENTS: readonly AgentInfo[] = [
   {
     id: BUILD_AGENT,
@@ -72,6 +75,14 @@ export const BUILTIN_AGENTS: readonly AgentInfo[] = [
     mode: 'primary',
     hidden: true,
     system: TITLE_PROMPT,
+    permissions: [{ action: '*', resource: '*', effect: 'deny' }],
+  },
+  {
+    id: COMPACTION_AGENT,
+    name: 'Compaction',
+    mode: 'primary',
+    hidden: true,
+    system: COMPACTION_PROMPT,
     permissions: [{ action: '*', resource: '*', effect: 'deny' }],
   },
 ];

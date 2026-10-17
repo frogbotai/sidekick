@@ -81,7 +81,75 @@ const MESSAGES: SessionMessage[] = [
   assistant('msg_a3', 7, [{ type: 'text', id: 't2', text: 'Sure' }]),
 ];
 
+const compaction = (id: string, seq: number) => ({
+  id,
+  sessionID: 's1',
+  seq,
+  type: 'compaction' as const,
+  reason: 'auto' as const,
+  time: { created: seq },
+});
+
 describe('toUIMessages', () => {
+  it('maps compactions to data-compaction parts with their ids, in or out of a turn', () => {
+    const messages: SessionMessage[] = [
+      user,
+      {
+        ...compaction('msg_c1', 2),
+        status: 'completed',
+        summary: '## Objective',
+        recent: '',
+        model: 'openai/gpt-5',
+        tokens: { input: 900, output: 40, cacheRead: 800 },
+      },
+      assistant('msg_a1', 3, [{ type: 'text', id: 't1', text: 'Done' }]),
+      {
+        id: 'msg_i',
+        sessionID: 's1',
+        seq: 4,
+        type: 'idle',
+        outcome: 'succeeded',
+        time: { created: 4 },
+      },
+      { ...compaction('msg_c2', 5), status: 'running' },
+      {
+        ...compaction('msg_c3', 6),
+        status: 'failed',
+        error: { type: 'compaction', message: 'Compaction produced no summary' },
+      },
+    ];
+
+    const [, turn, manual] = toUIMessages(messages);
+
+    expect(turn).toMatchObject({ id: 'msg_c1', role: 'assistant' });
+
+    expect(turn?.parts).toEqual([
+      {
+        type: 'data-compaction',
+        id: 'msg_c1',
+        data: {
+          status: 'completed',
+          reason: 'auto',
+          summary: '## Objective',
+          tokens: { input: 900, output: 40 },
+        },
+      },
+      { type: 'step-start' },
+      { type: 'text', text: 'Done', state: 'done' },
+    ]);
+
+    expect(manual).toMatchObject({ id: 'msg_c2', role: 'assistant' });
+
+    expect(manual?.parts).toEqual([
+      { type: 'data-compaction', id: 'msg_c2', data: { status: 'running', reason: 'auto' } },
+      {
+        type: 'data-compaction',
+        id: 'msg_c3',
+        data: { status: 'failed', reason: 'auto', error: 'Compaction produced no summary' },
+      },
+    ]);
+  });
+
   it('maps every part kind and tool state, keeping message and call ids', () => {
     const [first, turn, second, next] = toUIMessages(MESSAGES);
 

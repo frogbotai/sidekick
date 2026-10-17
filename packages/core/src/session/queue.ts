@@ -35,9 +35,19 @@ export interface Queued {
   parts: UserPart[];
 }
 
-export interface Entry extends PromptInput {
+export interface PromptEntry extends PromptInput {
+  kind: 'prompt';
   messageID: string;
 }
+
+/** A manual compaction, which waits behind a running turn like a message. */
+export interface CompactEntry {
+  kind: 'compact';
+  sessionID: string;
+  messageID: string;
+}
+
+export type Entry = PromptEntry | CompactEntry;
 
 export interface Admitted {
   messageID: string;
@@ -125,7 +135,9 @@ export function createSessionQueue({ locks, run, stored }: QueueOptions): Sessio
 
       if (pending) return { messageID: entry.messageID, done: pending };
 
-      if (!entry.from && (await stored(entry.sessionID, entry.messageID))) {
+      const fresh = entry.kind === 'compact' || Boolean(entry.from);
+
+      if (!fresh && (await stored(entry.sessionID, entry.messageID))) {
         return { messageID: entry.messageID, done: Promise.resolve() };
       }
 
@@ -139,10 +151,9 @@ export function createSessionQueue({ locks, run, stored }: QueueOptions): Sessio
       return item !== undefined && !item.started && remove(sessionID, item);
     },
     queued: (sessionID) =>
-      (waiting.get(sessionID) ?? []).map(({ entry: { messageID, parts } }) => ({
-        messageID,
-        parts,
-      })),
+      (waiting.get(sessionID) ?? []).flatMap(({ entry }) =>
+        entry.kind === 'prompt' ? [{ messageID: entry.messageID, parts: entry.parts }] : [],
+      ),
     holding: (sessionID) => holding.has(sessionID),
     drop: (sessionID) => void waiting.delete(sessionID),
   };

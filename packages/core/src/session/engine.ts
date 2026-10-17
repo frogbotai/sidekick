@@ -5,10 +5,19 @@ import type { PermissionSeam } from '../permission/seam';
 import type { Registry } from '../registry/registry';
 import type { ToolDefinition } from '../tool/tool';
 import {
+  ceiling,
+  COMPACTION_DEFAULTS,
+  COMPACTION_INTERRUPTED,
+  type CompactionSettings,
+  due,
+} from './compaction';
+import {
   type Admitted,
+  type CompactEntry,
   createSessionQueue,
   type Entry,
   lockName,
+  type PromptEntry,
   type PromptInput,
   type Queued,
   type SessionLocks,
@@ -19,6 +28,7 @@ import { classify, MAX_RETRIES, retryDelay, sessionError } from './retry';
 import {
   ascending,
   type AssistantMessage,
+  type CompactionMessage,
   type DurableEventBody,
   type IdleMessage,
   type SessionInfo,
@@ -27,6 +37,12 @@ import {
 } from './schema';
 import { abortable, runStep } from './step';
 import type { SessionList, SessionStore } from './store';
+import {
+  compact as runCompaction,
+  type CompactOutcome,
+  type CompactResult,
+  manualResult,
+} from './summarize';
 import { generateTitle, isUntitledRoot, type ModelSource, titleInput } from './title';
 
 /** v2's prompt for a turn's last allowed step (`runner/max-steps.ts`). */
@@ -75,6 +91,10 @@ export interface SessionEngineOptions {
   defaultAgent?: string;
   /** The title agent's id. */
   titleAgent?: string;
+  /** The compaction agent's id, whose prompt the summary request ends with. */
+  compactionAgent?: string;
+  /** When and how much to compact; on with a 15k verbatim tail by default. */
+  compaction?: CompactionSettings;
   /** Called after each turn's `idle` message. */
   onIdle?: (sessionID: string) => void;
 }
@@ -90,6 +110,8 @@ export interface SessionEngine {
   create: (input: CreateInput) => Promise<SessionInfo>;
   /** Queues a message; it runs once the session's current turn, in any window, ends. */
   prompt: (input: PromptInput) => Promise<Admitted>;
+  /** Compacts the session now, or after its running turn, in any window, ends. */
+  compact: (input: { sessionID: string }) => Promise<CompactResult>;
   abort: (sessionID: string) => void;
   /** Takes back a queued message before it runs; false once it has started. */
   cancel: (sessionID: string, messageID: string) => boolean;
@@ -105,6 +127,22 @@ export interface SessionEngine {
 }
 
 type Outcome = IdleMessage['outcome'];
+
+type Resolved = Awaited<ReturnType<ModelSource['resolve']>>;
+
+function running(message: SessionMessage | undefined): message is CompactionMessage {
+  return message?.type === 'compaction' && message.status === 'running';
+}
+
+function stranded(last: SessionMessage | undefined) {
+  return (
+    last !== undefined &&
+    (last.type === 'assistant' ||
+      last.type === 'user' ||
+      last.type === 'synthetic' ||
+      running(last))
+  );
+}
 
 function unsettled(message: SessionMessage): message is AssistantMessage {
   return (
@@ -129,6 +167,9 @@ export function createSessionEngine(options: SessionEngineOptions): SessionEngin
   const locks = options.locks ?? webLocks();
   const defaultAgent = options.defaultAgent ?? 'build';
   const titleAgent = options.titleAgent ?? 'title';
+  const compactionAgent = options.compactionAgent ?? 'compaction';
+  const settings = { ...COMPACTION_DEFAULTS, ...options.compaction };
+  const results = new Map<string, CompactResult>();
   const controllers = new Map<string, AbortController>();
   const deleted = new Set<string>();
   const titled = new Set<string>();
@@ -144,6 +185,14 @@ export function createSessionEngine(options: SessionEngineOptions): SessionEngin
 
   const settle = async (sessionID: string, messages: readonly SessionMessage[]) => {
     for (const message of messages) {
+      if (running(message)) {
+        await publish(sessionID, {
+          type: 'session.compaction.failed',
+          messageID: message.id,
+          error: { type: 'aborted', message: COMPACTION_INTERRUPTED },
+        });
+      }
+
       if (!unsettled(message)) continue;
 
       for (const part of message.content) {
@@ -185,6 +234,35 @@ export function createSessionEngine(options: SessionEngineOptions): SessionEngin
     return 'failed';
   };
 
+  const offeredTo = (agent: AgentInfo) => tools.list().filter((tool) => offersTool(agent, tool));
+
+  const summarize = (
+    sessionID: string,
+    agent: AgentInfo,
+    model: Resolved & { ref: string },
+    reason: CompactionMessage['reason'],
+    signal: AbortSignal,
+    overflow = false,
+  ): Promise<CompactOutcome> => {
+    const prompt = agents.get(compactionAgent)?.system;
+
+    return runCompaction({
+      store,
+      sessionID,
+      messageID: id(),
+      reason,
+      model,
+      ...(prompt ? { prompt } : {}),
+      ...(agent.system ? { system: agent.system } : {}),
+      tools: offeredTo(agent),
+      keep: settings.keep,
+      ...(settings.buffer === undefined ? {} : { buffer: settings.buffer }),
+      overflow,
+      signal,
+      clock,
+    });
+  };
+
   const step = async (
     sessionID: string,
     agent: AgentInfo,
@@ -198,24 +276,44 @@ export function createSessionEngine(options: SessionEngineOptions): SessionEngin
     const ref = agent.model ?? session.model;
     let messageID = id();
     let retries = 0;
+    let recovered = false;
 
-    await publish(sessionID, {
-      type: 'session.step.started',
-      messageID,
-      agent: agent.id,
-      model: ref,
-    });
+    const started = () =>
+      publish(sessionID, { type: 'session.step.started', messageID, agent: agent.id, model: ref });
 
-    let model;
+    let model: Resolved & { ref: string };
 
     try {
-      model = await models.resolve(ref);
+      model = { ...(await models.resolve(ref)), ref };
     } catch (error) {
+      await started();
+
       return fail(sessionID, messageID, error);
     }
 
     const limited = agent.steps !== undefined && count >= agent.steps;
-    const offered = tools.list().filter((tool) => offersTool(agent, tool));
+    const offered = offeredTo(agent);
+
+    const full =
+      settings.auto &&
+      due({
+        messages: await store.messages(sessionID),
+        model: ref,
+        reasoning: model.reasoning,
+        ...(agent.system ? { system: agent.system } : {}),
+        tools: offered,
+        ceiling: ceiling(model.limit, settings.buffer),
+      });
+
+    if (full) {
+      const outcome = await summarize(sessionID, agent, model, 'auto', signal);
+
+      if (outcome.status === 'aborted') return interrupt(sessionID);
+
+      if (outcome.status === 'failed') return 'failed';
+    }
+
+    await started();
 
     for (;;) {
       const request = buildRequest({
@@ -245,6 +343,27 @@ export function createSessionEngine(options: SessionEngineOptions): SessionEngin
       if (result.error === undefined) return limited || !result.called ? 'succeeded' : 'continue';
 
       const verdict = classify(result.error);
+
+      if (verdict === 'overflow' && settings.auto && !recovered) {
+        recovered = true;
+
+        await publish(sessionID, {
+          type: 'session.step.failed',
+          messageID,
+          error: sessionError(result.error, verdict),
+        });
+
+        const outcome = await summarize(sessionID, agent, model, 'auto', signal, true);
+
+        if (outcome.status === 'aborted') return interrupt(sessionID);
+
+        if (outcome.status !== 'completed') return 'failed';
+
+        messageID = id();
+        retries = 0;
+        await started();
+        continue;
+      }
 
       if (verdict !== 'retry' || retries >= MAX_RETRIES) {
         await publish(sessionID, {
@@ -325,17 +444,40 @@ export function createSessionEngine(options: SessionEngineOptions): SessionEngin
   };
 
   const recover = async (sessionID: string) => {
-    const last = await store.last(sessionID);
-
-    if (!last || last.type === 'idle') return;
-
-    if (last.type !== 'assistant' && last.type !== 'user' && last.type !== 'synthetic') return;
+    if (!stranded(await store.last(sessionID))) return;
 
     await settle(sessionID, await store.messages(sessionID));
     await publish(sessionID, { type: 'session.idle', messageID: id(), outcome: 'interrupted' });
   };
 
-  const run = async (entry: Entry) => {
+  const compactNow = async ({ sessionID, messageID }: CompactEntry) => {
+    const session = await store.sessions.get(sessionID);
+    const agent = session && agentOf(session);
+
+    if (!session || !agent || deleted.has(sessionID)) return;
+
+    await recover(sessionID);
+
+    const ref = agent.model ?? session.model;
+    const controller = new AbortController();
+
+    controllers.set(sessionID, controller);
+
+    try {
+      const model = { ...(await models.resolve(ref)), ref };
+
+      results.set(
+        messageID,
+        manualResult(await summarize(sessionID, agent, model, 'manual', controller.signal)),
+      );
+    } catch (error) {
+      results.set(messageID, { status: 'failed', error: sessionError(error) });
+    } finally {
+      controllers.delete(sessionID);
+    }
+  };
+
+  const runPrompt = async (entry: PromptEntry) => {
     const { sessionID } = entry;
     const session = await store.sessions.get(sessionID);
 
@@ -392,14 +534,14 @@ export function createSessionEngine(options: SessionEngineOptions): SessionEngin
     }
   };
 
+  const run = (entry: Entry) => (entry.kind === 'compact' ? compactNow(entry) : runPrompt(entry));
+
   const queue = createSessionQueue({ locks, run, stored });
 
   const sweepOne = async (session: SessionInfo) => {
     const last = await store.last(session.id);
 
-    if (!last || last.type === 'idle' || controllers.has(session.id)) return;
-
-    if (last.type !== 'assistant' && last.type !== 'user' && last.type !== 'synthetic') return;
+    if (!stranded(last) || controllers.has(session.id)) return;
 
     await locks.run(lockName(session.id), true, () => recover(session.id));
   };
@@ -427,7 +569,24 @@ export function createSessionEngine(options: SessionEngineOptions): SessionEngin
         throw new Error(`No session ${input.sessionID}`);
       }
 
-      return queue.admit({ ...input, messageID: input.messageID ?? id() });
+      return queue.admit({ ...input, kind: 'prompt', messageID: input.messageID ?? id() });
+    },
+    compact: async ({ sessionID }) => {
+      if (!(await store.sessions.get(sessionID))) throw new Error(`No session ${sessionID}`);
+
+      const messageID = id();
+
+      await (
+        await queue.admit({ kind: 'compact', sessionID, messageID })
+      ).done;
+
+      const result = results.get(messageID);
+
+      results.delete(messageID);
+
+      return (
+        result ?? { status: 'failed', error: { type: 'aborted', message: COMPACTION_INTERRUPTED } }
+      );
     },
     abort: (sessionID) => controllers.get(sessionID)?.abort(),
     cancel: queue.cancel,

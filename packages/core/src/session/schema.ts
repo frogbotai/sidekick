@@ -69,17 +69,22 @@ export interface AssistantTool {
 
 export type AssistantContent = AssistantText | AssistantReasoning | AssistantTool;
 
-/** Why a step or turn failed. `overflow` means the request no longer fits the model. */
+/**
+ * Why a step, turn or compaction failed. `overflow` means the request no longer fits the model;
+ * `compaction` is a summary that couldn't be made.
+ */
 export interface SessionError {
-  type: 'provider' | 'overflow' | 'aborted' | 'unknown';
+  type: 'provider' | 'overflow' | 'aborted' | 'compaction' | 'unknown';
   message: string;
 }
 
+/** A call's usage, as the AI SDK reports it: `input` is the total input, `output` includes reasoning. */
 export interface TokenUsage {
   input?: number;
   output?: number;
   reasoning?: number;
   cacheRead?: number;
+  cacheWrite?: number;
 }
 
 interface MessageBase {
@@ -130,11 +135,33 @@ export interface AssistantMessage extends MessageBase {
   time: { created: number; completed?: number };
 }
 
-/** v2's compaction checkpoint. Nothing writes one yet (289). */
-export interface CompactionMessage extends MessageBase {
+interface CompactionBase extends MessageBase {
   type: 'compaction';
-  summary: string;
+  reason: 'auto' | 'manual';
 }
+
+export interface CompactionRunning extends CompactionBase {
+  status: 'running';
+}
+
+/** A checkpoint: requests after it open with `summary` and `recent` instead of older history. */
+export interface CompactionCompleted extends CompactionBase {
+  status: 'completed';
+  summary: string;
+  recent: string;
+  model: string;
+  /** The summary call's own usage, not the size of the compacted request. */
+  tokens?: TokenUsage;
+}
+
+export interface CompactionFailed extends CompactionBase {
+  status: 'failed';
+  error: SessionError;
+  tokens?: TokenUsage;
+}
+
+/** v2's compaction message: running, then completed or failed. */
+export type CompactionMessage = CompactionRunning | CompactionCompleted | CompactionFailed;
 
 /** Marks the session going idle; every step since the last one belongs to one turn. */
 export interface IdleMessage extends MessageBase {
@@ -197,6 +224,15 @@ export type DurableEventBody =
     }>
   | WithTool<{ type: 'session.tool.success'; output: unknown; content?: ToolContent[] }>
   | WithTool<{ type: 'session.tool.failed'; error: ToolFailure }>
+  | WithMessage<{ type: 'session.compaction.started'; reason: CompactionMessage['reason'] }>
+  | WithMessage<{
+      type: 'session.compaction.ended';
+      summary: string;
+      recent: string;
+      model: string;
+      tokens?: TokenUsage;
+    }>
+  | WithMessage<{ type: 'session.compaction.failed'; error: SessionError; tokens?: TokenUsage }>
   | WithMessage<{ type: 'session.idle'; outcome: IdleMessage['outcome'] }>;
 
 /** Live-only events: deltas between a part's `started` and `ended`, and a deleted session. */

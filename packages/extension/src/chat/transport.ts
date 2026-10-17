@@ -1,7 +1,10 @@
 import {
+  CHAT_FULL,
+  type CompactionData,
   fromUIParts,
   type LogEvent,
   type SessionEngine,
+  type TokenUsage,
   toolOutput,
 } from '@frogbotai/sidekick-core';
 import type { ChatId, ChatRequestState } from '@frogbotai/ui/chat';
@@ -39,23 +42,46 @@ function modelRef({ model, reasoning }: ChatRequestState) {
   return reasoning ? `${model}#${reasoning}` : model;
 }
 
-/** Turns one turn's engine events into `useChat` chunks, after the research table. */
+function tokensOf(tokens: TokenUsage | undefined) {
+  return tokens ? { tokens: { input: tokens.input ?? 0, output: tokens.output ?? 0 } } : {};
+}
+
+/**
+ * Turns one turn's engine events into `useChat` chunks, after the research table. A compaction is
+ * a `data-compaction` part with the compaction's id, so each update replaces it in place.
+ */
 export function chunker() {
   let started = false;
   let open = false;
   let failure: string | undefined;
+  const reasons = new Map<string, CompactionData['reason']>();
+
+  const head = (messageID: string): UIMessageChunk[] => {
+    if (started) return [];
+
+    started = true;
+
+    return [{ type: 'start', messageId: messageID }];
+  };
 
   const step = (messageID: string): UIMessageChunk[] => {
     if (open) return [];
 
     open = true;
 
-    const head: UIMessageChunk[] = started ? [] : [{ type: 'start', messageId: messageID }];
-
-    started = true;
-
-    return [...head, { type: 'start-step' }];
+    return [...head(messageID), { type: 'start-step' }];
   };
+
+  const compaction = (messageID: string, data: Omit<CompactionData, 'reason'>) => ({
+    chunks: [
+      ...head(messageID),
+      {
+        type: 'data-compaction' as const,
+        id: messageID,
+        data: { ...data, reason: reasons.get(messageID) ?? 'auto' },
+      },
+    ],
+  });
 
   const end = (): UIMessageChunk[] => {
     if (!open) return [];
@@ -155,6 +181,24 @@ export function chunker() {
             },
           ],
         };
+      case 'session.compaction.started':
+        reasons.set(event.messageID, event.reason);
+
+        return compaction(event.messageID, { status: 'running' });
+      case 'session.compaction.ended':
+        return compaction(event.messageID, {
+          status: 'completed',
+          summary: event.summary,
+          ...tokensOf(event.tokens),
+        });
+      case 'session.compaction.failed':
+        failure = CHAT_FULL;
+
+        return compaction(event.messageID, {
+          status: 'failed',
+          error: event.error.message,
+          ...tokensOf(event.tokens),
+        });
       case 'session.idle': {
         const closing = end();
 

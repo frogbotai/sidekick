@@ -43,6 +43,10 @@ function base(event: SessionEvent & { messageID: string }) {
   };
 }
 
+function baseOf({ id, sessionID, seq, time }: SessionMessage) {
+  return { id, sessionID, seq, time };
+}
+
 function editAssistant(
   message: SessionMessage | undefined,
   edit: (assistant: AssistantMessage) => AssistantMessage,
@@ -116,6 +120,32 @@ function messageChange(target: ReducerTarget, event: SessionEvent): SessionMessa
       };
     case 'session.idle':
       return { ...base(event), type: 'idle', outcome: event.outcome };
+    case 'session.compaction.started':
+      return { ...base(event), type: 'compaction', status: 'running', reason: event.reason };
+    case 'session.compaction.ended':
+      return message?.type === 'compaction'
+        ? {
+            ...baseOf(message),
+            type: 'compaction',
+            status: 'completed',
+            reason: message.reason,
+            summary: event.summary,
+            recent: event.recent,
+            model: event.model,
+            ...(event.tokens ? { tokens: event.tokens } : {}),
+          }
+        : undefined;
+    case 'session.compaction.failed':
+      return message?.type === 'compaction'
+        ? {
+            ...baseOf(message),
+            type: 'compaction',
+            status: 'failed',
+            reason: message.reason,
+            error: event.error,
+            ...(event.tokens ? { tokens: event.tokens } : {}),
+          }
+        : undefined;
     case 'session.step.started':
       if (message) return editAssistant(message, ({ retry: _, ...assistant }) => assistant);
 

@@ -28,6 +28,7 @@ function fromCatalog(definition: ProviderDefinition, catalog: CatalogSlice): Pro
         route,
         ...(model.family ? { family: model.family } : {}),
         ...(model.release_date ? { release_date: model.release_date } : {}),
+        limit: model.limit,
         variants: modelVariants(route, model),
       },
     ];
