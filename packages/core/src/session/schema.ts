@@ -2,13 +2,19 @@ import type { ProviderMetadata } from 'ai';
 
 import type { ToolContent, ToolErrorDetail } from '../tool/tool';
 
-/** A chat, after OpenCode v2's `session_v2` row. `model` is a `provider/model#variant` ref. */
+/**
+ * A chat, after OpenCode v2's `session_v2` row. `model` is a `provider/model#variant` ref; `mode`
+ * is its permission mode (Build when unset), and `sites` the sites its messages were sent from,
+ * Sidekick's version of v2's project directory.
+ */
 export interface SessionInfo {
   id: string;
   parentID?: string;
   title?: string;
   agent: string;
   model: string;
+  mode?: string;
+  sites?: string[];
   windowId?: number;
   created: number;
   updated: number;
@@ -188,6 +194,8 @@ type WithTool<T> = WithMessage<T & { callID: string }>;
 export type DurableEventBody =
   | { type: 'session.created'; info: SessionInfo }
   | { type: 'session.renamed'; title: string }
+  | { type: 'session.mode.selected'; mode: string }
+  | { type: 'session.site.added'; site: string }
   | WithMessage<{ type: 'session.agent.selected'; agent: string }>
   | WithMessage<{ type: 'session.model.selected'; model: string }>
   | WithMessage<{ type: 'session.prompted'; parts: UserPart[] }>

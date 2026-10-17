@@ -1,6 +1,7 @@
 import { z } from 'zod';
 
 import { type Forms, forms as panelForms } from '../form';
+import { saveGrant } from '../permission/engine';
 import { searchProviders, tools } from '../registry';
 import { webSearchProvider } from '../storage';
 import { defineTool, type ToolContext, ToolError } from '../tool/tool';
@@ -88,7 +89,7 @@ async function choose(forms: Forms, signal: AbortSignal) {
   }
 
   if (first.answer.choice !== 'choose') {
-    await webSearch.select('random');
+    await Promise.all([webSearch.select('random'), saveGrant('websearch', '*')]);
 
     return;
   }
@@ -113,7 +114,7 @@ async function choose(forms: Forms, signal: AbortSignal) {
 
   if (!picked) throw new SearchProviderRequiredError();
 
-  await webSearch.select(picked.id);
+  await Promise.all([webSearch.select(picked.id), saveGrant('websearch', '*')]);
 }
 
 async function askForChoice(forms: Forms, outer: AbortSignal) {

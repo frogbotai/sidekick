@@ -1,4 +1,5 @@
 import {
+  agents,
   answerContent,
   callFrame,
   chromeCdp,
@@ -8,11 +9,15 @@ import {
   contentProtocol,
   createBrowserRuntime,
   createBrowserWorker,
-  createPermissionSeam,
+  createPermissionEngine,
   createToolBridge,
   frameProtocol,
+  permissionModes,
+  registerBuiltinAgents,
+  registerBuiltinModes,
   restrictStorageToTrustedContexts,
   serve,
+  type Server,
   sidekickProtocol,
   tools,
 } from '@frogbotai/sidekick-core';
@@ -59,15 +64,26 @@ export default defineBackground(() => {
     mac: /Mac OS X|Macintosh/.test(navigator.userAgent),
   });
 
+  registerBuiltinAgents();
+  registerBuiltinModes();
+
+  let server: Server<typeof sidekickProtocol> | undefined;
+
   const browser = createBrowserWorker(runtime);
-  const permission = createPermissionSeam();
+
+  const permission = createPermissionEngine({
+    agents,
+    modes: permissionModes,
+    emit: (type, data) => server?.emit(type, data),
+  });
+
   const bridge = createToolBridge({ tools, permission, run: browser.sessionRun });
 
   tools.register('builtin', (draft) => {
     for (const tool of runtime.tools) draft.add(tool);
   });
 
-  const server = serve(
+  server = serve(
     sidekickProtocol,
     {
       'tab.ping': async (target) => {
@@ -76,6 +92,11 @@ export default defineBackground(() => {
         return { frameId: target.frameId, url, bootId };
       },
       ...browser.handlers,
+      'run.end': (input) => {
+        if (input.close) permission.close(input.sessionID);
+
+        return browser.handlers['run.end'](input);
+      },
       ...bridge,
     },
     { bootId },

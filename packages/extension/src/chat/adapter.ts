@@ -61,7 +61,7 @@ export function chatManifest(
 
 export interface ChatAdapterOptions extends Pick<
   SessionTransportOptions,
-  'onRetry' | 'onStreaming'
+  'onRetry' | 'onStreaming' | 'mode'
 > {
   engine: SessionEngine;
   chat: WindowChat;
@@ -107,6 +107,7 @@ export function createChatAdapter(options: ChatAdapterOptions): ChatPlatformAdap
           !busy(sessionID) && (await locks()).has(lockName(sessionID)),
         ...(options.onRetry ? { onRetry: options.onRetry } : {}),
         ...(options.onStreaming ? { onStreaming: options.onStreaming } : {}),
+        ...(options.mode ? { mode: options.mode } : {}),
       }),
     listChats: async ({ page, limit }) => {
       const sessions = await engine.sessions.list();

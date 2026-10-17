@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-import type { PermissionSeam } from '../permission/seam';
+import type { PermissionSeam } from '../permission/engine';
 import type { sidekickProtocol } from '../protocol';
 import type { Registry } from '../registry/registry';
 import type { WorkerClient } from '../rpc/client';
@@ -108,14 +108,33 @@ export async function registerWorkerTools(
   });
 }
 
-/** The panel's permission seam: every assert goes to the worker's, over `permission.assert`. */
+/**
+ * The panel's permission seam: every assert goes to the worker's, over `permission.assert`, with
+ * no RPC timeout since an ask waits for the user; abort sends `tool.cancel`, which drops it.
+ */
 export function workerPermission(client: SidekickClient): PermissionSeam {
   return {
-    assert: async (request, scope) => {
-      const reply = await client.call('permission.assert', { ...scope, request });
+    assert: async (request, scope, signal) => {
+      const cancel = () => {
+        client.call('tool.cancel', { callID: scope.callID }).catch(() => undefined);
+      };
 
-      if ('error' in reply) {
-        throw new ToolError(reply.error.code, reply.error.message, reply.error.detail);
+      signal?.addEventListener('abort', cancel, { once: true });
+
+      try {
+        const reply = await client.call(
+          'permission.assert',
+          { ...scope, request },
+          { timeout: false },
+        );
+
+        if ('error' in reply) {
+          throw new ToolError(reply.error.code, reply.error.message, reply.error.detail);
+        }
+      } catch (error) {
+        throw lost(error);
+      } finally {
+        signal?.removeEventListener('abort', cancel);
       }
     },
   };

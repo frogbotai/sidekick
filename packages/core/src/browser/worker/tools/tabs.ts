@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { defineTool, ToolError } from '../../../tool/tool';
 import { normalizeUrl, originOf } from '../../../tool/url';
 import { race } from '../abort';
-import { type BrowserEnv, enter, finish, recheck, runOf, untrusted } from '../env';
+import { type BrowserEnv, enter, finish, runOf, untrusted } from '../env';
 import type { TabInfo } from '../types';
 import { action, tab, tabId, tabList } from './schema';
 
@@ -164,8 +164,6 @@ export function tabTools(env: BrowserEnv) {
       execute: async ({ tab_id, url, go }, ctx) => {
         const target = url === undefined ? undefined : normalizeUrl(url);
         const act = await enter(env, ctx, tab_id, 'navigate', target && originOf(target));
-
-        if (target === undefined) await recheck(act);
 
         await attachIfAllowed(env, tab_id, act.signal);
 

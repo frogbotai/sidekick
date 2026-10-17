@@ -1,8 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import type { AgentInfo } from '../agent/agent';
+import { BUILTIN_AGENTS } from '../agent/builtin';
 import { createForms, type Forms } from '../form';
+import { createPermissionEngine } from '../permission/engine';
+import { BUILTIN_MODES, type PermissionMode } from '../permission/modes';
 import { searchProviders, tools } from '../registry';
-import { webSearchProvider } from '../storage';
+import { createRegistry } from '../registry/registry';
+import { permissionGrants, webSearchProvider } from '../storage';
 import { installFakeChrome } from '../testing/fakeChrome';
 import { type ToolContext, ToolError } from '../tool/tool';
 import type { SearchProvider } from './registry';
@@ -154,6 +159,52 @@ describe('the first-use prompt', () => {
 
     expect((await pending).output.provider).toBe('frogbot');
     expect(await webSearchProvider.get()).toBe('random');
+
+    expect(await permissionGrants.get()).toEqual([
+      { action: 'websearch', resource: '*', created: expect.any(Number) },
+    ]);
+  });
+
+  it('is the only card on a first search: the engine never asks for websearch', async () => {
+    const agents = createRegistry<AgentInfo>('agents');
+    const modes = createRegistry<PermissionMode>('permissionModes');
+    const asked: unknown[] = [];
+
+    agents.register('test', (draft) => {
+      for (const agent of BUILTIN_AGENTS) draft.add(agent);
+    });
+
+    modes.register('test', (draft) => {
+      for (const mode of BUILTIN_MODES) draft.add(mode);
+    });
+
+    const engine = createPermissionEngine({
+      agents,
+      modes,
+      emit: (type, data) => void asked.push({ type, data }),
+    });
+
+    const ctx = context();
+    const scope = {
+      sessionID: 'session-1',
+      messageID: 'message-1',
+      callID: 'call-1',
+      agent: 'build',
+    };
+
+    const pending = webSearchTool(forms).execute(
+      { query: 'chrome mv3' },
+      {
+        ...ctx,
+        permission: { assert: (request) => engine.assert(request, { ...scope, mode: 'plan' }) },
+      },
+    );
+
+    await answer('choice', 'allow');
+
+    expect((await pending).output.provider).toBe('frogbot');
+    expect(forms.pending()).toEqual([]);
+    expect(asked).toEqual([]);
   });
 
   it('"Choose another provider" lists the providers and stores the pick', async () => {
@@ -166,6 +217,10 @@ describe('the first-use prompt', () => {
     expect(second.fields[0]?.options).toEqual([{ value: 'frogbot', label: 'FrogBot' }]);
     expect((await pending).output.provider).toBe('frogbot');
     expect(await webSearchProvider.get()).toBe('frogbot');
+
+    expect(
+      (await permissionGrants.get()).map(({ action, resource }) => `${action} ${resource}`),
+    ).toEqual(['websearch *']);
   });
 
   it('"Disable web search" stores false, fails the call and removes the tool', async () => {
@@ -182,6 +237,7 @@ describe('the first-use prompt', () => {
 
     expect(await failure(pending)).toMatchObject({ code: 'search_disabled' });
     expect(await webSearchProvider.get()).toBe(false);
+    expect(await permissionGrants.get()).toEqual([]);
     expect(search).not.toHaveBeenCalled();
 
     await vi.waitFor(() => expect(tools.get(WEB_SEARCH_TOOL)).toBeUndefined());

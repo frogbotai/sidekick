@@ -1,4 +1,10 @@
-import { type AgentInfo, agents, type LogEvent } from '@frogbotai/sidekick-core';
+import {
+  type AgentInfo,
+  agents,
+  BUILD_MODE,
+  type LogEvent,
+  permissionMode,
+} from '@frogbotai/sidekick-core';
 import { selectModel } from '@frogbotai/sidekick-core/provider';
 import {
   Alert,
@@ -23,8 +29,11 @@ import { ListIcon, PlusSignIcon, SettingIcon } from '@frogbotai/ui/icons';
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 
 import { PendingFormCard, usePendingForm } from '../form/PendingFormCard';
+import { ModeSelect } from '../permission/ModeSelect';
+import { PermissionCard, usePermissionAsk } from '../permission/PermissionCard';
 import { chatSelection, ModelNotice, ModelPicker } from '../providers/ModelPicker';
 import type { Models } from '../providers/useModels';
+import { useStored } from '../providers/useStored';
 import type { Sessions } from '../session';
 import { chatManifest, createChatAdapter } from './adapter';
 import type { RetryNotice } from './transport';
@@ -71,9 +80,11 @@ export interface ChatPanelProps {
 
 /** `@frogbotai/ui`'s chat at full panel height, over this window's engine and open chat. */
 export function ChatPanel({ sessions, models, onProviders }: ChatPanelProps) {
-  const { engine, chat } = sessions;
+  const { engine, chat, permissions } = sessions;
   const [chatId, setChatId] = useState<ChatId | undefined>(chat.current);
   const [pick, setPick] = useState<string>();
+  const [modePick, setModePick] = useState<string>();
+  const lastMode = useStored(permissionMode);
   const [retry, setRetry] = useState<RetryNotice>();
   const [historyOpen, setHistoryOpen] = useState(false);
   const streaming = useRef(new Set<string>());
@@ -82,6 +93,11 @@ export function ChatPanel({ sessions, models, onProviders }: ChatPanelProps) {
   const selection = chatSelection(models, pick);
   const form = usePendingForm();
   const open = chatId === undefined ? undefined : String(chatId);
+  const ask = usePermissionAsk(permissions, open ?? chat.current());
+  const mode = modePick ?? (open ? BUILD_MODE : (lastMode ?? BUILD_MODE));
+  const modeRef = useRef(mode);
+
+  modeRef.current = mode;
 
   const manifest = useMemo(
     () => (models.connected.size > 0 ? chatManifest(registered, models.available) : null),
@@ -94,6 +110,7 @@ export function ChatPanel({ sessions, models, onProviders }: ChatPanelProps) {
         engine,
         chat,
         manifest,
+        mode: () => modeRef.current,
         onRetry: (sessionID, notice) => {
           if (sessionID === chat.current()) setRetry(notice);
         },
@@ -156,10 +173,14 @@ export function ChatPanel({ sessions, models, onProviders }: ChatPanelProps) {
     let live = true;
 
     setPick(undefined);
+    setModePick(undefined);
 
     if (open) {
       void engine.sessions.get(open).then((session) => {
-        if (live && session) setPick(session.model);
+        if (!live || !session) return;
+
+        setPick(session.model);
+        setModePick(session.mode ?? BUILD_MODE);
       });
     }
 
@@ -181,6 +202,21 @@ export function ChatPanel({ sessions, models, onProviders }: ChatPanelProps) {
     setPick(ref);
     void selectModel(ref);
   };
+
+  const chooseMode = (next: string) => {
+    setModePick(next);
+    void permissionMode.set(next);
+  };
+
+  const dock = form ? (
+    <PendingFormCard key={form.id} form={form} />
+  ) : ask ? (
+    <PermissionCard
+      key={ask.id}
+      ask={ask}
+      onReply={(reply, message) => void permissions.reply(ask.id, reply, message)}
+    />
+  ) : null;
 
   const header = (
     <div className="sidekick-chat-header">
@@ -245,10 +281,15 @@ export function ChatPanel({ sessions, models, onProviders }: ChatPanelProps) {
           if (next === undefined) void chat.open(undefined);
         }}
         headerSlot={header}
-        composerStartSlot={<ModelPicker models={models} selection={selection} onChange={choose} />}
+        composerStartSlot={
+          <>
+            <ModelPicker models={models} selection={selection} onChange={choose} />
+            <ModeSelect mode={mode} onChange={chooseMode} />
+          </>
+        }
         warningContent={warnings}
-        dockSlot={form ? <PendingFormCard key={form.id} form={form} /> : null}
-        dockBlocking={form !== undefined}
+        dockSlot={dock}
+        dockBlocking={dock !== null}
         disabledContent={models.loading ? null : connect}
         loadingContent={null}
       />

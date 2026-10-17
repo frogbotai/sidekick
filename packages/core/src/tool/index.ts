@@ -26,4 +26,4 @@ export {
   ToolError,
   UNTRUSTED,
 } from './tool';
-export { normalizeUrl, originOf } from './url';
+export { isWebOrigin, normalizeUrl, originOf, siteOf } from './url';

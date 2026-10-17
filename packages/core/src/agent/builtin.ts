@@ -67,7 +67,7 @@ export const BUILTIN_AGENTS: readonly AgentInfo[] = [
     mode: 'primary',
     hidden: false,
     system: BUILD_PROMPT,
-    permissions: [{ action: '*', resource: '*', effect: 'allow' }],
+    permissions: [],
   },
   {
     id: TITLE_AGENT,

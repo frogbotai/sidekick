@@ -1,9 +1,4 @@
-/** One permission rule, after v2's `Permission.Rule`: the last rule that matches wins. */
-export interface PermissionRule {
-  action: string;
-  resource: string;
-  effect: 'allow' | 'deny' | 'ask';
-}
+import { type PermissionRule, whollyDenied } from '../permission/rules';
 
 /**
  * An agent, after OpenCode v2's `Agent.Info`. Hidden agents (`title`) never show in a picker;
@@ -19,27 +14,11 @@ export interface AgentInfo {
   model?: string;
   system?: string;
   steps?: number;
+  /** Rules that only narrow the chat's mode: an agent's `allow` never widens it. */
   permissions: PermissionRule[];
-}
-
-function matches(pattern: string, value: string) {
-  if (pattern === '*') return true;
-
-  const escaped = pattern.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replaceAll('*', '.*');
-
-  return new RegExp(`^${escaped}$`).test(value);
-}
-
-/** The effect of the last rule matching `action` on `resource`; `allow` when none does. */
-export function evaluate(rules: readonly PermissionRule[], action: string, resource = '*') {
-  const rule = rules.findLast(
-    (candidate) => matches(candidate.action, action) && matches(candidate.resource, resource),
-  );
-
-  return rule?.effect ?? 'allow';
 }
 
 /** Whether an agent offers a tool at all: tools whose action it denies everywhere are dropped, as v2's registry does. */
 export function offersTool(agent: Pick<AgentInfo, 'permissions'>, tool: { permission: string }) {
-  return evaluate(agent.permissions, tool.permission) !== 'deny';
+  return !whollyDenied(agent.permissions, tool.permission);
 }

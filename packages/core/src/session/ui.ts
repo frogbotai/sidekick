@@ -7,6 +7,7 @@ import type {
   CompactionMessage,
   SessionMessage,
   TokenUsage,
+  ToolFailure,
   UserPart,
 } from './schema';
 
@@ -122,6 +123,11 @@ export function userUIParts(parts: readonly UserPart[]): SessionUIPart[] {
   return parts.map(userPart);
 }
 
+/** Whether a tool failed because the user or a rule said no, which the UI shows as `output-denied`. */
+export function isDenial(error: ToolFailure) {
+  return error.code === 'denied' || error.code === 'declined';
+}
+
 function toolPart(tool: AssistantTool): DynamicToolUIPart {
   const common = {
     type: 'dynamic-tool' as const,
@@ -143,6 +149,15 @@ function toolPart(tool: AssistantTool): DynamicToolUIPart {
         output: toolOutput(tool.state.output, tool.state.content),
       };
     case 'error':
+      if (isDenial(tool.state.error)) {
+        return {
+          ...common,
+          state: 'output-denied',
+          input: tool.state.input,
+          approval: { id: tool.id, approved: false, reason: tool.state.error.message },
+        };
+      }
+
       return {
         ...common,
         state: 'output-error',

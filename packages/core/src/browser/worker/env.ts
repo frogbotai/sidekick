@@ -80,7 +80,11 @@ export async function enter(
 
   await race(ctx.permission.assert({ action, resource: resource ?? origin }), signal);
 
-  return { env, ctx, run, signal, tabId, tab, origin, action };
+  const act = { env, ctx, run, signal, tabId, tab, origin, action };
+
+  await recheck(act);
+
+  return act;
 }
 
 export async function inspect(act: Act, ref: string): Promise<RefInfo> {

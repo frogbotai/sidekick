@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-import type { PermissionScope, PermissionSeam } from '../permission/seam';
+import type { PermissionEngine, PermissionScope } from '../permission/engine';
 import type { sidekickProtocol } from '../protocol';
 import type { Registry } from '../registry/registry';
 import type { Handlers } from '../rpc/define';
@@ -10,7 +10,12 @@ type Methods = (typeof sidekickProtocol)['methods'];
 
 export type BridgeHandlers = Pick<
   Handlers<Methods>,
-  'tool.list' | 'tool.call' | 'tool.cancel' | 'permission.assert'
+  | 'tool.list'
+  | 'tool.call'
+  | 'tool.cancel'
+  | 'permission.assert'
+  | 'permission.reply'
+  | 'permission.list'
 >;
 
 /** A worker tool call, as the panel sends it. */
@@ -20,7 +25,7 @@ export interface BridgeCall extends PermissionScope {
 
 export interface ToolBridgeOptions {
   tools: Pick<Registry<ToolDefinition>, 'list' | 'get'>;
-  permission: PermissionSeam;
+  permission: Pick<PermissionEngine, 'assert' | 'reply' | 'list' | 'cancel'>;
   /** The browser run a call acts in, started on demand (278 D1). */
   run?: (call: BridgeCall) => Promise<{ id: string } | undefined>;
 }
@@ -31,6 +36,18 @@ function schemaOf(schema: z.ZodType): Record<string, unknown> {
   } catch {
     return { type: 'object' };
   }
+}
+
+function scopeOf({ sessionID, messageID, callID, agent, mode, sites, client }: PermissionScope) {
+  return {
+    sessionID,
+    messageID,
+    callID,
+    agent,
+    ...(mode === undefined ? {} : { mode }),
+    ...(sites === undefined ? {} : { sites }),
+    ...(client === undefined ? {} : { client }),
+  };
 }
 
 function errorOf(error: ToolError) {
@@ -45,7 +62,8 @@ function errorOf(error: ToolError) {
 
 /**
  * The worker's side of the tool bridge: `tool.list`, `tool.call` (a `ToolError` comes back as an
- * outcome, so its code and detail survive), `tool.cancel`, and `permission.assert` for panel tools.
+ * outcome, so its code and detail survive), `tool.cancel`, which also drops the call's asks,
+ * `permission.assert` for panel tools, and the panel's `permission.reply` and `permission.list`.
  */
 export function createToolBridge({ tools, permission, run }: ToolBridgeOptions): BridgeHandlers {
   const calls = new Map<string, AbortController>();
@@ -55,7 +73,7 @@ export function createToolBridge({ tools, permission, run }: ToolBridgeOptions):
     ...scope
   }: Parameters<BridgeHandlers['permission.assert']>[0]) => {
     try {
-      await permission.assert(request, scope);
+      await permission.assert(request, scopeOf(scope));
 
       return { ok: null };
     } catch (error) {
@@ -87,12 +105,7 @@ export function createToolBridge({ tools, permission, run }: ToolBridgeOptions):
 
       calls.set(call.callID, controller);
 
-      const scope: PermissionScope = {
-        sessionID: call.sessionID,
-        messageID: call.messageID,
-        callID: call.callID,
-        agent: call.agent,
-      };
+      const scope = scopeOf(call);
 
       try {
         const current = await run?.(call);
@@ -104,7 +117,9 @@ export function createToolBridge({ tools, permission, run }: ToolBridgeOptions):
           callID: call.callID,
           agent: call.agent,
           ...(current ? { run: current } : {}),
-          permission: { assert: (request) => permission.assert(request, scope) },
+          permission: {
+            assert: (request) => permission.assert(request, scope, controller.signal),
+          },
         });
 
         return {
@@ -120,9 +135,16 @@ export function createToolBridge({ tools, permission, run }: ToolBridgeOptions):
     },
     'tool.cancel': ({ callID }) => {
       calls.get(callID)?.abort();
+      permission.cancel(callID);
 
       return {};
     },
     'permission.assert': assert,
+    'permission.reply': async (input) => {
+      await permission.reply(input);
+
+      return {};
+    },
+    'permission.list': ({ sessionID }) => permission.list(sessionID),
   };
 }

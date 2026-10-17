@@ -8,7 +8,7 @@ import {
 } from 'ai';
 
 import type { AgentInfo } from '../agent/agent';
-import type { PermissionSeam } from '../permission/seam';
+import type { PermissionSeam } from '../permission/engine';
 import type { ToolDefinition } from '../tool/tool';
 import { ToolError } from '../tool/tool';
 import {
@@ -20,6 +20,24 @@ import {
 } from './schema';
 import type { SessionStore } from './store';
 
+/** v2's prompt for a turn's last allowed step (`runner/max-steps.ts`). */
+export const MAX_STEPS_PROMPT = `CRITICAL - MAXIMUM STEPS REACHED
+
+The maximum number of steps allowed for this task has been reached. Tools are disabled until next user input. Respond with text only.
+
+STRICT REQUIREMENTS:
+1. Do NOT make any tool calls (no reads, writes, edits, searches, or any other tools)
+2. MUST provide a text response summarizing work done so far
+3. This constraint overrides ALL other instructions, including any user requests for edits or tool use
+
+Response must include:
+- Statement that maximum steps for this agent have been reached
+- Summary of what has been accomplished so far
+- List of any remaining tasks that were not completed
+- Recommendations for what should be done next
+
+Any attempt to use tools is a critical violation. Respond with text ONLY.`;
+
 export interface StepInput {
   store: SessionStore;
   sessionID: string;
@@ -30,6 +48,9 @@ export interface StepInput {
   tools: readonly ToolDefinition[];
   toolChoice?: ToolChoice<ToolSet>;
   permission: PermissionSeam;
+  /** The chat's permission mode and sites, for each call's permission scope. */
+  mode?: string;
+  sites?: readonly string[];
   signal: AbortSignal;
 }
 
@@ -67,6 +88,23 @@ export function abortable<T>(promise: Promise<T>, signal: AbortSignal): Promise<
     );
   });
 }
+
+/** Time for the engine, so tests can wait without waiting. */
+export interface Clock {
+  now: () => number;
+  sleep: (ms: number, signal: AbortSignal) => Promise<void>;
+  random: () => number;
+}
+
+export const realClock: Clock = {
+  now: () => Date.now(),
+  random: () => Math.random(),
+  sleep: (ms, signal) =>
+    abortable(new Promise<void>((resolve) => void setTimeout(resolve, ms)), signal),
+};
+
+/** v2's record of a plain Deny, which ends the turn. */
+export const TOOL_DECLINED = 'The user declined this tool call';
 
 function failureOf(error: unknown): ToolFailure {
   if (error instanceof ToolError) {
@@ -125,10 +163,13 @@ interface OpenPart {
 /**
  * One model call, after v2's `runner/step.ts`: the stream is read to its end, each tool call runs
  * through the registry as it arrives, and every part is persisted. Tools have no `execute`, so the
- * AI SDK stops after this step and the engine decides whether to step again.
+ * AI SDK stops after this step and the engine decides whether to step again. A plain Deny aborts
+ * the step, so the engine fails the other calls and ends the turn `interrupted` (v2 `step.ts`).
  */
 export async function runStep(input: StepInput): Promise<StepResult> {
-  const { store, sessionID, messageID, agent, signal } = input;
+  const { store, sessionID, messageID, agent } = input;
+  const declined = new AbortController();
+  const signal = AbortSignal.any([input.signal, declined.signal]);
   const publish = (body: DurableEventBody) => store.publish(sessionID, body);
   const open = new Map<string, OpenPart>();
   const running: Promise<void>[] = [];
@@ -148,7 +189,14 @@ export async function runStep(input: StepInput): Promise<StepResult> {
 
       if (!parsed.success) throw new Error(`Invalid input for ${name}: ${parsed.error.message}`);
 
-      const scope = { sessionID, messageID, callID, agent: agent.id };
+      const scope = {
+        sessionID,
+        messageID,
+        callID,
+        agent: agent.id,
+        ...(input.mode === undefined ? {} : { mode: input.mode }),
+        ...(input.sites === undefined ? {} : { sites: [...input.sites] }),
+      };
 
       const result = await abortable(
         definition.execute(parsed.data, {
@@ -157,7 +205,7 @@ export async function runStep(input: StepInput): Promise<StepResult> {
           messageID,
           callID,
           agent: agent.id,
-          permission: { assert: (request) => input.permission.assert(request, scope) },
+          permission: { assert: (request) => input.permission.assert(request, scope, signal) },
         }),
         signal,
       );
@@ -173,6 +221,19 @@ export async function runStep(input: StepInput): Promise<StepResult> {
       });
     } catch (caught) {
       if (signal.aborted) return;
+
+      if (caught instanceof ToolError && caught.code === 'declined') {
+        await publish({
+          type: 'session.tool.failed',
+          messageID,
+          callID,
+          error: { message: TOOL_DECLINED, code: 'declined' },
+        });
+
+        declined.abort();
+
+        return;
+      }
 
       await publish({ type: 'session.tool.failed', messageID, callID, error: failureOf(caught) });
     }

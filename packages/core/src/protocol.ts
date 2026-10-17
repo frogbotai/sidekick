@@ -36,7 +36,15 @@ const byRef = z.object({ ref, doc });
 
 const id = z.string().check(z.minLength(1));
 
-const scope = { sessionID: id, messageID: id, callID: id, agent: id };
+const scope = {
+  sessionID: id,
+  messageID: id,
+  callID: id,
+  agent: id,
+  mode: z.optional(id),
+  sites: z.optional(z.array(z.string())),
+  client: z.optional(z.object({ id, name: z.string() })),
+};
 
 const jsonSchema = z.record(z.string(), z.unknown());
 
@@ -54,6 +62,16 @@ const permissionRequest = z.object({
   action: z.enum(PERMISSION_ACTIONS),
   resource: z.string(),
   frameOrigin: z.optional(z.string()),
+});
+
+const permissionAsk = z.object({
+  id,
+  sessionID: id,
+  callID: id,
+  action: z.enum(PERMISSION_ACTIONS),
+  site: z.string(),
+  inside: z.optional(z.string()),
+  always: z.boolean(),
 });
 
 const children = z.optional(z.array(z.object({ frameId, url: z.string() })));
@@ -112,6 +130,18 @@ export const sidekickProtocol = defineProtocol({
       input: z.object({ ...scope, request: permissionRequest }),
       output: outcome(z.null()),
     },
+    'permission.reply': {
+      input: z.object({
+        id,
+        reply: z.enum(['once', 'always', 'reject']),
+        message: z.optional(z.string()),
+      }),
+      output: z.object({}),
+    },
+    'permission.list': {
+      input: z.object({ sessionID: z.optional(id) }),
+      output: z.array(permissionAsk),
+    },
   },
   events: {
     'run.stopped': z.object({
@@ -120,6 +150,8 @@ export const sidekickProtocol = defineProtocol({
       sessionID: z.optional(z.string()),
     }),
     'page.stripped': z.object({ tabId, removed: z.array(z.string()) }),
+    'permission.asked': permissionAsk,
+    'permission.replied': z.object({ id, sessionID: id }),
   },
 });
 

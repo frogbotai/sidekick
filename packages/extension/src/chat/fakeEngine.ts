@@ -1,5 +1,6 @@
 import type {
   Admitted,
+  CreateInput,
   DurableEventBody,
   EphemeralEventBody,
   LogEvent,
@@ -18,6 +19,7 @@ function isEphemeral(body: DurableEventBody | EphemeralEventBody): body is Ephem
 export function fakeEngine(sessionID = 'ses_1') {
   const calls: string[] = [];
   const prompts: PromptInput[] = [];
+  const creates: CreateInput[] = [];
   const listeners = new Set<(event: LogEvent) => void>();
   const queue: Queued[] = [];
   const sessions = new Map<string, SessionInfo>();
@@ -77,6 +79,7 @@ export function fakeEngine(sessionID = 'ses_1') {
   const engine: SessionEngine = {
     create: (input) => {
       calls.push(`create:${input.model}`);
+      creates.push(input);
 
       const created = info('ses_new');
 
@@ -148,6 +151,7 @@ export function fakeEngine(sessionID = 'ses_1') {
     engine,
     calls,
     prompts,
+    creates,
     play,
     sessions,
     hold: () => {

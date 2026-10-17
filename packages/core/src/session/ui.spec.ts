@@ -223,6 +223,37 @@ describe('toUIMessages', () => {
     expect(next).toMatchObject({ id: 'msg_a3', parts: [{ type: 'step-start' }, { text: 'Sure' }] });
   });
 
+  it('shows a denied or declined call as output-denied, with its reason', () => {
+    const [turn] = toUIMessages([
+      assistant('msg_d', 1, [
+        tool('d1', {
+          status: 'error',
+          input: { tab_id: 1 },
+          error: { message: 'The user denied this: no', code: 'denied' },
+        }),
+        tool('d2', {
+          status: 'error',
+          input: {},
+          error: { message: 'The user declined this tool call', code: 'declined' },
+        }),
+      ]),
+    ]);
+
+    expect(turn?.parts.slice(1)).toEqual([
+      expect.objectContaining({
+        toolCallId: 'd1',
+        state: 'output-denied',
+        input: { tab_id: 1 },
+        approval: { id: 'd1', approved: false, reason: 'The user denied this: no' },
+      }),
+      expect.objectContaining({
+        toolCallId: 'd2',
+        state: 'output-denied',
+        approval: { id: 'd2', approved: false, reason: 'The user declined this tool call' },
+      }),
+    ]);
+  });
+
   it('gives a screenshot result MCP’s image content beside its fields', () => {
     const image = 'data:image/png;base64,iVBORw0K';
 

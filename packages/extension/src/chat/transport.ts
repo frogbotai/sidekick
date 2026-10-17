@@ -2,6 +2,7 @@ import {
   CHAT_FULL,
   type CompactionData,
   fromUIParts,
+  isDenial,
   type LogEvent,
   type SessionEngine,
   type TokenUsage,
@@ -29,6 +30,8 @@ export interface SessionTransportOptions {
   onChatId: (chatId: ChatId) => void;
   /** Whether another window holds the session's turn lock. */
   heldElsewhere: (sessionID: string) => Promise<boolean>;
+  /** The permission mode picked for the next message, sent with it like the model. */
+  mode?: () => string | undefined;
   onRetry?: (sessionID: string, notice: RetryNotice | undefined) => void;
   /** Called when a stream starts and when it settles; `queued` when it waited on another window. */
   onStreaming?: (sessionID: string, streaming: boolean, queued: boolean) => void;
@@ -171,6 +174,21 @@ export function chunker() {
           ],
         };
       case 'session.tool.failed':
+        if (isDenial(event.error)) {
+          return {
+            chunks: [
+              { type: 'tool-approval-request', approvalId: event.callID, toolCallId: event.callID },
+              {
+                type: 'tool-approval-response',
+                approvalId: event.callID,
+                approved: false,
+                reason: event.error.message,
+              },
+              { type: 'tool-output-denied', toolCallId: event.callID },
+            ],
+          };
+        }
+
         return {
           chunks: [
             {
@@ -239,7 +257,8 @@ export function createSessionTransport(options: SessionTransportOptions): ChatTr
 
     if (!ref) throw new Error('Pick a model first.');
 
-    const created = await engine.create({ model: ref });
+    const mode = options.mode?.();
+    const created = await engine.create({ model: ref, ...(mode ? { mode } : {}) });
 
     await chat.open(created.id);
     options.onChatId(created.id);
@@ -250,6 +269,7 @@ export function createSessionTransport(options: SessionTransportOptions): ChatTr
   const sendMessages = async ({ trigger, messageId, messages, abortSignal }: Send) => {
     const ref = modelRef(request());
     const sessionID = await session(ref);
+    const mode = options.mode?.();
     const user = messages.findLast((message) => message.role === 'user');
 
     if (!user) throw new Error('No message to send.');
@@ -271,6 +291,7 @@ export function createSessionTransport(options: SessionTransportOptions): ChatTr
         parts: fromUIParts(user.parts),
         ...(from ? { from } : {}),
         ...(ref ? { model: ref } : {}),
+        ...(mode ? { mode } : {}),
       })
       .catch((error: unknown) => {
         follow.abort();

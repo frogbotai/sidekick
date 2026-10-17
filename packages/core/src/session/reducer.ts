@@ -269,6 +269,14 @@ export function reduce(target: ReducerTarget, event: SessionEvent): Change {
       return { session: event.info };
     case 'session.renamed':
       return { session: touched(target.session, event.created, { title: event.title }) };
+    case 'session.mode.selected':
+      return { session: touched(target.session, event.created, { mode: event.mode }) };
+    case 'session.site.added':
+      return {
+        session: touched(target.session, event.created, {
+          sites: [...new Set([...(target.session?.sites ?? []), event.site])],
+        }),
+      };
     case 'session.truncated':
       return target.message ? { deleteFrom: target.message.seq } : {};
     case 'session.agent.selected': {

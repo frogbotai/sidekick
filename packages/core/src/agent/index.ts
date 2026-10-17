@@ -1,5 +1,5 @@
-export type { AgentInfo, PermissionRule } from './agent';
-export { evaluate, offersTool } from './agent';
+export type { AgentInfo } from './agent';
+export { offersTool } from './agent';
 export {
   BUILD_AGENT,
   BUILD_PROMPT,

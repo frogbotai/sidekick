@@ -36,7 +36,8 @@ function windowChat(log: string[], current?: string): WindowChat {
 function setup({
   chatId = 'ses_1',
   heldElsewhere = false,
-}: { chatId?: string | null; heldElsewhere?: boolean } = {}) {
+  mode,
+}: { chatId?: string | null; heldElsewhere?: boolean; mode?: string } = {}) {
   const fake = fakeEngine();
   const retries: (RetryNotice | undefined)[] = [];
   const order: string[] = fake.calls;
@@ -53,6 +54,7 @@ function setup({
     onChatId: (id) => order.push(`onChatId:${id}`),
     heldElsewhere: () => Promise.resolve(heldElsewhere),
     onRetry: (_sessionID, notice) => retries.push(notice),
+    ...(mode ? { mode: () => mode } : {}),
   });
 
   const send = (
@@ -225,6 +227,42 @@ describe('createSessionTransport', () => {
       'openChat:ses_new',
       'onChatId:ses_new',
       'prompt:msg_u1',
+    ]);
+  });
+
+  it('sends the picked mode with a new chat and its prompt', async () => {
+    const { send, creates, prompts } = setup({ chatId: null, mode: 'plan' });
+
+    await send([user('msg_u1')]);
+
+    expect(creates).toEqual([{ model: 'openai/gpt-5#high', mode: 'plan' }]);
+    expect(prompts[0]).toMatchObject({ mode: 'plan' });
+  });
+
+  it('shows a denied call as output-denied, with its reason', async () => {
+    const { send, play } = setup();
+    const reading = read(await send([user('msg_u1')]));
+
+    play(
+      { type: 'session.prompted', messageID: 'msg_u1', parts: [] },
+      {
+        type: 'session.tool.failed',
+        messageID: 'msg_a1',
+        callID: 'c1',
+        error: { message: 'The user declined this tool call', code: 'declined' },
+      },
+      { type: 'session.idle', messageID: 'msg_i', outcome: 'interrupted' },
+    );
+
+    expect((await reading).slice(0, 3)).toEqual([
+      { type: 'tool-approval-request', approvalId: 'c1', toolCallId: 'c1' },
+      {
+        type: 'tool-approval-response',
+        approvalId: 'c1',
+        approved: false,
+        reason: 'The user declined this tool call',
+      },
+      { type: 'tool-output-denied', toolCallId: 'c1' },
     ]);
   });
 

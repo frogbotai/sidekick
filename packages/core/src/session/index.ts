@@ -52,6 +52,7 @@ export {
 export type * from './schema';
 export { ascending, isDurable } from './schema';
 export type { StepInput, StepResult } from './step';
+export { TOOL_DECLINED } from './step';
 export type { LogOptions, SessionList, SessionStore, SessionStoreOptions } from './store';
 export { createSessionStore } from './store';
 export type { CompactInput, CompactionModel, CompactOutcome, CompactResult } from './summarize';
@@ -69,4 +70,4 @@ export type {
   ToolUIContent,
   ToolUIOutput,
 } from './ui';
-export { compactionData, fromUIParts, toolOutput, toUIMessages, userUIParts } from './ui';
+export { compactionData, fromUIParts, isDenial, toolOutput, toUIMessages, userUIParts } from './ui';

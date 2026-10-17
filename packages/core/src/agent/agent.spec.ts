@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { agents } from '../registry';
-import { evaluate, offersTool } from './agent';
+import { offersTool } from './agent';
 import { BUILD_AGENT, COMPACTION_AGENT, registerBuiltinAgents, TITLE_AGENT } from './builtin';
 
 let dispose: (() => void) | undefined;
@@ -60,22 +60,5 @@ describe('built-in agents', () => {
     expect(compaction).toMatchObject({ mode: 'primary', hidden: true });
     expect(compaction.system).toContain('## Browser State');
     expect(TOOLS.filter((tool) => offersTool(compaction, tool))).toEqual([]);
-  });
-});
-
-describe('evaluate', () => {
-  it('lets the last matching rule win and allows by default', () => {
-    const rules = [
-      { action: '*', resource: '*', effect: 'deny' as const },
-      { action: 'read', resource: '*', effect: 'allow' as const },
-      { action: 'read', resource: '*.bank.test', effect: 'ask' as const },
-    ];
-
-    expect(evaluate(rules, 'read')).toBe('allow');
-    expect(evaluate(rules, 'read', 'www.bank.test')).toBe('ask');
-    expect(evaluate(rules, 'input')).toBe('deny');
-    expect(evaluate([], 'input')).toBe('allow');
-    expect(offersTool({ permissions: rules }, { permission: 'input' })).toBe(false);
-    expect(offersTool({ permissions: rules }, { permission: 'read' })).toBe(true);
   });
 });

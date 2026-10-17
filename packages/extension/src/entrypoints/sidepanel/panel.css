@@ -79,3 +79,22 @@ body,
   padding: 0;
   list-style: none;
 }
+
+.sidekick-grant {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.sidekick-grant__text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.sidekick-permission {
+  overflow-wrap: anywhere;
+}

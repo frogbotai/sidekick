@@ -60,6 +60,8 @@ export const TOOL_ERROR_CODES = [
   'search_disabled',
   'cancelled',
   'request_failed',
+  'denied',
+  'declined',
 ] as const;
 
 export type ToolErrorCode = (typeof TOOL_ERROR_CODES)[number];

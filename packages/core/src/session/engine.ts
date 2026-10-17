@@ -1,7 +1,9 @@
 import type { ModelMessage } from 'ai';
 
-import { type AgentInfo, offersTool } from '../agent/agent';
-import type { PermissionSeam } from '../permission/seam';
+import type { AgentInfo } from '../agent/agent';
+import type { PermissionSeam } from '../permission/engine';
+import { BUILD_MODE, type PermissionMode } from '../permission/modes';
+import { permissionModes } from '../registry';
 import type { Registry } from '../registry/registry';
 import type { ToolDefinition } from '../tool/tool';
 import {
@@ -11,6 +13,7 @@ import {
   type CompactionSettings,
   due,
 } from './compaction';
+import { modeReminder, offeredTools, promptChanges } from './mode';
 import {
   type Admitted,
   type CompactEntry,
@@ -35,7 +38,10 @@ import {
   type SessionMessage,
   type UserPart,
 } from './schema';
-import { abortable, runStep } from './step';
+import { type Clock, MAX_STEPS_PROMPT, realClock, runStep } from './step';
+
+export type { Clock } from './step';
+export { MAX_STEPS_PROMPT, realClock } from './step';
 import type { SessionList, SessionStore } from './store';
 import {
   compact as runCompaction,
@@ -45,39 +51,7 @@ import {
 } from './summarize';
 import { generateTitle, isUntitledRoot, type ModelSource, titleInput } from './title';
 
-/** v2's prompt for a turn's last allowed step (`runner/max-steps.ts`). */
-export const MAX_STEPS_PROMPT = `CRITICAL - MAXIMUM STEPS REACHED
-
-The maximum number of steps allowed for this task has been reached. Tools are disabled until next user input. Respond with text only.
-
-STRICT REQUIREMENTS:
-1. Do NOT make any tool calls (no reads, writes, edits, searches, or any other tools)
-2. MUST provide a text response summarizing work done so far
-3. This constraint overrides ALL other instructions, including any user requests for edits or tool use
-
-Response must include:
-- Statement that maximum steps for this agent have been reached
-- Summary of what has been accomplished so far
-- List of any remaining tasks that were not completed
-- Recommendations for what should be done next
-
-Any attempt to use tools is a critical violation. Respond with text ONLY.`;
-
 export const STEP_INTERRUPTED = 'Step interrupted';
-
-/** Time for the engine, so tests can wait without waiting. */
-export interface Clock {
-  now: () => number;
-  sleep: (ms: number, signal: AbortSignal) => Promise<void>;
-  random: () => number;
-}
-
-export const realClock: Clock = {
-  now: () => Date.now(),
-  random: () => Math.random(),
-  sleep: (ms, signal) =>
-    abortable(new Promise<void>((resolve) => void setTimeout(resolve, ms)), signal),
-};
 
 export interface SessionEngineOptions {
   store: SessionStore;
@@ -85,6 +59,8 @@ export interface SessionEngineOptions {
   tools: Pick<Registry<ToolDefinition>, 'list'>;
   agents: Pick<Registry<AgentInfo>, 'get'>;
   permission: PermissionSeam;
+  /** Permission modes, for each chat's tools and reminders; the `permissionModes` registry by default. */
+  modes?: Pick<Registry<PermissionMode>, 'get' | 'list'>;
   clock?: Clock;
   locks?: SessionLocks;
   /** The agent for new sessions and for a session whose agent is gone. */
@@ -102,6 +78,7 @@ export interface SessionEngineOptions {
 export interface CreateInput {
   model: string;
   agent?: string;
+  mode?: string;
   parentID?: string;
   windowId?: number;
 }
@@ -163,6 +140,7 @@ function unsettled(message: SessionMessage): message is AssistantMessage {
  */
 export function createSessionEngine(options: SessionEngineOptions): SessionEngine {
   const { store, models, tools, agents, permission } = options;
+  const modes = options.modes ?? permissionModes;
   const clock = options.clock ?? realClock;
   const locks = options.locks ?? webLocks();
   const defaultAgent = options.defaultAgent ?? 'build';
@@ -234,11 +212,18 @@ export function createSessionEngine(options: SessionEngineOptions): SessionEngin
     return 'failed';
   };
 
-  const offeredTo = (agent: AgentInfo) => tools.list().filter((tool) => offersTool(agent, tool));
+  const offeredTo = (agent: AgentInfo, mode: string) => offeredTools(tools, modes, agent, mode);
+
+  const remind = async (sessionID: string, mode: string) => {
+    const text = modeReminder(await store.messages(sessionID), modes, mode);
+
+    if (text) await publish(sessionID, { type: 'session.synthetic', messageID: id(), text });
+  };
 
   const summarize = (
     sessionID: string,
     agent: AgentInfo,
+    mode: string,
     model: Resolved & { ref: string },
     reason: CompactionMessage['reason'],
     signal: AbortSignal,
@@ -254,7 +239,7 @@ export function createSessionEngine(options: SessionEngineOptions): SessionEngin
       model,
       ...(prompt ? { prompt } : {}),
       ...(agent.system ? { system: agent.system } : {}),
-      tools: offeredTo(agent),
+      tools: offeredTo(agent, mode),
       keep: settings.keep,
       ...(settings.buffer === undefined ? {} : { buffer: settings.buffer }),
       overflow,
@@ -292,7 +277,8 @@ export function createSessionEngine(options: SessionEngineOptions): SessionEngin
     }
 
     const limited = agent.steps !== undefined && count >= agent.steps;
-    const offered = offeredTo(agent);
+    const mode = session.mode ?? BUILD_MODE;
+    const offered = offeredTo(agent, mode);
 
     const full =
       settings.auto &&
@@ -306,11 +292,13 @@ export function createSessionEngine(options: SessionEngineOptions): SessionEngin
       });
 
     if (full) {
-      const outcome = await summarize(sessionID, agent, model, 'auto', signal);
+      const outcome = await summarize(sessionID, agent, mode, model, 'auto', signal);
 
       if (outcome.status === 'aborted') return interrupt(sessionID);
 
       if (outcome.status === 'failed') return 'failed';
+
+      await remind(sessionID, mode);
     }
 
     await started();
@@ -335,6 +323,8 @@ export function createSessionEngine(options: SessionEngineOptions): SessionEngin
         tools: offered,
         ...(limited ? { toolChoice: 'none' as const } : {}),
         permission,
+        mode,
+        sites: session.sites ?? [],
         signal,
       });
 
@@ -353,12 +343,13 @@ export function createSessionEngine(options: SessionEngineOptions): SessionEngin
           error: sessionError(result.error, verdict),
         });
 
-        const outcome = await summarize(sessionID, agent, model, 'auto', signal, true);
+        const outcome = await summarize(sessionID, agent, mode, model, 'auto', signal, true);
 
         if (outcome.status === 'aborted') return interrupt(sessionID);
 
         if (outcome.status !== 'completed') return 'failed';
 
+        await remind(sessionID, mode);
         messageID = id();
         retries = 0;
         await started();
@@ -468,7 +459,16 @@ export function createSessionEngine(options: SessionEngineOptions): SessionEngin
 
       results.set(
         messageID,
-        manualResult(await summarize(sessionID, agent, model, 'manual', controller.signal)),
+        manualResult(
+          await summarize(
+            sessionID,
+            agent,
+            session.mode ?? BUILD_MODE,
+            model,
+            'manual',
+            controller.signal,
+          ),
+        ),
       );
     } catch (error) {
       results.set(messageID, { status: 'failed', error: sessionError(error) });
@@ -504,6 +504,10 @@ export function createSessionEngine(options: SessionEngineOptions): SessionEngin
         model: entry.model,
       });
     }
+
+    const changes = promptChanges(session, entry, await store.messages(sessionID), modes, id);
+
+    for (const body of changes) await publish(sessionID, body);
 
     await publish(sessionID, {
       type: 'session.prompted',
@@ -547,13 +551,14 @@ export function createSessionEngine(options: SessionEngineOptions): SessionEngin
   };
 
   return {
-    create: async ({ model, agent, parentID, windowId }) => {
+    create: async ({ model, agent, mode, parentID, windowId }) => {
       const now = clock.now();
 
       const info: SessionInfo = {
         id: ascending('ses', now),
         agent: agent ?? defaultAgent,
         model,
+        ...(mode ? { mode } : {}),
         ...(parentID ? { parentID } : {}),
         ...(windowId === undefined ? {} : { windowId }),
         created: now,
@@ -594,7 +599,7 @@ export function createSessionEngine(options: SessionEngineOptions): SessionEngin
       for (const session of await store.all()) await sweepOne(session);
     },
     queued: queue.queued,
-    busy: (sessionID) => controllers.has(sessionID),
+    busy: (sessionID) => controllers.has(sessionID) || queue.holding(sessionID),
     log: store.log,
     head: store.head,
     watch: store.watch,

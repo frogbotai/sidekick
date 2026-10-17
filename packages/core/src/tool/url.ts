@@ -39,6 +39,28 @@ export function normalizeUrl(input: string): string {
   return url.href;
 }
 
+/**
+ * The site a grant or rule names, after Claude for Chrome's `matchesNetloc`: an http(s) origin's
+ * lowercased host and port, without a trailing dot or a leading `www.`. Anything else stays raw.
+ */
+export function siteOf(resource: string): string {
+  if (!/^https?:\/\//i.test(resource)) return resource;
+
+  try {
+    const { hostname, port } = new URL(resource);
+    const host = hostname.replace(/\.$/, '').replace(/^www\./, '');
+
+    return port ? `${host}:${port}` : host;
+  } catch {
+    return resource;
+  }
+}
+
+/** Whether a permission resource is a web origin, so blocked and sensitive sites apply to it. */
+export function isWebOrigin(resource: string) {
+  return /^https?:\/\//i.test(resource);
+}
+
 export function originOf(url: string): string {
   try {
     const { origin, href } = new URL(url);

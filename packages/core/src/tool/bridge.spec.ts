@@ -1,19 +1,26 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
 
+import type { AgentInfo } from '../agent/agent';
+import { BUILTIN_AGENTS } from '../agent/builtin';
 import { fakeCdp, fakePage, fakeTabs, type Log } from '../browser/worker/fakes';
 import { OUTSIDE_TAB, START_TAB } from '../browser/worker/harness';
 import { createBrowserRuntime } from '../browser/worker/runtime';
 import { createBrowserWorker } from '../browser/worker/serve';
 import type { Page } from '../browser/worker/types';
 import { createForms } from '../form';
-import type { PermissionScope } from '../permission/seam';
+import {
+  createPermissionEngine,
+  type PermissionEngine,
+  type PermissionScope,
+} from '../permission/engine';
+import { BUILTIN_MODES, type PermissionMode } from '../permission/modes';
 import { sidekickProtocol } from '../protocol';
 import { searchProviders } from '../registry';
 import { createRegistry } from '../registry/registry';
 import { connectWorker, MIN_BACKOFF } from '../rpc/client';
 import { CONNECTED } from '../rpc/define';
-import { serve } from '../rpc/server';
+import { serve, type Server } from '../rpc/server';
 import { webSearch } from '../search/service';
 import { webSearchTool } from '../search/tool';
 import { webSearchProvider } from '../storage';
@@ -80,6 +87,23 @@ const slow = defineTool({
     }),
 });
 
+type BridgePermission = Pick<PermissionEngine, 'assert' | 'reply' | 'list' | 'cancel'>;
+
+function realEngine(emit: Server<typeof sidekickProtocol>['emit']) {
+  const agents = createRegistry<AgentInfo>('agents');
+  const modes = createRegistry<PermissionMode>('permissionModes');
+
+  agents.register('builtin', (draft) => {
+    for (const agent of BUILTIN_AGENTS) draft.add(agent);
+  });
+
+  modes.register('builtin', (draft) => {
+    for (const mode of BUILTIN_MODES) draft.add(mode);
+  });
+
+  return createPermissionEngine({ agents, modes, emit });
+}
+
 interface Boot {
   asserts: { request: PermissionRequest; scope: PermissionScope }[];
   runs: ReturnType<typeof createBrowserRuntime>['env']['runs'];
@@ -89,6 +113,7 @@ function boot(
   tabs = fakeTabs([], [START_TAB, OUTSIDE_TAB]),
   extra: ToolDefinition[] = [slow, stale],
   page: Partial<Page> = {},
+  engine?: (emit: Server<typeof sidekickProtocol>['emit']) => BridgePermission,
 ): Boot {
   const log: Log = [];
   const runtime = createBrowserRuntime({
@@ -106,19 +131,24 @@ function boot(
     for (const tool of [...runtime.tools, ...extra]) draft.add(tool);
   });
 
+  let server: Server<typeof sidekickProtocol> | undefined;
+
   const bridge = createToolBridge({
     tools: registry,
-    permission: {
+    permission: engine?.((type, data) => server?.emit(type, data)) ?? {
       assert: (request, scope) => {
         asserts.push({ request, scope });
 
         return Promise.resolve();
       },
+      reply: () => Promise.resolve(),
+      list: () => [],
+      cancel: () => undefined,
     },
     run: browser.sessionRun,
   });
 
-  const server = serve(
+  server = serve(
     sidekickProtocol,
     {
       'tab.ping': () => Promise.reject(new Error('unused')),
@@ -366,5 +396,62 @@ describe('the worker tool bridge', () => {
     expect(asserts).toEqual([{ request: { action: 'websearch', resource: 'chrome mv3' }, scope }]);
 
     dispose();
+  });
+
+  it('waits past 31 s on a panel assert’s ask, and tool.cancel drops it', async () => {
+    boot(undefined, undefined, undefined, realEngine);
+
+    const { client } = await panel();
+    const asked: unknown[] = [];
+
+    client.on('permission.asked', (ask) => asked.push(ask));
+
+    const permission = workerPermission(client);
+    const controller = new AbortController();
+    const scope = { sessionID: 'ses-1', messageID: 'msg-1', callID: 'call-ask', agent: 'build' };
+
+    const call = failure(
+      permission.assert(
+        { action: 'input', resource: 'https://github.com' },
+        scope,
+        controller.signal,
+      ),
+    );
+
+    await vi.advanceTimersByTimeAsync(31_000);
+    await flush();
+
+    expect(asked).toEqual([expect.objectContaining({ callID: 'call-ask', site: 'github.com' })]);
+    expect(await client.call('permission.list', { sessionID: 'ses-1' })).toHaveLength(1);
+
+    controller.abort();
+    await flush();
+
+    expect((await call).code).toBe('cancelled');
+    expect(await client.call('permission.list', {})).toEqual([]);
+  });
+
+  it('answers a worker tool’s ask over permission.reply, and fails navigated if the tab moved meanwhile', async () => {
+    const tabs = fakeTabs([], [START_TAB, OUTSIDE_TAB]);
+
+    boot(tabs, undefined, undefined, realEngine);
+
+    const { client, tool } = await panel();
+    const asked: { id: string }[] = [];
+
+    client.on('permission.asked', (ask) => asked.push(ask));
+    await tool('tabs_list').execute({}, context('c1'));
+
+    const call = tool('click').execute({ tab_id: START_TAB.id, ref: 'f0e1' }, context('c2'));
+
+    await flush();
+
+    const moved = tabs.tabs.get(START_TAB.id);
+
+    if (moved) moved.url = 'https://elsewhere.test/';
+
+    await client.call('permission.reply', { id: asked[0]?.id ?? '', reply: 'once' });
+
+    expect((await failure(call)).code).toBe('navigated');
   });
 });

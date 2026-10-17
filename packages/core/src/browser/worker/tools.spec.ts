@@ -4,7 +4,7 @@ import { z } from 'zod';
 import { tools } from '../../registry';
 import { defineTool, type ToolDefinition, UNTRUSTED } from '../../tool/tool';
 import { later } from './fakes';
-import { drain, setupBrowser } from './harness';
+import { drain, failure, setupBrowser } from './harness';
 
 const SAMPLES: Record<string, { input: Record<string, unknown>; resource: string }> = {
   tabs_list: { input: {}, resource: '*' },
@@ -77,6 +77,27 @@ describe('browser tools in the tools registry', () => {
       expect(log.find((entry) => entry !== 'tabs.get')).toBe(`assert.${definition.permission}`);
       expect(ctx.asserts[0]).toEqual({ action: definition.permission, resource });
       expect(result.content?.[0]).toEqual({ type: 'text', text: UNTRUSTED });
+    },
+  );
+
+  it.each(['snapshot', 'screenshot', 'scroll', 'scroll_to', 'tabs_switch', 'tabs_close', 'click'])(
+    '%s fails navigated when the tab changes site during its assert',
+    async (id) => {
+      const { tool, ctx, tabs } = await setupBrowser();
+      const definition = tool(id);
+      const sample = SAMPLES[id];
+
+      if (!sample) throw new Error(`No sample for ${id}`);
+
+      ctx.permission.assert = later(() => {
+        const tab = tabs.tabs.get(1);
+
+        if (tab) tab.url = 'https://elsewhere.test/';
+      });
+
+      const error = await failure(definition.execute(definition.input.parse(sample.input), ctx));
+
+      expect(error).toMatchObject({ code: 'navigated' });
     },
   );
 });

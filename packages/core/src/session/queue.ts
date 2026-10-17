@@ -28,6 +28,10 @@ export interface PromptInput {
   /** Switches the session's model first, writing `model-switched`. */
   model?: string;
   agent?: string;
+  /** Switches the session's permission mode first. */
+  mode?: string;
+  /** The page the message was sent from; its site joins the chat's sites. */
+  site?: string;
 }
 
 export interface Queued {

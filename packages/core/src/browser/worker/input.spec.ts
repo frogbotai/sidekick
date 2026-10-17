@@ -21,7 +21,7 @@ function inputs(sent: { method: string; params: Record<string, unknown> }[]) {
 }
 
 describe('input order (req. 13)', () => {
-  it('checks, asserts, re-checks the URL, attaches, scrolls and hit-tests, sends input, then settles', async () => {
+  it('checks, asserts, re-checks the URL before and after inspecting, attaches, scrolls and hit-tests, sends input, then settles', async () => {
     const { tool, ctx, log } = await setupBrowser();
 
     const output = await drain(tool('click').execute({ tab_id: 1, ref: 'f0e1' }, ctx));
@@ -29,6 +29,7 @@ describe('input order (req. 13)', () => {
     expect(log).toEqual([
       'tabs.get',
       'assert.input',
+      'tabs.get',
       'page.inspect',
       'tabs.get',
       'cdp.attach',

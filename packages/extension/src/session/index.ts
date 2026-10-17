@@ -9,6 +9,7 @@ import {
   providers,
   reasoningPolicy,
   registerBuiltinAgents,
+  registerBuiltinModes,
   registerWorkerTools,
   type SessionEngine,
   tools,
@@ -19,6 +20,7 @@ import { availableModels, parseModelRef, resolveModel } from '@frogbotai/sidekic
 
 import type { WindowChat } from '../chat/transport';
 import type { SidekickWorker } from '../entrypoints/sidepanel/worker';
+import { createPermissionRequests, type PermissionRequests } from '../permission/requests';
 import { currentCatalog } from '../providers/catalog';
 
 const OPEN_CHAT = 'openChat';
@@ -68,6 +70,16 @@ export interface Sessions {
   close: (sessionID: string) => Promise<void>;
   /** This window's open chat. */
   chat: WindowChat;
+  /** The worker's waiting permission asks. */
+  permissions: PermissionRequests;
+}
+
+/** The URL of the window's active tab, which a message's site comes from. */
+export async function activePage(windowId: number | undefined) {
+  const query = windowId === undefined ? { currentWindow: true } : { windowId };
+  const [tab] = await chrome.tabs.query({ active: true, ...query }).catch(() => []);
+
+  return tab?.url;
 }
 
 /** The open chat of one window: opening another, or none, ends the previous chat's run. */
@@ -93,14 +105,16 @@ export async function windowChat(
 }
 
 /**
- * Starts the panel's session engine: built-in agents, the worker's tools as proxies, the worker's
- * permission seam, and the sweep for turns a closed panel left behind.
+ * Starts the panel's session engine: built-in agents and modes, the worker's tools as proxies, the
+ * worker's permission seam and asks, and the sweep for turns a closed panel left behind. Each
+ * message carries the active tab's page, whose site joins the chat's sites.
  */
 export async function startSessions(
   worker: SidekickWorker,
   windowId: number | undefined,
 ): Promise<Sessions> {
   registerBuiltinAgents();
+  registerBuiltinModes();
 
   let unregister: (() => void) | undefined;
 
@@ -135,10 +149,12 @@ export async function startSessions(
 
   const engine: SessionEngine = {
     ...base,
-    prompt: (input) => {
+    prompt: async (input) => {
       prompted.add(input.sessionID);
 
-      return base.prompt(input);
+      const site = input.site ?? (await activePage(windowId));
+
+      return base.prompt({ ...input, ...(site ? { site } : {}) });
     },
     sessions: {
       ...base.sessions,
@@ -164,5 +180,10 @@ export async function startSessions(
 
   void engine.sweep();
 
-  return { engine, close, chat: await windowChat(windowId, close) };
+  return {
+    engine,
+    close,
+    chat: await windowChat(windowId, close),
+    permissions: createPermissionRequests(worker),
+  };
 }
