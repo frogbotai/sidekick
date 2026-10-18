@@ -14,7 +14,7 @@ body,
 
 .sidekick-panel {
   height: 100%;
-  background: var(--theme-base-0);
+  background: var(--fb-theme-base-0);
 }
 
 .sidekick-panel__chat {
@@ -103,7 +103,7 @@ body,
   margin: 0;
   padding: 0.5rem;
   border-radius: 0.375rem;
-  background: var(--theme-base-100);
+  background: var(--fb-theme-base-100);
   font-family: ui-monospace, monospace;
   font-size: 0.75rem;
   white-space: pre-wrap;
@@ -121,7 +121,7 @@ body,
   gap: 0.25rem;
   margin: 0.25rem 0;
   padding: 0.5rem 0.75rem;
-  border: 1px solid var(--theme-base-200);
+  border: 1px solid var(--fb-theme-base-200);
   border-radius: 0.5rem;
 }
 
@@ -145,7 +145,7 @@ body,
 
 .sidekick-subagent__open > span {
   overflow: hidden;
-  color: var(--theme-base-600);
+  color: var(--fb-theme-base-600);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -161,11 +161,11 @@ body,
 .sidekick-subagent__error {
   overflow-wrap: anywhere;
   font-size: 0.75rem;
-  color: var(--theme-base-600);
+  color: var(--fb-theme-base-600);
 }
 
 .sidekick-subagent__error {
-  color: var(--theme-red-500);
+  color: var(--fb-theme-red-500);
 }
 
 @keyframes sidekick-spin {

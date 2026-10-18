@@ -13,7 +13,7 @@ test('opens the side panel styled like FrogBot', async ({ openPanel }) => {
   await expect(panel.locator('html')).toHaveAttribute('data-fb-theme', 'system');
 
   const base = await panel.evaluate(() =>
-    getComputedStyle(document.documentElement).getPropertyValue('--theme-base-0').trim(),
+    getComputedStyle(document.documentElement).getPropertyValue('--fb-theme-base-0').trim(),
   );
 
   expect(base).not.toBe('');
