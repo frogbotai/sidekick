@@ -175,7 +175,31 @@ test('snapshot and screenshot results: the snapshot collapsed under its height l
   expect(await toolView(panel)).toEqual(live);
 });
 
-test('a second panel window streams the same chat', async ({ context, openPanel, extensionId }) => {
+function watchQueued(panel: Page) {
+  return panel.evaluate(() => {
+    const seen = { queued: false };
+    const check = () => {
+      seen.queued ||= [...document.querySelectorAll('[role="status"]')].some((element) =>
+        element.textContent?.includes('Queued'),
+      );
+    };
+
+    new MutationObserver(check).observe(document.body, { childList: true, subtree: true });
+    Object.assign(window, { seenQueued: seen });
+  });
+}
+
+function sawQueued(panel: Page) {
+  return panel.evaluate(
+    () => (window as unknown as { seenQueued: { queued: boolean } }).seenQueued.queued,
+  );
+}
+
+test('a second panel window streams the same chat, and only its own message there is queued', async ({
+  context,
+  openPanel,
+  extensionId,
+}) => {
   let release = () => {};
 
   const held = new Promise<void>((resolve) => {
@@ -188,11 +212,13 @@ test('a second panel window streams the same chat', async ({ context, openPanel,
 
       return reply('Answer from window A.');
     },
+    reply('Answer for window B.'),
   ]);
 
   const first = await openPanel();
 
   await connect(first);
+  await watchQueued(first);
   await send(first, 'Question from window A');
   await expect(first.getByRole('button', { name: 'Stop' })).toBeVisible();
 
@@ -201,10 +227,21 @@ test('a second panel window streams the same chat', async ({ context, openPanel,
   await second.goto(`chrome-extension://${extensionId}/sidepanel.html`);
   await expect(second.getByText('Question from window A')).toBeVisible();
 
+  await send(second, 'Question from window B');
+
+  const queued = second.getByRole('status').filter({ hasText: 'Queued' });
+
+  await expect(queued).toContainText('Question from window B');
+  await expect(first.getByText('Question from window A')).toBeVisible();
+  expect(await sawQueued(first)).toBe(false);
+
   release();
 
   await expect(first.getByText('Answer from window A.')).toBeVisible();
   await expect(second.getByText('Answer from window A.')).toBeVisible();
+  await expect(second.getByText('Answer for window B.')).toBeVisible();
+  await expect(queued).toHaveCount(0);
+  expect(await sawQueued(first)).toBe(false);
 });
 
 test('fits a 320px panel: the chat, the Providers view and the options page', async ({

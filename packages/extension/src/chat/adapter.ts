@@ -103,8 +103,11 @@ export function createChatAdapter(options: ChatAdapterOptions): ChatPlatformAdap
         chat,
         request,
         onChatId,
-        heldElsewhere: async (sessionID) =>
-          !busy(sessionID) && (await locks()).has(lockName(sessionID)),
+        heldElsewhere: async (sessionID) => {
+          const held = await locks();
+
+          return held.has(lockName(sessionID)) && !busy(sessionID);
+        },
         ...(options.onRetry ? { onRetry: options.onRetry } : {}),
         ...(options.onStreaming ? { onStreaming: options.onStreaming } : {}),
         ...(options.mode ? { mode: options.mode } : {}),

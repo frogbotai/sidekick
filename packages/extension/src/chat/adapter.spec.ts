@@ -102,6 +102,53 @@ describe('createChatAdapter', () => {
     expect(await heldLocks(manager)).toEqual(new Set([lockName('ses_1')]));
   });
 
+  it('marks a message queued only while another window holds the lock', async () => {
+    const send = async (takenDuringQuery: boolean) => {
+      const fake = fakeEngine();
+      let mine = false;
+      const adapter = createChatAdapter({
+        engine: fake.engine,
+        chat: openChat('ses_1'),
+        manifest,
+        busy: () => mine,
+        locks: () => {
+          if (takenDuringQuery) mine = true;
+
+          return Promise.resolve(new Set([lockName('ses_1')]));
+        },
+      });
+
+      const transport = adapter.createTransport({
+        agent: 'build',
+        request: () => ({ chatId: 'ses_1', model: 'openai/gpt-5' }),
+        onChatId: () => undefined,
+      });
+
+      const waiting = new AbortController();
+
+      fake.hold();
+
+      const stream = await transport.sendMessages({
+        trigger: 'submit-message',
+        chatId: 'ses_1',
+        messageId: undefined,
+        messages: [{ id: 'msg_q', role: 'user', parts: [{ type: 'text', text: 'Hi' }] }],
+        abortSignal: waiting.signal,
+      });
+
+      waiting.abort();
+
+      const chunks: unknown[] = [];
+
+      for await (const chunk of stream) chunks.push(chunk);
+
+      return chunks.map((chunk) => (chunk as { type: string }).type);
+    };
+
+    expect(await send(true)).toEqual(['abort']);
+    expect(await send(false)).toEqual(['data-queued', 'abort']);
+  });
+
   it('lists every chat whatever the agent, and renames and deletes', async () => {
     const fake = fakeEngine();
 
