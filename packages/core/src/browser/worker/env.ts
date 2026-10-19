@@ -1,4 +1,4 @@
-import type { PermissionAction, ToolContext, ToolResult } from '../../tool/tool';
+import type { PermissionAction, ToolContext, ToolMetadata, ToolResult } from '../../tool/tool';
 import { ToolError, UNTRUSTED } from '../../tool/tool';
 import { originOf } from '../../tool/url';
 import { checkpoint, race, stopped } from './abort';
@@ -33,6 +33,8 @@ export interface Act {
   tab: TabInfo;
   origin: string;
   action: PermissionAction;
+  /** What the call has reported so far, as `report` merges it. */
+  metadata: ToolMetadata;
 }
 
 export function notInGroup(tabId: number) {
@@ -80,7 +82,7 @@ export async function enter(
 
   await race(ctx.permission.assert({ action, resource: resource ?? origin }), signal);
 
-  const act = { env, ctx, run, signal, tabId, tab, origin, action };
+  const act: Act = { env, ctx, run, signal, tabId, tab, origin, action, metadata: {} };
 
   await recheck(act);
 
@@ -100,6 +102,33 @@ export async function inspect(act: Act, ref: string): Promise<RefInfo> {
       act.signal,
     );
   }
+
+  return info;
+}
+
+const NAME_LIMIT = 40;
+
+/** An element as a status line names it: its role and accessible name, like `button “Sign in”`. */
+export function targetName({ role, name }: Pick<RefInfo, 'role' | 'name'>) {
+  const label = name.replace(/\s+/g, ' ').trim();
+  const short = label.length > NAME_LIMIT ? `${label.slice(0, NAME_LIMIT).trimEnd()}…` : label;
+  const kind = role || 'element';
+
+  return short ? `${kind} “${short}”` : kind;
+}
+
+/** Adds `metadata` to what the call reports as its progress; a lost report never fails the call. */
+export async function report(act: Act, metadata: ToolMetadata) {
+  act.metadata = { ...act.metadata, ...metadata };
+
+  await act.ctx.progress?.(act.metadata).catch(() => undefined);
+}
+
+/** `inspect`, then reports the element as `key` (`target` unless given). */
+export async function inspectTarget(act: Act, ref: string, key = 'target') {
+  const info = await inspect(act, ref);
+
+  await report(act, { [key]: targetName(info) });
 
   return info;
 }
@@ -165,7 +194,7 @@ export async function aim(
   input: { ref?: string; x?: number; y?: number },
 ): Promise<Point> {
   if (input.ref !== undefined) {
-    await inspect(act, input.ref);
+    await inspectTarget(act, input.ref);
     await recheck(act);
     await act.env.sessions.ensure(act.tabId, act.signal);
 

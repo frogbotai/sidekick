@@ -112,7 +112,7 @@ test('with only an OpenAI key and FrogBot never connected, keyless providers sea
     });
   });
 
-  await panel.getByRole('button', { name: 'Back' }).click();
+  await panel.getByRole('button', { name: 'New chat' }).click();
   await panel.evaluate(() => chrome.storage.local.remove('websearch:provider'));
 
   const second = search(panel, 'exa please');

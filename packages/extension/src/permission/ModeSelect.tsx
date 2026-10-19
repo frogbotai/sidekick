@@ -4,14 +4,8 @@ import {
   type PermissionMode,
   permissionModes,
 } from '@frogbotai/sidekick-core';
-import {
-  ConfirmationDialog,
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@frogbotai/ui';
+import { ConfirmationDialog } from '@frogbotai/ui';
+import { ComposerSelect } from '@frogbotai/ui/chat';
 import { useState, useSyncExternalStore } from 'react';
 
 export const AUTO_WARNING =
@@ -53,18 +47,12 @@ export function ModeSelect({ mode, onChange }: ModeSelectProps) {
 
   return (
     <>
-      <Select value={mode} onValueChange={pick}>
-        <SelectTrigger aria-label="Mode" className="sidekick-mode">
-          <SelectValue />
-        </SelectTrigger>
-        <SelectContent>
-          {modes.map((entry) => (
-            <SelectItem key={entry.id} value={entry.id}>
-              {entry.name}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
+      <ComposerSelect
+        aria-label="Mode"
+        value={mode}
+        options={modes.map((entry) => ({ value: entry.id, label: entry.name }))}
+        onChange={pick}
+      />
       <ConfirmationDialog
         open={warning !== undefined}
         onOpenChange={(open) => {

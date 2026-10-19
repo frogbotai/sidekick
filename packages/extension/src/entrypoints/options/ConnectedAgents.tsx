@@ -81,7 +81,9 @@ export function ConnectedAgents({ disconnect }: { disconnect: (pairingID: string
 
   return (
     <section id="agents" className="sidekick-stack" aria-labelledby="agents-title">
-      <h2 id="agents-title">Connected agents</h2>
+      <h2 id="agents-title" className="sidekick-title">
+        Connected agents
+      </h2>
       <p>
         Agent apps on this computer can use Sidekick’s browser tools. They act without asking in
         Sidekick; blocked sites still apply.
@@ -111,7 +113,7 @@ export function ConnectedAgents({ disconnect }: { disconnect: (pairingID: string
             <li key={pairing.id} className="sidekick-grant">
               <span className="sidekick-grant__text">
                 <strong>{pairing.name}</strong>
-                <small>{live ? 'Connected' : 'Not connected'}</small>
+                <span className="sidekick-muted">{live ? 'Connected' : 'Not connected'}</span>
               </span>
               <span className="sidekick-row">
                 <Button

@@ -145,7 +145,7 @@ test('a good key connects OpenAI, the picker groups catalog and custom models, a
   expect(await logo('OpenAI').innerHTML()).not.toBe(await logo('Fixture').innerHTML());
   served.push('echo-2');
 
-  await panel.getByRole('button', { name: 'Back' }).click();
+  await panel.getByRole('button', { name: 'New chat' }).click();
 
   const trigger = panel.getByRole('button', { name: 'Fixture New' });
 
@@ -258,7 +258,7 @@ test('a pasted FrogBot key connects, shows the balance, the models and FrogBotâ€
   await expect(frogbot.getByText('Connected')).toBeVisible();
   await expect(frogbot.getByLabel('FrogBot balance')).toHaveText('Balance: $4.50');
 
-  await panel.getByRole('button', { name: 'Back' }).click();
+  await panel.getByRole('button', { name: 'New chat' }).click();
   await panel.getByRole('button', { name: 'Claude Sonnet 5' }).click();
 
   await expect(

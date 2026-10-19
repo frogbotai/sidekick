@@ -1,7 +1,7 @@
 import { agents, type SessionEngine } from '@frogbotai/sidekick-core';
 import type { ToolRendererProps } from '@frogbotai/ui/chat';
-import { LoadingIcon } from '@frogbotai/ui/icons';
-import { createContext, use, useEffect, useState } from 'react';
+import { ToolCard, toolCardStatus } from '@frogbotai/ui/chat/tools';
+import { createContext, type KeyboardEvent, use, useEffect, useState } from 'react';
 
 import { childOf, stepLabel, subagentInput } from './subagent';
 
@@ -46,40 +46,53 @@ function useChildStep(
   return running ? (label ?? 'Starting') : undefined;
 }
 
+/** The `subagent` card's title, after v2's: the agent's name and the call's description. */
+export function subagentTitle(input: unknown) {
+  const { agent, description } = subagentInput(input);
+  const name = (agent && agents.get(agent)?.name) ?? agent ?? 'Subagent';
+
+  return description ? `${name}: ${description}` : name;
+}
+
 /**
- * The `subagent` tool's card, after v2's: the agent, the description, a spinner and the child's
- * latest step while it runs. Clicking it opens the child session.
+ * The `subagent` tool's card, after v2's: the agent and the description, with the child's latest
+ * step while it runs. Clicking it opens the child session.
  */
 export function SubagentCard({ part }: ToolRendererProps) {
   const links = use(SubagentContext);
-  const { agent, description } = subagentInput(part.input);
   const child = childOf(part);
   const running = part.state === 'input-streaming' || part.state === 'input-available';
   const step = useChildStep(links?.engine, child, running);
-  const name = (agent && agents.get(agent)?.name) ?? agent ?? 'Subagent';
+  const open = child && links ? () => links.open(child) : undefined;
 
   return (
-    <div className="sidekick-subagent" data-part="subagent" data-state={part.state}>
-      <button
-        type="button"
-        className="sidekick-subagent__open"
-        disabled={!child || !links}
-        onClick={() => {
-          if (child) links?.open(child);
-        }}
-      >
-        {running ? <LoadingIcon className="sidekick-subagent__spinner" aria-hidden /> : null}
-        <strong>{name}</strong>
-        {description ? <span>{description}</span> : null}
-      </button>
-      {step ? (
-        <span className="sidekick-subagent__step" role="status">
-          {step}
-        </span>
-      ) : null}
-      {part.state === 'output-error' ? (
-        <span className="sidekick-subagent__error">{part.errorText}</span>
-      ) : null}
-    </div>
+    <ToolCard
+      data-part="subagent"
+      data-state={part.state}
+      icon="robot"
+      status={toolCardStatus(part)}
+      title={subagentTitle(part.input)}
+      subtitle={
+        part.state === 'output-error' ? (
+          part.errorText
+        ) : step ? (
+          <span role="status">{step}</span>
+        ) : undefined
+      }
+      {...(open
+        ? {
+            role: 'button',
+            tabIndex: 0,
+            className: 'sidekick-open-child',
+            onClick: open,
+            onKeyDown: (event: KeyboardEvent) => {
+              if (event.key !== 'Enter' && event.key !== ' ') return;
+
+              event.preventDefault();
+              open();
+            },
+          }
+        : {})}
+    />
   );
 }

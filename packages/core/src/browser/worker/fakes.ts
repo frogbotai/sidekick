@@ -1,4 +1,4 @@
-import type { PermissionRequest, ToolContext } from '../../tool/tool';
+import type { PermissionRequest, ToolContext, ToolMetadata } from '../../tool/tool';
 import type { Cdp, CdpEvent, Page, TabInfo, Tabs } from './types';
 
 export type Log = string[];
@@ -133,7 +133,13 @@ export function fakePage(log: Log, overrides: Partial<Page> = {}): Page {
       redacted: 0,
       truncated: false,
     })),
-    inspect: later(() => ({ frameId: 0, frameOrigin: 'https://example.com', redacted: false })),
+    inspect: later(() => ({
+      frameId: 0,
+      frameOrigin: 'https://example.com',
+      redacted: false,
+      role: 'button',
+      name: 'Sign in',
+    })),
     scrollTo: later(() => ({
       point: { x: 100, y: 200 },
       rect: { x: 50, y: 150, width: 100, height: 100 },
@@ -252,12 +258,15 @@ export function fakeTabs(log: Log, initial: TabInfo[]): FakeTabs {
 
 export interface FakeContext extends ToolContext {
   asserts: PermissionRequest[];
+  /** Every progress report, in order. */
+  reports: ToolMetadata[];
   controller: AbortController;
 }
 
 export function fakeContext(log: Log, runId: string): FakeContext {
   const controller = new AbortController();
   const asserts: PermissionRequest[] = [];
+  const reports: ToolMetadata[] = [];
 
   return {
     signal: controller.signal,
@@ -268,6 +277,12 @@ export function fakeContext(log: Log, runId: string): FakeContext {
     agent: 'build',
     run: { id: runId },
     asserts,
+    reports,
+    progress: (metadata) => {
+      reports.push(metadata);
+
+      return Promise.resolve();
+    },
     permission: {
       assert: later((request: PermissionRequest) => {
         log.push(`assert.${request.action}`);

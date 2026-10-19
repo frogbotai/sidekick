@@ -113,9 +113,9 @@ function AgentCard({
         {picksModel(agent) ? (
           <ModelSelect agent={agent} models={models} />
         ) : (
-          <small>Model: {agent.model ?? 'the chat’s model'}</small>
+          <span className="sidekick-muted">Model: {agent.model ?? 'the chat’s model'}</span>
         )}
-        <h4>Rules</h4>
+        <h3 className="sidekick-heading">Rules</h3>
         {agent.permissions.length === 0 ? (
           <p>None: the chat’s mode decides.</p>
         ) : (
@@ -131,7 +131,7 @@ function AgentCard({
         )}
         {draft === undefined ? (
           <>
-            <h4>System prompt</h4>
+            <h3 className="sidekick-heading">System prompt</h3>
             <pre className="sidekick-command sidekick-prompt" aria-label={`${agent.name} prompt`}>
               {system}
             </pre>
@@ -193,7 +193,6 @@ export function AgentsScreen({ models }: { models: Models }) {
 
   return (
     <div className="sidekick-stack">
-      <h2>Agents</h2>
       <p>An edited prompt replaces the built-in one until you reset it.</p>
       {list.map((agent) => (
         <AgentCard key={agent.id} agent={agent} overridden={agent.id in prompts} models={models} />

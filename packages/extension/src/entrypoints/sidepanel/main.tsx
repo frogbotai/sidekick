@@ -1,3 +1,4 @@
+import '@frogbotai/ui/fonts.css';
 import '@frogbotai/ui/styles.css';
 import './panel.css';
 
@@ -17,6 +18,7 @@ import { streamText } from 'ai';
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 
+import { savedNavOpen } from '../../nav/PanelNav';
 import { startCatalog } from '../../providers/catalog';
 import { startSessions } from '../../session';
 import { App } from './App';
@@ -38,7 +40,11 @@ registerWebSearchTool();
 registerWebfetchTool();
 void cleanupLegacyPanel({ localStorage, document });
 
-const [initialMode] = await Promise.all([theme.get(), provider.registerCustomProviders()]);
+const [initialMode, navOpen] = await Promise.all([
+  theme.get(),
+  savedNavOpen(),
+  provider.registerCustomProviders(),
+]);
 
 void startCatalog();
 
@@ -53,6 +59,6 @@ const sessions = chrome.windows
 
 createRoot(root).render(
   <StrictMode>
-    <App initialMode={initialMode} worker={worker} sessions={sessions} />
+    <App initialMode={initialMode} navOpen={navOpen} worker={worker} sessions={sessions} />
   </StrictMode>,
 );

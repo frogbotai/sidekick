@@ -3,7 +3,8 @@ import { markOwn } from './dom';
 
 const CSS = `
 :host { all: initial; position: fixed; inset: 0; pointer-events: none; z-index: 2147483647; }
-.glow { position: fixed; inset: 0; box-shadow: inset 0 0 0 3px rgba(22, 163, 74, 0.9), inset 0 0 28px rgba(22, 163, 74, 0.4); }
+.fb-glow { position: fixed; inset: 0; }
+.fb-glow__ring { position: fixed; inset: 0; padding: 3px; border-radius: 0; mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0); }
 .cursor { position: fixed; left: 0; top: 0; width: 22px; height: 22px; transform: translate(-100px, -100px); transition: transform 200ms ease-out; }
 .stop { position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%); pointer-events: auto; font: 600 13px system-ui, sans-serif; color: #fff; background: #b91c1c; border: 0; border-radius: 999px; padding: 8px 16px; cursor: pointer; box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3); }
 `;
@@ -27,11 +28,12 @@ function arrow() {
   return svg;
 }
 
-function style(root: ShadowRoot) {
+function sheetOf(css: string) {
   const sheet = new CSSStyleSheet();
 
-  sheet.replaceSync(CSS);
-  root.adoptedStyleSheets = [sheet];
+  sheet.replaceSync(css);
+
+  return sheet;
 }
 
 export interface Indicator {
@@ -40,20 +42,24 @@ export interface Indicator {
 }
 
 /**
- * The agent's cursor, glow and Stop button, in a closed shadow root on `<html>`. Stop accepts only
- * trusted clicks, and the host comes back if the page removes it while a run is on.
+ * The agent's cursor, glow and Stop button, in a closed shadow root on `<html>`. `glowCss` styles
+ * the ring's `fb-glow` classes; Stop accepts only trusted clicks, and the host comes back if the
+ * page removes it while a run is on.
  */
-export function createIndicator(onStop: () => void): Indicator {
+export function createIndicator(onStop: () => void, glowCss = ''): Indicator {
   const host = document.createElement('div');
   const root = host.attachShadow({ mode: 'closed' });
   const glow = document.createElement('div');
+  const ring = document.createElement('div');
   const cursor = document.createElement('div');
   const stop = document.createElement('button');
   let shown = false;
 
   markOwn(host);
-  style(root);
-  glow.className = 'glow';
+  root.adoptedStyleSheets = [sheetOf(glowCss), sheetOf(CSS)];
+  glow.className = 'fb-glow';
+  ring.className = 'fb-glow__ring';
+  glow.append(ring);
   cursor.className = 'cursor';
   cursor.append(arrow());
   stop.className = 'stop';

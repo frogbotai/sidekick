@@ -163,7 +163,7 @@ test('lists every agent with its rules and prompt, and an edited prompt survives
   await expect(build.getByRole('button', { name: 'Reset to default' })).toBeHidden();
 });
 
-test('fits a 320px panel: the header and the Commands, Agents and Help views', async ({
+test('fits a 320px panel: the bar and the Commands, Agents and Help views', async ({
   context,
   openPanel,
 }) => {
@@ -180,16 +180,15 @@ test('fits a 320px panel: the header and the Commands, Agents and Help views', a
     }),
   );
 
-  const header = panel.locator('.sidekick-chat-header');
+  await expect.poll(() => overflows(panel)).toEqual({ page: false, elements: [] });
 
-  await expect(header).toBeVisible();
-  expect(await header.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
-
-  for (const name of ['Commands', 'Agents']) {
+  for (const name of ['Commands', 'Agents', 'New chat']) {
+    await panel.getByRole('button', { name: 'Open navigation' }).click();
     await panel.getByRole('button', { name, exact: true }).click();
-    await expect(view(panel, name)).toBeVisible();
+
+    if (name !== 'New chat') await expect(view(panel, name)).toBeVisible();
+
     await expect.poll(() => overflows(panel)).toEqual({ page: false, elements: [] });
-    await view(panel, name).getByRole('button', { name: 'Back' }).click();
   }
 
   await pick(panel, 'help');
@@ -238,7 +237,7 @@ test('the / menu lists the built-ins and runs them: /compact, /new, /plan and /h
   await expect(panel.getByRole('textbox')).toHaveText('');
 
   await pick(panel, 'plan');
-  await expect(panel.getByRole('combobox', { name: 'Mode' })).toHaveText('Plan');
+  await expect(panel.getByRole('button', { name: 'Mode' })).toHaveText('Plan');
 
   await pick(panel, 'help');
 

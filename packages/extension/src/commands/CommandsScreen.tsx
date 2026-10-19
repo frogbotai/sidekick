@@ -106,10 +106,10 @@ function CommandForm({
         aria-invalid={shown && templateError !== undefined}
         onChange={set('template')}
       />
-      <small>
+      <span className="sidekick-muted">
         $1, $2… take the words typed after the command, $ARGUMENTS all of them. With neither,
         they’re added at the end.
-      </small>
+      </span>
       {shown && templateError ? <p role="alert">{templateError}</p> : null}
       <Label htmlFor={`${id}-model`}>Model</Label>
       <Input
@@ -148,7 +148,6 @@ export function CommandsScreen() {
 
   return (
     <div className="sidekick-stack">
-      <h2>Commands</h2>
       <p>Type / in the chat to run one. Built-in commands are listed by /help.</p>
       {list.length === 0 ? <p>No commands yet.</p> : null}
       <ul className="sidekick-list" aria-label="Your commands" hidden={list.length === 0}>
@@ -173,7 +172,9 @@ export function CommandsScreen() {
                   <>
                     {command.description ? <p>{command.description}</p> : null}
                     <pre className="sidekick-command">{command.template}</pre>
-                    {command.model ? <small>Model: {command.model}</small> : null}
+                    {command.model ? (
+                      <span className="sidekick-muted">Model: {command.model}</span>
+                    ) : null}
                     <div className="sidekick-row">
                       <Button size="sm" variant="outline" onClick={() => setEditing(command.name)}>
                         Edit
@@ -194,7 +195,7 @@ export function CommandsScreen() {
           </li>
         ))}
       </ul>
-      <h3>Add a command</h3>
+      <h2 className="sidekick-title">Add a command</h2>
       <CommandForm initial={EMPTY} others={names} onSave={(next) => replace(undefined, next)} />
     </div>
   );

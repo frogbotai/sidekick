@@ -77,9 +77,11 @@ export function GrantsSection() {
 
   return (
     <section id="permissions" className="sidekick-stack" aria-labelledby="permissions-title">
-      <h2 id="permissions-title">Permissions</h2>
+      <h2 id="permissions-title" className="sidekick-title">
+        Permissions
+      </h2>
       <div className="sidekick-stack">
-        <h3>Always allowed</h3>
+        <h3 className="sidekick-heading">Always allowed</h3>
         {grants.length === 0 ? (
           <p>Nothing yet. “Always allow” on a card adds a site here.</p>
         ) : null}
@@ -91,7 +93,7 @@ export function GrantsSection() {
                   <strong>{ACTIONS[action] ?? action}</strong> on{' '}
                   {resource === '*' ? 'any site' : resource}
                 </span>
-                <small>{lastUsed(usage[`${action} ${resource}`])}</small>
+                <span className="sidekick-muted">{lastUsed(usage[`${action} ${resource}`])}</span>
               </span>
               <Button
                 variant="ghost"
@@ -106,13 +108,13 @@ export function GrantsSection() {
         </ul>
       </div>
       <div className="sidekick-stack">
-        <h3>Blocked sites</h3>
+        <h3 className="sidekick-heading">Blocked sites</h3>
         <ul className="sidekick-list" aria-label="Blocked sites" hidden={blocked.length === 0}>
           {blocked.map(({ site }) => (
             <li key={site} className="sidekick-grant">
               <span className="sidekick-grant__text">
                 <strong>{site}</strong>
-                <small>{lastUsed(usage[`blocked ${site}`])}</small>
+                <span className="sidekick-muted">{lastUsed(usage[`blocked ${site}`])}</span>
               </span>
               <Button
                 variant="ghost"

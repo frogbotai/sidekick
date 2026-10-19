@@ -1,44 +1,14 @@
-import type { BrowserContext, Page } from '@playwright/test';
+import {
+  type ActionOutput,
+  expect,
+  INDICATOR,
+  isolatedWorld,
+  refFor,
+  type SnapshotOutput,
+  test,
+} from './fixtures';
 
-import { type ActionOutput, expect, refFor, type SnapshotOutput, test } from './fixtures';
-
-async function isolatedWorld(context: BrowserContext, page: Page, extensionId: string) {
-  const cdp = await context.newCDPSession(page);
-  const contexts: {
-    id: number;
-    origin: string;
-    auxData?: { type?: string; isDefault?: boolean };
-  }[] = [];
-
-  cdp.on('Runtime.executionContextCreated', ({ context: created }) => contexts.push(created));
-  await cdp.send('Runtime.enable');
-
-  const isolated = () =>
-    contexts.find(
-      (created) =>
-        created.origin === `chrome-extension://${extensionId}` &&
-        created.auxData?.type === 'isolated',
-    );
-
-  await expect.poll(isolated).toBeDefined();
-
-  return async (expression: string) => {
-    const { result, exceptionDetails } = await cdp.send('Runtime.evaluate', {
-      contextId: isolated()?.id,
-      expression,
-      awaitPromise: true,
-      returnByValue: true,
-    });
-
-    if (exceptionDetails) throw new Error(exceptionDetails.exception?.description);
-
-    return result.value as unknown;
-  };
-}
-
-const STOP_BUTTON = `[...document.documentElement.children]
-  .map((element) => chrome.dom.openOrClosedShadowRoot(element)?.querySelector('.stop'))
-  .find(Boolean)`;
+const STOP_BUTTON = `${INDICATOR}?.querySelector('.stop')`;
 
 test.describe('another extension’s frame (271 D1)', () => {
   test.use({ blocker: true });

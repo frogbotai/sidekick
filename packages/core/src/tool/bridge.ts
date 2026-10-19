@@ -10,6 +10,7 @@ import {
   ToolError,
   type ToolErrorCode,
   type ToolErrorDetail,
+  type ToolMetadata,
 } from './tool';
 
 type Methods = (typeof sidekickProtocol)['methods'];
@@ -35,6 +36,8 @@ export interface ToolBridgeOptions {
   permission: Pick<PermissionEngine, 'assert' | 'reply' | 'list' | 'cancel'>;
   /** The browser run a call acts in, started on demand (278 D1). */
   run?: (call: BridgeCall) => Promise<{ id: string } | undefined>;
+  /** Where a call's progress goes: the worker server's `tool.progress` event. */
+  progress?: (callID: string, metadata: ToolMetadata) => void;
 }
 
 function scopeOf({ sessionID, messageID, callID, agent, mode, sites, client }: PermissionScope) {
@@ -93,7 +96,8 @@ export interface ToolCaller {
 export function createToolCaller({
   tools,
   permission,
-}: Pick<ToolBridgeOptions, 'tools' | 'permission'>): ToolCaller {
+  progress,
+}: Pick<ToolBridgeOptions, 'tools' | 'permission' | 'progress'>): ToolCaller {
   const calls = new Map<string, AbortController>();
 
   return {
@@ -129,6 +133,15 @@ export function createToolCaller({
           permission: {
             assert: (request) => permission.assert(request, scope, controller.signal),
           },
+          ...(progress
+            ? {
+                progress: (metadata) => {
+                  progress(call.callID, metadata);
+
+                  return Promise.resolve();
+                },
+              }
+            : {}),
         });
 
         return {
@@ -157,8 +170,13 @@ export function createToolCaller({
  * `permission.assert` for panel tools, and the panel's `permission.reply` and `permission.list`.
  * The protocol's scope has no `client`, so a page can't claim to be an MCP client.
  */
-export function createToolBridge({ tools, permission, run }: ToolBridgeOptions): BridgeHandlers {
-  const caller = createToolCaller({ tools, permission });
+export function createToolBridge({
+  tools,
+  permission,
+  run,
+  progress,
+}: ToolBridgeOptions): BridgeHandlers {
+  const caller = createToolCaller({ tools, permission, ...(progress ? { progress } : {}) });
 
   const assert = async ({
     request,

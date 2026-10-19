@@ -41,10 +41,10 @@ export function Options({
 
   return (
     <ThemeProvider mode={mode} onModeChange={setMode} storage={themeStorage}>
-      <main className="sidekick-panel sidekick-panel__view">
-        <h1>Sidekick settings</h1>
+      <main className="sidekick-panel__view sidekick-options">
+        <h1 className="sidekick-title">Sidekick settings</h1>
         <fieldset className="sidekick-stack">
-          <legend>Theme</legend>
+          <legend className="sidekick-heading">Theme</legend>
           <RadioGroup
             value={mode}
             onValueChange={(value) => {

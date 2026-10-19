@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { ToolError } from '../../tool/tool';
+import { targetName } from './env';
 import { later } from './fakes';
 import { drain, failure, sentMethods, setupBrowser } from './harness';
 
@@ -81,7 +82,13 @@ describe('input order (req. 13)', () => {
 
           if (tab) tab.pendingUrl = 'https://elsewhere.test/login';
 
-          return { frameId: 0, frameOrigin: 'https://example.com', redacted: false };
+          return {
+            frameId: 0,
+            frameOrigin: 'https://example.com',
+            redacted: false,
+            role: 'button',
+            name: 'Go',
+          };
         }),
       },
     });
@@ -99,6 +106,8 @@ describe('input order (req. 13)', () => {
         inspect: later(() => ({
           frameId: 4,
           frameOrigin: 'http://127.0.0.1:5174',
+          role: 'button',
+          name: 'Go',
           redacted: false,
         })),
       },
@@ -215,7 +224,13 @@ describe('fill (req. 14)', () => {
     const secret = await setupBrowser({
       page: {
         readValue: later(() => 'hunter2'),
-        inspect: later(() => ({ frameId: 0, frameOrigin: 'https://example.com', redacted: true })),
+        inspect: later(() => ({
+          frameId: 0,
+          frameOrigin: 'https://example.com',
+          redacted: true,
+          role: 'textbox',
+          name: 'Password',
+        })),
       },
     });
 
@@ -235,6 +250,8 @@ describe('fill (req. 14)', () => {
           frameId: 0,
           frameOrigin: 'https://example.com',
           redacted: false,
+          role: 'textbox',
+          name: 'Code',
           max_length: 8,
         })),
         readValue: later(() => 'sidekick'),
@@ -402,5 +419,81 @@ describe('press, select and drag (req. 15)', () => {
     });
 
     expect(sentMethods(cdp.sent).at(-1)).toBe('Input.setInterceptDrags');
+  });
+});
+
+describe('targets in progress (315 D2)', () => {
+  it('names an element by role and accessible name, shortened and on one line', () => {
+    expect(targetName({ role: 'button', name: 'Sign in' })).toBe('button “Sign in”');
+    expect(targetName({ role: 'link', name: '  Read\n  more ' })).toBe('link “Read more”');
+    expect(targetName({ role: 'textbox', name: '' })).toBe('textbox');
+    expect(targetName({ role: '', name: '' })).toBe('element');
+
+    expect(targetName({ role: 'heading', name: 'x'.repeat(50) })).toBe(
+      `heading “${'x'.repeat(40)}…”`,
+    );
+  });
+
+  it('reports the element click, hover, fill, select and scroll_to act on', async () => {
+    for (const [name, input] of [
+      ['click', { ref: 'f0e1' }],
+      ['hover', { ref: 'f0e1' }],
+      ['fill', { ref: 'f0e1', text: '' }],
+      ['select', { ref: 'f0e1', values: ['red'] }],
+      ['scroll_to', { ref: 'f0e1' }],
+    ] as const) {
+      const { tool, ctx } = await setupBrowser({
+        page: { selectOptions: later(() => ['red']) },
+      });
+
+      await drain(tool(name).execute({ tab_id: 1, ...input }, ctx));
+
+      expect({ name, reports: ctx.reports }).toEqual({
+        name,
+        reports: [{ target: 'button “Sign in”' }],
+      });
+    }
+  });
+
+  it('reports a redacted field, so its card hides the text', async () => {
+    const { tool, ctx } = await setupBrowser({
+      page: {
+        inspect: later(() => ({
+          frameId: 0,
+          frameOrigin: 'https://example.com',
+          redacted: true,
+          role: 'textbox',
+          name: 'Password',
+        })),
+      },
+    });
+
+    await drain(tool('fill').execute({ tab_id: 1, ref: 'f0e1', text: '' }, ctx));
+
+    expect(ctx.reports.at(-1)).toEqual({ target: 'textbox “Password”', redacted: 'true' });
+  });
+
+  it('reports both ends of a drag, and nothing for a screenshot point', async () => {
+    const { tool, ctx } = await setupBrowser({
+      page: {
+        inspect: later((_tabId: number, ref: string) => ({
+          frameId: 0,
+          frameOrigin: 'https://example.com',
+          redacted: false,
+          role: 'listitem',
+          name: ref === 'f0e1' ? 'Card A' : 'Done',
+        })),
+      },
+    });
+
+    await drain(tool('drag').execute({ tab_id: 1, from: 'f0e1', to: 'f0e2' }, ctx));
+
+    expect(ctx.reports.at(-1)).toEqual({ target: 'listitem “Card A”', to: 'listitem “Done”' });
+
+    const point = await setupBrowser();
+
+    await drain(point.tool('click').execute({ tab_id: 1, x: 5, y: 5 }, point.ctx));
+
+    expect(point.ctx.reports).toEqual([]);
   });
 });

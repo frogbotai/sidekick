@@ -206,7 +206,12 @@ describe('snapshot coverage', () => {
     const { text, inspect } = setup();
     const ref = refOf(await text(), 'Inside');
 
-    expect(await inspect(ref)).toEqual({ frameOrigin: 'https://example.com', redacted: false });
+    expect(await inspect(ref)).toEqual({
+      frameOrigin: 'https://example.com',
+      redacted: false,
+      role: 'button',
+      name: 'Inside',
+    });
   });
 
   it('marks a child frame for the worker, or one line when Chrome reports no frame for it', async () => {
@@ -434,6 +439,29 @@ describe('indicator', () => {
     unwrap(await handlers['page.indicator']({ visible: false }));
 
     expect(host.isConnected).toBe(false);
+  });
+
+  it('frames the page with the ring stylesheet it is given', async () => {
+    const { handlers, indicator } = createContent({
+      top: true,
+      indicatorCss: '.fb-glow__ring::before { content: ""; }',
+      worker: {
+        visible: () => Promise.resolve(false),
+        stop: () => Promise.resolve(),
+        identify: () => Promise.resolve({ frameId: 0, key: 'secret' }),
+      },
+    });
+
+    cleanups.push(() => indicator()?.set({ visible: false }));
+    unwrap(await handlers['page.indicator']({ visible: true }));
+
+    const root = closedRoots.get(hostOf());
+    const rules = root?.adoptedStyleSheets.flatMap((sheet) =>
+      [...sheet.cssRules].map((rule) => rule.cssText),
+    );
+
+    expect(root?.querySelector('.fb-glow > .fb-glow__ring')).not.toBeNull();
+    expect(rules?.[0]).toContain('.fb-glow__ring::before');
   });
 
   it('ignores a synthetic click on Stop', async () => {

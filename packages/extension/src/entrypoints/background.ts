@@ -87,7 +87,12 @@ export default defineBackground(() => {
     emit: (type, data) => server?.emit(type, data),
   });
 
-  const bridge = createToolBridge({ tools, permission, run: browser.sessionRun });
+  const bridge = createToolBridge({
+    tools,
+    permission,
+    run: browser.sessionRun,
+    progress: (callID, metadata) => server?.emit('tool.progress', { callID, metadata }),
+  });
 
   const mcp = createMcpHost({
     tools,

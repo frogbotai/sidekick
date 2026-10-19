@@ -9,8 +9,9 @@ import {
   enter,
   finish,
   fromScreenshot,
-  inspect,
+  inspectTarget,
   recheck,
+  report,
   scrollIntoView,
   untrusted,
 } from '../env';
@@ -27,7 +28,7 @@ async function settleAfter(act: Act, input: () => Promise<unknown>) {
 }
 
 async function focusTarget(act: Act, element: string | undefined) {
-  const info = element === undefined ? undefined : await inspect(act, element);
+  const info = element === undefined ? undefined : await inspectTarget(act, element);
 
   await recheck(act);
   await act.env.sessions.ensure(act.tabId, act.signal);
@@ -40,7 +41,7 @@ async function focusTarget(act: Act, element: string | undefined) {
 async function endpoint(act: Act, target: z.infer<typeof end>): Promise<Point> {
   if (typeof target !== 'string') return fromScreenshot(act.env, act.tabId, target);
 
-  await inspect(act, target);
+  await inspectTarget(act, target, 'to');
 
   return (await race(act.env.page.scrollTo(act.tabId, target), act.signal)).point;
 }
@@ -89,6 +90,8 @@ export function inputTools(env: BrowserEnv) {
         const act = await enter(env, ctx, tab_id, 'input');
         const info = await focusTarget(act, element);
 
+        if (info?.redacted) await report(act, { redacted: 'true' });
+
         return settleAfter(act, () => fill(act, element, text, info));
       },
     }),
@@ -101,7 +104,7 @@ export function inputTools(env: BrowserEnv) {
       execute: async ({ tab_id, ref: element, values }, ctx) => {
         const act = await enter(env, ctx, tab_id, 'input');
 
-        await inspect(act, element);
+        await inspectTarget(act, element);
         await recheck(act);
 
         return settleAfter(act, async () => {

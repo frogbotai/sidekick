@@ -2,7 +2,7 @@ import path from 'node:path';
 
 import type { SessionEngine, tools } from '@frogbotai/sidekick-core';
 import type * as provider from '@frogbotai/sidekick-core/provider';
-import { type BrowserContext, chromium, type Page, test as base } from '@playwright/test';
+import { type BrowserContext, chromium, expect, type Page, test as base } from '@playwright/test';
 import type { streamText } from 'ai';
 
 import type { SidekickWorker } from '../src/entrypoints/sidepanel/worker';
@@ -343,5 +343,45 @@ export interface ActionOutput {
   navigated: boolean;
   settled: boolean;
 }
+
+/** Evaluates expressions in the extension content script's isolated world on `page`. */
+export async function isolatedWorld(context: BrowserContext, page: Page, extensionId: string) {
+  const cdp = await context.newCDPSession(page);
+  const contexts: {
+    id: number;
+    origin: string;
+    auxData?: { type?: string; isDefault?: boolean };
+  }[] = [];
+
+  cdp.on('Runtime.executionContextCreated', ({ context: created }) => contexts.push(created));
+  await cdp.send('Runtime.enable');
+
+  const isolated = () =>
+    contexts.find(
+      (created) =>
+        created.origin === `chrome-extension://${extensionId}` &&
+        created.auxData?.type === 'isolated',
+    );
+
+  await expect.poll(isolated).toBeDefined();
+
+  return async (expression: string) => {
+    const { result, exceptionDetails } = await cdp.send('Runtime.evaluate', {
+      contextId: isolated()?.id,
+      expression,
+      awaitPromise: true,
+      returnByValue: true,
+    });
+
+    if (exceptionDetails) throw new Error(exceptionDetails.exception?.description);
+
+    return result.value as unknown;
+  };
+}
+
+/** An isolated-world expression for the indicator's closed shadow root, or `undefined`. */
+export const INDICATOR = `[...document.documentElement.children]
+  .map((element) => chrome.dom.openOrClosedShadowRoot(element))
+  .find((root) => root?.querySelector('.stop'))`;
 
 export { expect } from '@playwright/test';

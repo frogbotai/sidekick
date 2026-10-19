@@ -2,19 +2,10 @@ import {
   BUILD_MODE,
   type ComposerCommandLike,
   type LogEvent,
-  type PanelView,
   permissionMode,
 } from '@frogbotai/sidekick-core';
 import { modelKey, selectModel } from '@frogbotai/sidekick-core/provider';
-import {
-  Alert,
-  AlertDescription,
-  Button,
-  Sheet,
-  SheetContent,
-  SheetHeader,
-  SheetTitle,
-} from '@frogbotai/ui';
+import { Alert, AlertDescription, Button } from '@frogbotai/ui';
 import {
   Chat,
   ChatHistory,
@@ -26,12 +17,13 @@ import {
   type ToolRenderer,
   useChats,
 } from '@frogbotai/ui/chat';
-import { ListIcon, MagicWandIcon, PlusSignIcon, RobotIcon, SettingIcon } from '@frogbotai/ui/icons';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { useAgents } from '../agents/useAgents';
 import { useComposerCommands } from '../commands/useComposerCommands';
 import { PendingFormCard, usePendingForm } from '../form/PendingFormCard';
+import { PanelNav } from '../nav/PanelNav';
+import { type PanelPage, pathOf, routeOf } from '../nav/paths';
 import { ModeSelect } from '../permission/ModeSelect';
 import { PermissionCard, usePermissionAsk } from '../permission/PermissionCard';
 import { chatSelection, findModel, ModelNotice, ModelPicker } from '../providers/ModelPicker';
@@ -41,13 +33,17 @@ import type { Sessions } from '../session';
 import { chatManifest, createChatAdapter } from './adapter';
 import { SubagentCard, SubagentContext } from './SubagentCard';
 import { SubagentView } from './SubagentView';
+import { faviconUrl, TOOL_CARDS } from './tools';
 import type { RetryNotice } from './transport';
 
 const RELOAD_DELAY = 100;
 
 const DATA_RENDERERS: readonly DataRenderer[] = [{ kind: 'compaction', render: CompactionPart }];
 
-const TOOL_RENDERERS: readonly ToolRenderer[] = [{ kind: 'subagent', render: SubagentCard }];
+const TOOL_RENDERERS: readonly ToolRenderer[] = [
+  ...TOOL_CARDS,
+  { kind: 'subagent', render: SubagentCard },
+];
 
 const LISTED = new Set<LogEvent['type']>(['session.created', 'session.renamed', 'session.deleted']);
 
@@ -69,22 +65,47 @@ function RetryBanner({ notice }: { notice: RetryNotice }) {
   );
 }
 
+export const PLACEHOLDER = 'Ask anything, / for commands…';
+
+const LABELS: Record<Exclude<PanelPage, 'chat'>, string> = {
+  chats: 'Chats',
+  providers: 'Providers',
+  commands: 'Commands',
+  agents: 'Agents',
+  help: 'Help',
+};
+
 export interface ChatPanelProps {
   sessions: Sessions;
   models: Models;
-  /** Opens a full-panel view; Help gets the commands that can run now. */
-  onView: (view: PanelView, commands?: readonly ComposerCommandLike[]) => void;
+  /** What fills the panel beside the nav. */
+  page: PanelPage;
+  /** The open view, when `page` is one of App's. */
+  view?: ReactNode;
+  /** Whether the sidebar starts open on a wide panel. */
+  navOpen: boolean;
+  /** Opens a page; Help gets the commands that can run now. */
+  onPage: (page: PanelPage, commands?: readonly ComposerCommandLike[]) => void;
 }
 
-/** `@frogbotai/ui`'s chat at full panel height, over this window's engine and open chat. */
-export function ChatPanel({ sessions, models, onView }: ChatPanelProps) {
+/**
+ * FrogBot's sidebar and `@frogbotai/ui`'s chat at full panel height, over this window's engine
+ * and open chat, with `view` in place of the chat when another page is open.
+ */
+export function ChatPanel({
+  sessions,
+  models,
+  page,
+  view: shown,
+  navOpen,
+  onPage,
+}: ChatPanelProps) {
   const { engine, chat, permissions } = sessions;
   const [chatId, setChatId] = useState<ChatId | undefined>(chat.current);
   const [pick, setPick] = useState<string>();
   const [modePick, setModePick] = useState<string>();
   const lastMode = useStored(permissionMode);
   const [retry, setRetry] = useState<RetryNotice>();
-  const [historyOpen, setHistoryOpen] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [child, setChild] = useState<string>();
   const streaming = useRef(new Set<string>());
@@ -198,7 +219,6 @@ export function ChatPanel({ sessions, models, onView }: ChatPanelProps) {
 
   const switchTo = (next: ChatId | undefined) => {
     setChild(undefined);
-    setHistoryOpen(false);
     setRetry(undefined);
     setChatId(next);
     void chat.open(next === undefined ? undefined : String(next));
@@ -214,6 +234,12 @@ export function ChatPanel({ sessions, models, onView }: ChatPanelProps) {
     void permissionMode.set(next);
   };
 
+  const openOptions = async (section?: string) => {
+    await chrome.tabs.create({
+      url: chrome.runtime.getURL(`/options.html${section ? `#${section}` : ''}`),
+    });
+  };
+
   const composerCommands = useComposerCommands({
     sessionID: open,
     engine: {
@@ -223,7 +249,7 @@ export function ChatPanel({ sessions, models, onView }: ChatPanelProps) {
     },
     ui: {
       newChat: () => switchTo(undefined),
-      openView: (next) => onView(next, next === 'help' ? composerCommands : undefined),
+      openView: (next) => onPage(next, next === 'help' ? composerCommands : undefined),
       pickModel: (query) => {
         const found = query ? findModel(models, selection, query) : undefined;
 
@@ -231,11 +257,7 @@ export function ChatPanel({ sessions, models, onView }: ChatPanelProps) {
         else setPickerOpen(true);
       },
       setMode: chooseMode,
-      openOptions: async (section) => {
-        await chrome.tabs.create({
-          url: chrome.runtime.getURL(`/options.html${section ? `#${section}` : ''}`),
-        });
-      },
+      openOptions,
       open: async () => {
         if (open) return open;
 
@@ -261,57 +283,6 @@ export function ChatPanel({ sessions, models, onView }: ChatPanelProps) {
     />
   ) : null;
 
-  const header = (
-    <div className="sidekick-chat-header">
-      <Button
-        variant="ghost"
-        size="icon"
-        aria-label="Chats"
-        title="Chats"
-        onClick={() => setHistoryOpen(true)}
-      >
-        <ListIcon />
-      </Button>
-      <span className="sidekick-chat-header__fill" />
-      <Button
-        variant="ghost"
-        size="icon"
-        aria-label="New chat"
-        title="New chat"
-        onClick={() => switchTo(undefined)}
-      >
-        <PlusSignIcon />
-      </Button>
-      <Button
-        variant="ghost"
-        size="icon"
-        aria-label="Commands"
-        title="Commands"
-        onClick={() => onView('commands')}
-      >
-        <MagicWandIcon />
-      </Button>
-      <Button
-        variant="ghost"
-        size="icon"
-        aria-label="Agents"
-        title="Agents"
-        onClick={() => onView('agents')}
-      >
-        <RobotIcon />
-      </Button>
-      <Button
-        variant="ghost"
-        size="icon"
-        aria-label="Providers"
-        title="Providers"
-        onClick={() => onView('providers')}
-      >
-        <SettingIcon />
-      </Button>
-    </div>
-  );
-
   const warnings = (
     <>
       <ModelNotice selection={selection} />
@@ -321,83 +292,117 @@ export function ChatPanel({ sessions, models, onView }: ChatPanelProps) {
 
   const connect = (
     <div className="sidekick-connect">
-      {header}
-      <div className="sidekick-connect__body">
-        <p>Connect a provider to start chatting.</p>
-        <Button onClick={() => onView('providers')}>Connect a provider</Button>
-      </div>
+      <p className="sidekick-text">Connect a provider to start chatting.</p>
+      <Button onClick={() => onPage('providers')}>Connect a provider</Button>
     </div>
   );
 
   const links = useMemo(() => ({ engine, open: setChild }), [engine]);
 
+  const navigate = (path: string) => {
+    const route = routeOf(path);
+
+    if (!route) return;
+
+    if (route.page === 'settings') {
+      void openOptions();
+
+      return;
+    }
+
+    if (route.page === 'chat') switchTo(route.chatId);
+
+    onPage(route.page);
+  };
+
+  const title =
+    page !== 'chat'
+      ? LABELS[page]
+      : open === undefined
+        ? 'New chat'
+        : (chats.docs?.find((doc) => String(doc.id) === open)?.title ?? 'Untitled');
+
   return (
     <SubagentContext value={links}>
-      <div className="sidekick-panel__chat" hidden={child !== undefined}>
-        <ChatProvider
+      <ChatProvider
+        adapter={adapter}
+        dataRenderers={DATA_RENDERERS}
+        toolRenderers={TOOL_RENDERERS}
+        faviconUrl={faviconUrl}
+        commands={composerCommands}
+      >
+        <PanelNav
           adapter={adapter}
-          dataRenderers={DATA_RENDERERS}
-          toolRenderers={TOOL_RENDERERS}
-          commands={composerCommands}
+          chats={chats.docs ?? []}
+          path={pathOf(page, open)}
+          title={title}
+          initialOpen={navOpen}
+          onNavigate={navigate}
         >
-          <Chat
-            agent={manifest?.defaultAgent ?? 'build'}
-            {...(selection.model ? { model: selection.ref?.split('#')[0] } : {})}
-            {...(selection.ref?.includes('#') ? { reasoning: selection.ref.split('#')[1] } : {})}
-            chatId={chatId}
-            onChatIdChange={(next) => {
-              setChatId(next);
+          <div className="sidekick-panel__chat" hidden={page !== 'chat' || child !== undefined}>
+            <Chat
+              agent={manifest?.defaultAgent ?? 'build'}
+              {...(selection.model ? { model: selection.ref?.split('#')[0] } : {})}
+              {...(selection.ref?.includes('#') ? { reasoning: selection.ref.split('#')[1] } : {})}
+              chatId={chatId}
+              onChatIdChange={(next) => {
+                setChatId(next);
 
-              if (next === undefined) void chat.open(undefined);
-            }}
-            headerSlot={header}
-            composerStartSlot={
-              <>
-                <ModelPicker
-                  models={models}
-                  selection={selection}
-                  onChange={choose}
-                  open={pickerOpen}
-                  onOpenChange={setPickerOpen}
-                />
-                <ModeSelect mode={mode} onChange={chooseMode} />
-              </>
-            }
-            warningContent={warnings}
-            dockSlot={dock}
-            dockBlocking={dock !== null}
-            disabledContent={models.loading ? null : connect}
-            loadingContent={null}
-          />
-          <Sheet open={historyOpen} onOpenChange={setHistoryOpen}>
-            <SheetContent side="left" aria-describedby={undefined}>
-              <SheetHeader>
-                <SheetTitle>Chats</SheetTitle>
-              </SheetHeader>
+                if (next === undefined) void chat.open(undefined);
+              }}
+              placeholder={PLACEHOLDER}
+              composerStartSlot={
+                <>
+                  <ModelPicker
+                    models={models}
+                    selection={selection}
+                    onChange={choose}
+                    open={pickerOpen}
+                    onOpenChange={setPickerOpen}
+                  />
+                  <ModeSelect mode={mode} onChange={chooseMode} />
+                </>
+              }
+              warningContent={warnings}
+              dockSlot={dock}
+              dockBlocking={dock !== null}
+              disabledContent={models.loading ? null : connect}
+              loadingContent={null}
+            />
+          </div>
+          {page === 'chat' && child ? (
+            <div className="sidekick-panel__chat">
+              <SubagentView
+                engine={engine}
+                adapter={base}
+                agent={manifest?.defaultAgent ?? 'build'}
+                sessionID={child}
+                dock={dock}
+                onBack={() => setChild(undefined)}
+              />
+            </div>
+          ) : null}
+          {page === 'chats' ? (
+            <section className="sidekick-panel__view" aria-label="Chats">
               <ChatHistory
                 adapter={adapter}
                 chats={chats.docs ?? []}
                 activeChatId={chatId}
                 fallbackTitle="Untitled"
-                onChatChange={switchTo}
-                onNewChat={() => switchTo(undefined)}
+                onChatChange={(next) =>
+                  navigate(pathOf('chat', next === undefined ? undefined : String(next)))
+                }
+                onNewChat={() => navigate(pathOf('chat'))}
               />
-            </SheetContent>
-          </Sheet>
-        </ChatProvider>
-      </div>
-      {child ? (
-        <div className="sidekick-panel__chat">
-          <SubagentView
-            engine={engine}
-            adapter={base}
-            agent={manifest?.defaultAgent ?? 'build'}
-            sessionID={child}
-            dock={dock}
-            onBack={() => setChild(undefined)}
-          />
-        </div>
-      ) : null}
+            </section>
+          ) : null}
+          {page === 'chat' || page === 'chats' ? null : (
+            <section className="sidekick-panel__view" aria-label={LABELS[page]}>
+              {shown}
+            </section>
+          )}
+        </PanelNav>
+      </ChatProvider>
     </SubagentContext>
   );
 }

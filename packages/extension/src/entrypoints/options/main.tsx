@@ -1,3 +1,4 @@
+import '@frogbotai/ui/fonts.css';
 import '@frogbotai/ui/styles.css';
 import '../sidepanel/panel.css';
 

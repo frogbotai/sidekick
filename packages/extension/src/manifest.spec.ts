@@ -94,6 +94,7 @@ describe('built manifest', () => {
       'scripting',
       'debugger',
       'webNavigation',
+      'favicon',
     ]);
 
     expect(manifest.host_permissions).toEqual(['<all_urls>']);

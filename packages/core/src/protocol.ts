@@ -168,6 +168,7 @@ export const sidekickProtocol = defineProtocol({
     'page.stripped': z.object({ tabId, removed: z.array(z.string()) }),
     'permission.asked': permissionAsk,
     'permission.replied': z.object({ id, sessionID: id }),
+    'tool.progress': z.object({ callID: id, metadata: z.record(z.string(), z.string()) }),
   },
 });
 
@@ -199,6 +200,8 @@ export const frameProtocol = defineProtocol({
         z.object({
           frameOrigin: z.string(),
           redacted: z.boolean(),
+          role: z.string(),
+          name: z.string(),
           max_length: z.optional(z.int().check(z.nonnegative())),
         }),
       ),

@@ -55,7 +55,7 @@ async function sourceFiles(dir: string): Promise<string[]> {
     .map((entry) => path.join(entry.parentPath, entry.name));
 }
 
-test('sends a prompt, then renames and deletes the chat from the drawer', async ({
+test('sends a prompt, then renames and deletes the chat from the nav drawer', async ({
   context,
   openPanel,
 }) => {
@@ -63,26 +63,28 @@ test('sends a prompt, then renames and deletes the chat from the drawer', async 
 
   const panel = await openPanel();
 
+  await panel.setViewportSize({ width: 400, height: 760 });
   await connect(panel);
   await send(panel, 'Say hi');
   await expect(panel.getByText('Hi there.')).toBeVisible();
 
-  await panel.getByRole('button', { name: 'Chats' }).click();
+  await panel.getByRole('button', { name: 'Open navigation' }).click();
 
-  const drawer = panel.getByRole('dialog', { name: 'Chats' });
-  const row = drawer.getByRole('button', { name: 'Open tabs' });
+  const nav = panel.locator('.fb-nav-shell');
+  const row = nav.getByRole('link', { name: 'Open tabs' });
 
-  await expect(row).toBeVisible();
-  await drawer.getByRole('button', { name: 'Chat actions' }).click();
+  await expect(row).toHaveAttribute('aria-current', 'page');
+  await nav.getByRole('button', { name: 'Chat actions' }).click();
   await panel.getByRole('menuitem', { name: 'Rename' }).click();
 
   const rename = panel.getByRole('dialog', { name: 'Rename chat' });
 
   await rename.getByLabel('Chat title').fill('Greetings');
   await rename.getByRole('button', { name: 'Save' }).click();
-  await expect(drawer.getByRole('button', { name: 'Greetings' })).toBeVisible();
+  await expect(nav.getByRole('link', { name: 'Greetings' })).toBeVisible();
+  await expect(panel.locator('.sidekick-panel__title')).toHaveText('Greetings');
 
-  await drawer.getByRole('button', { name: 'Chat actions' }).click();
+  await nav.getByRole('button', { name: 'Chat actions' }).click();
   await panel.getByRole('menuitem', { name: 'Delete' }).click();
 
   await panel
@@ -90,52 +92,37 @@ test('sends a prompt, then renames and deletes the chat from the drawer', async 
     .getByRole('button', { name: 'Delete' })
     .click();
 
-  await expect(drawer.getByRole('button', { name: 'Greetings' })).toHaveCount(0);
-  await panel.keyboard.press('Escape');
+  await expect(nav.getByRole('link', { name: 'Greetings' })).toHaveCount(0);
+  await expect(panel.getByRole('region', { name: 'Chats' })).toBeVisible();
   await expect(panel.getByText('Hi there.')).toHaveCount(0);
 
   expect(await panel.evaluate(() => window.sidekick.engine?.sessions.list())).toEqual([]);
 });
 
-function toolRow(panel: Page, name: string) {
-  return panel.getByRole('button', { name: new RegExp(`^${name}\\b`) });
-}
-
 async function toolView(panel: Page) {
-  const snapshot = toolRow(panel, 'snapshot');
-  const screenshot = toolRow(panel, 'screenshot');
+  const titles = panel.locator('[data-part="tool"] .fb-tool-card__title');
+  const screenshot = panel.locator('[data-part="tool"]', {
+    has: panel.getByText('Took a screenshot', { exact: true }),
+  });
 
-  await expect(snapshot).toHaveAttribute('aria-expanded', 'false');
-  await expect(screenshot).toHaveAttribute('aria-expanded', 'false');
+  const header = screenshot.locator('.fb-tool-card__header');
+
+  await expect(header).toHaveAttribute('aria-expanded', 'false');
   await expect(panel.getByRole('img', { name: 'screenshot result' })).toHaveCount(0);
-
-  await snapshot.click();
-
-  const body = panel
-    .locator('[data-part="tool"]', { has: snapshot })
-    .locator('.fb-tool-part__body');
-
-  const size = await body.evaluate((element) => ({
-    height: element.clientHeight,
-    scroll: element.scrollHeight,
-    text: element.textContent ?? '',
-  }));
-
-  await screenshot.click();
+  await header.click();
 
   const image = panel.getByRole('img', { name: 'screenshot result' });
 
   await expect(image).toBeVisible();
 
   return {
-    rows: await panel.locator('[data-part="tool"] > button').allTextContents(),
-    size,
+    titles: await titles.allTextContents(),
     src: await image.getAttribute('src'),
     width: await image.evaluate((element: HTMLImageElement) => element.naturalWidth),
   };
 }
 
-test('snapshot and screenshot results: the snapshot collapsed under its height limit, the screenshot an image, the same after a reload', async ({
+test('snapshot and screenshot cards: the page title, the screenshot as an image, the same after a reload', async ({
   context,
   openPanel,
   origin,
@@ -163,9 +150,12 @@ test('snapshot and screenshot results: the snapshot collapsed under its height l
 
   const live = await toolView(panel);
 
-  expect(live.size.height).toBeLessThanOrEqual(240);
-  expect(live.size.scroll).toBeGreaterThan(live.size.height);
-  expect(live.size.text).toContain('Row 1');
+  expect(live.titles).toEqual([
+    `Opened ${new URL(origin()).hostname}`,
+    'Read Five thousand rows',
+    'Took a screenshot',
+  ]);
+
   expect(live.src).toMatch(/^data:image\/(png|jpeg|webp);base64,/);
   expect(live.width).toBeGreaterThan(0);
 
@@ -257,6 +247,7 @@ test('fits a 320px panel: the chat, the Providers view and the options page', as
   await connect(panel);
   await expect.poll(() => overflows(panel)).toEqual({ page: false, elements: [] });
 
+  await panel.getByRole('button', { name: 'Open navigation' }).click();
   await panel.getByRole('button', { name: 'Providers', exact: true }).click();
   await expect(panel.getByText('Keys stay on this device.', { exact: false })).toBeVisible();
   await expect.poll(() => overflows(panel)).toEqual({ page: false, elements: [] });

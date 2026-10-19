@@ -37,6 +37,14 @@ async function send(panel: Page, text: string) {
   await box.press('Enter');
 }
 
+async function newChat(panel: Page) {
+  const toggle = panel.getByRole('button', { name: 'Open navigation' });
+
+  if (await toggle.isVisible()) await toggle.click();
+
+  await panel.getByRole('button', { name: 'New chat' }).click();
+}
+
 async function start(context: BrowserContext, openPanel: () => Promise<Page>, page: string) {
   const panel = await openPanel();
   const opener = context.pages().find((candidate) => candidate.url().endsWith('/e2e-open.html'));
@@ -119,7 +127,7 @@ test('asks before clicking off the chat’s site, remembers Always, and Revoke a
 
   script.push(...clickTurn(bodies, url, 'Clicked unasked.', '2'));
   await expect(panel.getByRole('textbox')).toBeVisible();
-  await panel.getByRole('button', { name: 'New chat' }).click();
+  await newChat(panel);
   await send(panel, 'Click it again');
   await expect(panel.getByText('Clicked unasked.')).toBeVisible({ timeout: 20_000 });
   await expect(card(panel)).toHaveCount(0);
@@ -140,7 +148,7 @@ test('asks before clicking off the chat’s site, remembers Always, and Revoke a
   await expect(allowed.getByRole('listitem')).toHaveCount(0);
 
   script.push(...clickTurn(bodies, url, 'Asked again.', '3'));
-  await panel.getByRole('button', { name: 'New chat' }).click();
+  await newChat(panel);
   await send(panel, 'And once more');
   await expect(card(panel)).toBeVisible({ timeout: 20_000 });
   await card(panel).getByRole('button', { name: 'Allow once' }).click();
@@ -167,10 +175,10 @@ test('a plain Deny ends the turn, and Plan offers no click tool', async ({
   await expect(panel.getByText('Denied')).toBeVisible();
   await expect.poll(() => bodies.length).toBe(2);
 
-  await panel.getByRole('button', { name: 'New chat' }).click();
-  await panel.getByRole('combobox', { name: 'Mode' }).click();
-  await panel.getByRole('option', { name: 'Plan' }).click();
-  await expect(panel.getByRole('combobox', { name: 'Mode' })).toHaveText('Plan');
+  await newChat(panel);
+  await panel.getByRole('button', { name: 'Mode' }).click();
+  await panel.getByRole('menuitem', { name: 'Plan' }).click();
+  await expect(panel.getByRole('button', { name: 'Mode' })).toHaveText('Plan');
 
   script.push(reply('A plan.'));
   await send(panel, 'Plan a click');

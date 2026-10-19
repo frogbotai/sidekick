@@ -16,6 +16,7 @@ const PERMISSIONS = {
   scripting: 'inject the content script into tabs open before install',
   debugger: 'trusted input and scrolling over CDP',
   webNavigation: 'list a tab’s frames, to reach each frame’s content script',
+  favicon: 'site icons in link cards, from Chrome’s own cache (315 D1)',
 } as const;
 
 const FRAME_SCRIPT = 'frame.js';

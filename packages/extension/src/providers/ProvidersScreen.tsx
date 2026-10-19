@@ -47,7 +47,11 @@ function ProviderCard({ definition, models, keys, settings, custom }: CardProps)
           <ProviderLogo provider={definition.id} />
           {definition.name}
         </CardTitle>
-        {models.connected.has(definition.id) ? <Badge variant="success">Connected</Badge> : null}
+        {models.connected.has(definition.id) ? (
+          <div className="sidekick-row">
+            <Badge variant="success">Connected</Badge>
+          </div>
+        ) : null}
       </CardHeader>
       <CardContent className="sidekick-stack">
         {definition.id === FROGBOT_PROVIDER_ID ? (
@@ -70,7 +74,9 @@ function WebSearchSection({ keys }: { keys: readonly Credential[] }) {
 
   return (
     <section className="sidekick-stack" aria-labelledby="web-search-title">
-      <h2 id="web-search-title">Web search</h2>
+      <h2 id="web-search-title" className="sidekick-title">
+        Web search
+      </h2>
       {keyed.map((provider) => (
         <SearchProviderCard
           key={provider.id}

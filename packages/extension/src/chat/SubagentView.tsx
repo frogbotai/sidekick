@@ -4,6 +4,8 @@ import { Chat, ChatDock, type ChatPlatformAdapter, ChatProvider } from '@frogbot
 import { ChevronLeftIcon } from '@frogbotai/ui/icons';
 import { type ReactNode, useEffect, useId, useRef, useState } from 'react';
 
+import { faviconUrl, TOOL_CARDS } from './tools';
+
 const RELOAD_DELAY = 100;
 
 export interface SubagentViewProps {
@@ -93,7 +95,7 @@ export function SubagentView({
   );
 
   return (
-    <ChatProvider adapter={view}>
+    <ChatProvider adapter={view} toolRenderers={TOOL_CARDS} faviconUrl={faviconUrl}>
       <Chat
         agent={agent}
         chatId={sessionID}

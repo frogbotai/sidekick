@@ -87,6 +87,19 @@ const slow = defineTool({
     }),
 });
 
+const reporting = defineTool({
+  id: 'reporting',
+  description: 'Reports its target, then finishes.',
+  input: z.object({}),
+  output: z.object({}),
+  permission: 'read',
+  execute: async (_, ctx) => {
+    await ctx.progress?.({ target: 'button “Sign in”' });
+
+    return { output: {} };
+  },
+});
+
 type BridgePermission = Pick<PermissionEngine, 'assert' | 'reply' | 'list' | 'cancel'>;
 
 function realEngine(emit: Server<typeof sidekickProtocol>['emit']) {
@@ -111,7 +124,7 @@ interface Boot {
 
 function boot(
   tabs = fakeTabs([], [START_TAB, OUTSIDE_TAB]),
-  extra: ToolDefinition[] = [slow, stale],
+  extra: ToolDefinition[] = [slow, stale, reporting],
   page: Partial<Page> = {},
   engine?: (emit: Server<typeof sidekickProtocol>['emit']) => BridgePermission,
 ): Boot {
@@ -146,6 +159,7 @@ function boot(
       cancel: () => undefined,
     },
     run: browser.sessionRun,
+    progress: (callID, metadata) => server?.emit('tool.progress', { callID, metadata }),
   });
 
   server = serve(
@@ -228,6 +242,36 @@ describe('the worker tool bridge', () => {
     expect(error.code).toBe('stale_ref');
     expect(error.message).toBe('f0e9 is gone. Take a new snapshot.');
     expect(error.detail).toEqual({ ref: 'f0e9', refs: ['f0e1'] });
+  });
+
+  it('passes a worker tool’s progress to the panel call it belongs to (315 D2)', async () => {
+    boot();
+
+    const { tool } = await panel();
+    const reports: { callID: string; metadata: Record<string, string> }[] = [];
+
+    const call = (callID: string) => {
+      const ctx = context(callID);
+
+      return tool('reporting').execute(
+        {},
+        {
+          ...ctx,
+          progress: (metadata) => {
+            reports.push({ callID, metadata });
+
+            return Promise.resolve();
+          },
+        },
+      );
+    };
+
+    await Promise.all([call('call-a'), call('call-b')]);
+
+    expect(reports).toEqual([
+      { callID: 'call-a', metadata: { target: 'button “Sign in”' } },
+      { callID: 'call-b', metadata: { target: 'button “Sign in”' } },
+    ]);
   });
 
   it('waits past the 30 s RPC timeout, and abort sends tool.cancel', async () => {

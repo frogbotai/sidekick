@@ -2,7 +2,7 @@ import { z } from 'zod';
 
 import { defineTool, ToolError } from '../../../tool/tool';
 import { race } from '../abort';
-import { type Act, type BrowserEnv, enter, inspect, send, untrusted } from '../env';
+import { type Act, type BrowserEnv, enter, inspect, inspectTarget, send, untrusted } from '../env';
 import { screenshot } from '../screenshot';
 import type { ScrollEnd, ScrollStart } from '../types';
 import { ref, tabId } from './schema';
@@ -163,7 +163,7 @@ export function readTools(env: BrowserEnv) {
       execute: async ({ tab_id, ref: element }, ctx) => {
         const act = await enter(env, ctx, tab_id, 'read');
 
-        await inspect(act, element);
+        await inspectTarget(act, element);
 
         const target = await race(env.page.scrollTo(tab_id, element), act.signal);
 

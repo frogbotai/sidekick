@@ -71,7 +71,7 @@ test('build dispatches research: the card shows a live step, the report returns,
   await box.press('Enter');
 
   const card = panel.locator('[data-part="subagent"]');
-  const open = card.getByRole('button', { name: 'Research Chrome 142 changes' });
+  const open = panel.getByRole('button', { name: 'Research: Chrome 142 changes' });
 
   await expect(open).toBeVisible();
   await expect(card.getByRole('status')).toHaveText('Reading docs.example.test');

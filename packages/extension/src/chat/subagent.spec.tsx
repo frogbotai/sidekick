@@ -1,10 +1,9 @@
 import type { AssistantMessage, AssistantTool } from '@frogbotai/sidekick-core';
-import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 
 import { picksModel } from '../agents/AgentsScreen';
 import { childOf, stepLabel, subagentInput } from './subagent';
-import { SubagentCard } from './SubagentCard';
+import { subagentTitle } from './SubagentCard';
 
 function tool(name: string, input: unknown): AssistantTool {
   return {
@@ -55,23 +54,12 @@ describe('subagent cards', () => {
     });
   });
 
-  it('shows the agent, the description and a spinner while it runs', () => {
-    const html = renderToStaticMarkup(
-      <SubagentCard
-        part={{
-          type: 'dynamic-tool',
-          toolName: 'subagent',
-          toolCallId: 'c1',
-          state: 'input-available',
-          input: { agent: 'research', description: 'Chrome 142 changes', prompt: 'x' },
-          toolMetadata: { sessionID: 'ses_child' },
-        }}
-      />,
-    );
+  it('titles the card with the agent and the description', () => {
+    expect(
+      subagentTitle({ agent: 'research', description: 'Chrome 142 changes', prompt: 'x' }),
+    ).toBe('research: Chrome 142 changes');
 
-    expect(html).toContain('<strong>research</strong><span>Chrome 142 changes</span>');
-    expect(html).toContain('sidekick-subagent__spinner');
-    expect(html).toContain('role="status">Starting</span>');
+    expect(subagentTitle({})).toBe('Subagent');
   });
 
   it('offers a model picker to subagents and the title agent only', () => {

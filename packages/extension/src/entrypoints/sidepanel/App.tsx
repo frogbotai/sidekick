@@ -1,14 +1,13 @@
-import { type ComposerCommandLike, type PanelView, theme } from '@frogbotai/sidekick-core';
-import { Button } from '@frogbotai/ui';
-import { ChevronLeftIcon } from '@frogbotai/ui/icons';
+import { type ComposerCommandLike, theme } from '@frogbotai/sidekick-core';
 import type { ThemeMode, ThemeStorage } from '@frogbotai/ui/theme';
 import { ThemeProvider } from '@frogbotai/ui/theme';
-import { type ReactNode, Suspense, use, useEffect, useState } from 'react';
+import { Suspense, use, useEffect, useState } from 'react';
 
 import { AgentsScreen } from '../../agents/AgentsScreen';
 import { ChatPanel, type ChatPanelProps } from '../../chat/ChatPanel';
 import { CommandsScreen } from '../../commands/CommandsScreen';
 import { HelpScreen } from '../../commands/HelpScreen';
+import type { PanelPage } from '../../nav/paths';
 import { ProvidersScreen } from '../../providers/ProvidersScreen';
 import { type Models, useModels } from '../../providers/useModels';
 import type { Sessions } from '../../session';
@@ -19,52 +18,43 @@ const themeStorage: ThemeStorage = {
   set: (_key, mode) => theme.set(mode),
 };
 
-function SessionChat(props: {
-  sessions: Promise<Sessions>;
-  models: Models;
-  onView: ChatPanelProps['onView'];
-}) {
+function SessionChat(
+  props: Omit<ChatPanelProps, 'sessions'> & { sessions: Promise<Sessions>; models: Models },
+) {
   return <ChatPanel {...props} sessions={use(props.sessions)} />;
 }
 
-const LABELS: Record<PanelView, string> = {
-  providers: 'Provider settings',
-  commands: 'Commands',
-  agents: 'Agents',
-  help: 'Help',
-};
-
-function PanelSection({
-  view,
-  onBack,
-  children,
+function PageView({
+  page,
+  models,
+  help,
 }: {
-  view: PanelView;
-  onBack: () => void;
-  children: ReactNode;
+  page: PanelPage;
+  models: Models;
+  help: readonly ComposerCommandLike[];
 }) {
-  return (
-    <section className="sidekick-panel__view" aria-label={LABELS[view]}>
-      <div className="sidekick-row">
-        <Button variant="ghost" size="sm" onClick={onBack}>
-          <ChevronLeftIcon />
-          Back
-        </Button>
-      </div>
-      {children}
-    </section>
-  );
+  if (page === 'providers') return <ProvidersScreen models={models} />;
+
+  if (page === 'commands') return <CommandsScreen />;
+
+  if (page === 'agents') return <AgentsScreen models={models} />;
+
+  if (page === 'help') return <HelpScreen commands={help} />;
+
+  return null;
 }
 
 export interface AppProps {
   initialMode: ThemeMode;
+  /** Whether the sidebar starts open on a wide panel. */
+  navOpen: boolean;
   worker: SidekickWorker;
   sessions: Promise<Sessions>;
 }
 
-export function App({ initialMode, worker, sessions }: AppProps) {
+export function App({ initialMode, navOpen, worker, sessions }: AppProps) {
   const [mode, setMode] = useState(initialMode);
-  const [view, setView] = useState<'chat' | PanelView>('chat');
+  const [page, setPage] = useState<PanelPage>('chat');
   const [help, setHelp] = useState<readonly ComposerCommandLike[]>([]);
   const models = useModels();
 
@@ -73,29 +63,20 @@ export function App({ initialMode, worker, sessions }: AppProps) {
   return (
     <WorkerContext value={worker}>
       <ThemeProvider mode={mode} onModeChange={setMode} storage={themeStorage}>
-        <main className="sidekick-panel">
-          <div className="sidekick-panel__chat" hidden={view !== 'chat'}>
-            <Suspense fallback={null}>
-              <SessionChat
-                sessions={sessions}
-                models={models}
-                onView={(next, commands) => {
-                  if (commands) setHelp(commands);
+        <Suspense fallback={null}>
+          <SessionChat
+            sessions={sessions}
+            models={models}
+            page={page}
+            view={<PageView page={page} models={models} help={help} />}
+            navOpen={navOpen}
+            onPage={(next, commands) => {
+              if (commands) setHelp(commands);
 
-                  setView(next);
-                }}
-              />
-            </Suspense>
-          </div>
-          {view === 'chat' ? null : (
-            <PanelSection view={view} onBack={() => setView('chat')}>
-              {view === 'providers' ? <ProvidersScreen models={models} /> : null}
-              {view === 'commands' ? <CommandsScreen /> : null}
-              {view === 'agents' ? <AgentsScreen models={models} /> : null}
-              {view === 'help' ? <HelpScreen commands={help} /> : null}
-            </PanelSection>
-          )}
-        </main>
+              setPage(next);
+            }}
+          />
+        </Suspense>
       </ThemeProvider>
     </WorkerContext>
   );

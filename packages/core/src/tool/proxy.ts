@@ -10,7 +10,7 @@ import { type ToolDefinition, ToolError } from './tool';
 /** The registry source worker tools register under, the way users' tools register under theirs. */
 export const WORKER_SOURCE = 'worker';
 
-export type SidekickClient = Pick<WorkerClient<typeof sidekickProtocol>, 'call'>;
+export type SidekickClient = Pick<WorkerClient<typeof sidekickProtocol>, 'call' | 'on'>;
 
 export interface WorkerToolOptions {
   /** The panel's window, where a chat's first browser call starts its run (278 D1). */
@@ -56,6 +56,10 @@ function proxy(
 
       ctx.signal.addEventListener('abort', cancel, { once: true });
 
+      const unwatch = client.on('tool.progress', ({ callID, metadata }) => {
+        if (callID === ctx.callID) ctx.progress?.(metadata).catch(() => undefined);
+      });
+
       try {
         const reply = await client.call(
           'tool.call',
@@ -85,6 +89,7 @@ function proxy(
       } catch (error) {
         throw lost(error);
       } finally {
+        unwatch();
         ctx.signal.removeEventListener('abort', cancel);
       }
     },

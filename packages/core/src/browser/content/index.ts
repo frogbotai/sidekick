@@ -8,7 +8,7 @@ import { frameSources, stripFrames } from './frames';
 import { createIndicator, type Indicator } from './indicator';
 import { domQuiet } from './quiet';
 import { createRefs, removed } from './refs';
-import { isRedacted } from './roles';
+import { fingerprintOf, isRedacted } from './roles';
 import { frameBox, scrollBegin, scrollFallback, scrollFinish, scrollToElement } from './scroll';
 import { snapshotFrame } from './snapshot';
 
@@ -30,6 +30,8 @@ async function guard<T>(run: () => T | Promise<T>): Promise<Outcome<T>> {
 export interface ContentOptions {
   /** Whether this frame shows the indicator: the top frame only. */
   top?: boolean;
+  /** The stylesheet for the indicator's ring, FrogBot's `glow.css`; without it no ring shows. */
+  indicatorCss?: string;
   /** Asks the worker whether this tab is in a run and which frame this is, and tells it about a trusted Stop. */
   worker?: {
     visible: () => Promise<boolean>;
@@ -47,6 +49,7 @@ const chromeWorker: NonNullable<ContentOptions['worker']> = {
 /** The content script's answers to the worker for one frame's document (req. 9–12, 16–17, 23). */
 export function createContent({
   top = window === window.top,
+  indicatorCss,
   worker = chromeWorker,
 }: ContentOptions = {}) {
   const doc = crypto.randomUUID();
@@ -63,7 +66,7 @@ export function createContent({
   };
 
   const showIndicator = () => {
-    indicator ??= createIndicator(() => void worker.stop().catch(() => undefined));
+    indicator ??= createIndicator(() => void worker.stop().catch(() => undefined), indicatorCss);
 
     return indicator;
   };
@@ -96,10 +99,13 @@ export function createContent({
       guard(() => {
         const element = resolve(ref, expected);
         const max = maxLengthOf(element);
+        const { role, name } = fingerprintOf(element);
 
         return {
           frameOrigin: location.origin,
           redacted: isRedacted(element),
+          role,
+          name,
           ...(max === undefined ? {} : { max_length: max }),
         };
       }),

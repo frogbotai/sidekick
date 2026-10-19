@@ -73,6 +73,9 @@ export interface RefInfo {
   frameId: number;
   frameOrigin: string;
   redacted: boolean;
+  /** The element's ARIA role and accessible name, as the snapshot shows them. */
+  role: string;
+  name: string;
   /** The field's `maxlength`, when the browser enforces one. */
   max_length?: number;
 }
