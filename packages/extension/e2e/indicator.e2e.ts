@@ -2,20 +2,22 @@ import { expect, INDICATOR, isolatedWorld, test } from './fixtures';
 
 const RING = `(() => {
   const root = ${INDICATOR};
-  const glow = root?.querySelector('.fb-glow');
-  const ring = glow?.querySelector('.fb-glow__ring');
+  const frame = root?.querySelector('.overlay__frame');
+  const gradient = frame?.querySelector('.overlay__gradient');
+  const tint = root?.querySelector('.overlay__tint');
 
-  if (!glow || !ring) return null;
+  if (!frame || !gradient || !tint) return null;
 
-  const before = getComputedStyle(ring, '::before');
+  const turning = getComputedStyle(gradient);
 
   return {
-    animation: before.animationName,
-    duration: before.animationDuration,
-    gradient: before.backgroundImage,
-    filter: getComputedStyle(glow).filter,
-    padding: getComputedStyle(ring).padding,
-    box: ring.getBoundingClientRect().toJSON(),
+    animation: turning.animationName,
+    duration: turning.animationDuration,
+    gradient: turning.backgroundImage,
+    filter: getComputedStyle(frame).filter,
+    tint: getComputedStyle(tint).backgroundColor,
+    inset: getComputedStyle(tint).top,
+    box: frame.getBoundingClientRect().toJSON(),
     viewport: {
       width: document.documentElement.clientWidth,
       height: document.documentElement.clientHeight,
@@ -28,13 +30,14 @@ interface Ring {
   duration: string;
   gradient: string;
   filter: string;
-  padding: string;
+  tint: string;
+  inset: string;
   box: { width: number; height: number };
   viewport: { width: number; height: number };
 }
 
 for (const reducedMotion of ['no-preference', 'reduce'] as const) {
-  test(`the page ring is FrogBot's glow, ${reducedMotion === 'reduce' ? 'still under reduced motion' : 'turning'}`, async ({
+  test(`the page overlay is the old Sidekick's, ${reducedMotion === 'reduce' ? 'still under reduced motion' : 'turning'}`, async ({
     context,
     extensionId,
     origin,
@@ -54,13 +57,14 @@ for (const reducedMotion of ['no-preference', 'reduce'] as const) {
 
     expect(ring.gradient).toContain('conic-gradient');
     expect(ring.filter).toContain('drop-shadow');
-    expect(ring.padding).toBe('3px');
+    expect(ring.tint).toBe('rgba(16, 24, 40, 0.25)');
+    expect(ring.inset).toBe('6px');
     expect(ring.box).toMatchObject(ring.viewport);
 
     if (reducedMotion === 'reduce') {
       expect(ring.animation).toBe('none');
     } else {
-      expect(ring.animation).toBe('fb-glow-rotate');
+      expect(ring.animation).toBe('fb-overlay-rotate');
       expect(ring.duration).toBe('8s');
     }
   });

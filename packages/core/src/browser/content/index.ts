@@ -30,8 +30,6 @@ async function guard<T>(run: () => T | Promise<T>): Promise<Outcome<T>> {
 export interface ContentOptions {
   /** Whether this frame shows the indicator: the top frame only. */
   top?: boolean;
-  /** The stylesheet for the indicator's ring, FrogBot's `glow.css`; without it no ring shows. */
-  indicatorCss?: string;
   /** Asks the worker whether this tab is in a run and which frame this is, and tells it about a trusted Stop. */
   worker?: {
     visible: () => Promise<boolean>;
@@ -49,7 +47,6 @@ const chromeWorker: NonNullable<ContentOptions['worker']> = {
 /** The content script's answers to the worker for one frame's document (req. 9–12, 16–17, 23). */
 export function createContent({
   top = window === window.top,
-  indicatorCss,
   worker = chromeWorker,
 }: ContentOptions = {}) {
   const doc = crypto.randomUUID();
@@ -66,7 +63,7 @@ export function createContent({
   };
 
   const showIndicator = () => {
-    indicator ??= createIndicator(() => void worker.stop().catch(() => undefined), indicatorCss);
+    indicator ??= createIndicator(() => void worker.stop().catch(() => undefined));
 
     return indicator;
   };

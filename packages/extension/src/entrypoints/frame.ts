@@ -1,5 +1,4 @@
 import { answerFrames, createContent, frameProtocol } from '@frogbotai/sidekick-core';
-import glowCss from '@frogbotai/ui/glow.css?inline';
 import { defineUnlistedScript } from 'wxt/utils/define-unlisted-script';
 
 declare global {
@@ -11,7 +10,7 @@ export default defineUnlistedScript(() => {
 
   globalThis.sidekickFrame = true;
 
-  const { handlers } = createContent({ indicatorCss: glowCss });
+  const { handlers } = createContent();
 
   answerFrames(frameProtocol, { 'frame.ping': () => ({ url: location.href }), ...handlers });
 });

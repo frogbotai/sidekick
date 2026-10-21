@@ -401,7 +401,9 @@ describe('redaction', () => {
 
 describe('indicator', () => {
   function hostOf() {
-    const host = [...document.documentElement.children].find((element) => closedRoots.has(element));
+    const host = [...document.documentElement.children].find(
+      (element) => closedRoots.has(element) && !element.classList.contains('is-leaving'),
+    );
 
     if (!host) throw new Error('No indicator');
 
@@ -438,21 +440,14 @@ describe('indicator', () => {
 
     unwrap(await handlers['page.indicator']({ visible: false }));
 
-    expect(host.isConnected).toBe(false);
+    expect(host.classList.contains('is-leaving')).toBe(true);
+
+    await vi.waitFor(() => expect(host.isConnected).toBe(false));
   });
 
-  it('frames the page with the ring stylesheet it is given', async () => {
-    const { handlers, indicator } = createContent({
-      top: true,
-      indicatorCss: '.fb-glow__ring::before { content: ""; }',
-      worker: {
-        visible: () => Promise.resolve(false),
-        stop: () => Promise.resolve(),
-        identify: () => Promise.resolve({ frameId: 0, key: 'secret' }),
-      },
-    });
+  it('frames the page with the old Sidekick overlay: a tint and a turning gradient frame', async () => {
+    const { handlers } = setup();
 
-    cleanups.push(() => indicator()?.set({ visible: false }));
     unwrap(await handlers['page.indicator']({ visible: true }));
 
     const root = closedRoots.get(hostOf());
@@ -460,8 +455,9 @@ describe('indicator', () => {
       [...sheet.cssRules].map((rule) => rule.cssText),
     );
 
-    expect(root?.querySelector('.fb-glow > .fb-glow__ring')).not.toBeNull();
-    expect(rules?.[0]).toContain('.fb-glow__ring::before');
+    expect(root?.querySelector('.overlay > .overlay__tint')).not.toBeNull();
+    expect(root?.querySelector('.overlay > .overlay__frame > .overlay__gradient')).not.toBeNull();
+    expect(rules?.join('\n')).toContain('conic-gradient');
   });
 
   it('ignores a synthetic click on Stop', async () => {
