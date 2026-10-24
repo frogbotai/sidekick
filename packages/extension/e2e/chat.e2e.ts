@@ -276,6 +276,78 @@ test('a second panel window streams the same chat, and only its own message ther
   expect(await sawQueued(first)).toBe(false);
 });
 
+function paste(panel: Page, text: string) {
+  return panel.getByRole('textbox').evaluate((input, value) => {
+    const clipboard = new DataTransfer();
+
+    clipboard.setData('text/plain', value);
+
+    const event = new ClipboardEvent('paste', { bubbles: true, cancelable: true });
+
+    Object.defineProperty(event, 'clipboardData', { value: clipboard });
+    input.dispatchEvent(event);
+  }, text);
+}
+
+function lastUserText(body: string | undefined) {
+  const { input } = JSON.parse(body ?? '{}') as {
+    input: { role?: string; content?: string | { text?: string }[] }[];
+  };
+
+  const content = input.findLast((item) => item.role === 'user')?.content;
+
+  return typeof content === 'string' ? content : (content ?? []).map((part) => part.text).join('');
+}
+
+test('a pasted chip leaves the composer at Send and does not ride along on the next message (332)', async ({
+  context,
+  openPanel,
+}) => {
+  const pasted = `PASTE-332 ${'lorem ipsum '.repeat(80)}`;
+  let release = () => {};
+
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+
+  const { bodies } = await scriptOpenAI(context, [
+    async () => {
+      await held;
+
+      return reply('Read the paste.');
+    },
+    reply('Second answer.'),
+  ]);
+
+  const panel = await openPanel();
+  const chips = panel.locator('.fb-composer').getByTestId('attachment-card');
+
+  await connect(panel);
+  await paste(panel, pasted);
+  await expect(chips).toHaveCount(1);
+  await send(panel, 'Summarize this');
+
+  await expect(panel.getByRole('button', { name: 'Stop' })).toBeVisible();
+  await expect(chips).toHaveCount(0);
+  await expect(panel.getByRole('textbox')).toHaveText('');
+
+  release();
+
+  await expect(panel.getByText('Read the paste.')).toBeVisible();
+  await expect(chips).toHaveCount(0);
+  await expect(panel.getByRole('textbox')).toHaveText('');
+  expect(lastUserText(bodies[0])).toContain('PASTE-332');
+
+  await send(panel, 'And now?');
+  await expect(panel.getByText('Second answer.')).toBeVisible();
+  await expect(chips).toHaveCount(0);
+  await expect(panel.getByRole('alert')).toHaveCount(0);
+
+  expect(bodies).toHaveLength(2);
+  expect(lastUserText(bodies[1])).toContain('And now?');
+  expect(lastUserText(bodies[1])).not.toContain('PASTE-332');
+});
+
 test('fits a 320px panel: the chat, the Providers view and the options page', async ({
   context,
   openPanel,
