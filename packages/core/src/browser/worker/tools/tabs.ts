@@ -3,9 +3,9 @@ import { z } from 'zod';
 import { defineTool, ToolError } from '../../../tool/tool';
 import { normalizeUrl, originOf } from '../../../tool/url';
 import { race } from '../abort';
-import { type BrowserEnv, enter, finish, runOf, untrusted } from '../env';
+import { type BrowserEnv, documentOf, enter, finish, getTab, runOf, untrusted } from '../env';
 import type { TabInfo } from '../types';
-import { action, tab, tabId, tabList } from './schema';
+import { action, byTab, tab, tabId, tabList } from './schema';
 
 function describe(tabs: TabInfo[]) {
   return {
@@ -125,6 +125,7 @@ export function tabTools(env: BrowserEnv) {
       input: z.object({ tab_id: tabId }),
       output: tabList,
       permission: 'tabs',
+      lock: byTab,
       execute: async ({ tab_id }, ctx) => {
         const act = await enter(env, ctx, tab_id, 'tabs');
 
@@ -139,6 +140,7 @@ export function tabTools(env: BrowserEnv) {
       input: z.object({ tab_id: tabId }),
       output: tabList,
       permission: 'tabs',
+      lock: byTab,
       execute: async ({ tab_id }, ctx) => {
         const act = await enter(env, ctx, tab_id, 'tabs');
 
@@ -161,22 +163,34 @@ export function tabTools(env: BrowserEnv) {
         }),
       output: action,
       permission: 'navigate',
+      lock: byTab,
       execute: async ({ tab_id, url, go }, ctx) => {
         const target = url === undefined ? undefined : normalizeUrl(url);
         const act = await enter(env, ctx, tab_id, 'navigate', target && originOf(target));
 
         await attachIfAllowed(env, tab_id, act.signal);
 
-        const settled = await env.settler.settle(tab_id, act.signal, () =>
-          race(
-            target === undefined
-              ? travel(env, tab_id, go ?? 'reload', act.signal)
-              : env.tabs.navigate(tab_id, target),
-            act.signal,
-          ),
-        );
+        const before = documentOf(env, tab_id);
 
-        return untrusted(await finish(act, settled));
+        const start = async () => {
+          if (target === undefined) return travel(env, tab_id, go ?? 'reload', act.signal);
+
+          const current = await getTab(env, tab_id, act.signal);
+
+          if (current.pendingUrl === target) return;
+
+          await env.tabs.navigate(tab_id, target);
+        };
+
+        const load = () => race(start(), act.signal);
+        const settled = await env.settler.settle(tab_id, act.signal, load, { commit: true });
+
+        const output = await finish(act, settled);
+
+        return untrusted({
+          ...output,
+          navigated: output.navigated || documentOf(env, tab_id) !== before,
+        });
       },
     }),
   ];

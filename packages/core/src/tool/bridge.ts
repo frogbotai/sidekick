@@ -4,6 +4,7 @@ import type { PermissionEngine, PermissionScope } from '../permission/engine';
 import type { sidekickProtocol } from '../protocol';
 import type { Registry } from '../registry/registry';
 import type { Handlers } from '../rpc/define';
+import { createKeyedLock, type KeyedLock } from './lock';
 import {
   type ToolContent,
   type ToolDefinition,
@@ -38,6 +39,8 @@ export interface ToolBridgeOptions {
   run?: (call: BridgeCall) => Promise<{ id: string } | undefined>;
   /** Where a call's progress goes: the worker server's `tool.progress` event. */
   progress?: (callID: string, metadata: ToolMetadata) => void;
+  /** The turns tools with a `lock` take; one shared by every caller of the same resources. */
+  locks?: KeyedLock;
 }
 
 function scopeOf({ sessionID, messageID, callID, agent, mode, sites, client }: PermissionScope) {
@@ -97,7 +100,8 @@ export function createToolCaller({
   tools,
   permission,
   progress,
-}: Pick<ToolBridgeOptions, 'tools' | 'permission' | 'progress'>): ToolCaller {
+  locks = createKeyedLock(),
+}: Pick<ToolBridgeOptions, 'tools' | 'permission' | 'progress' | 'locks'>): ToolCaller {
   const calls = new Map<string, AbortController>();
 
   return {
@@ -119,8 +123,13 @@ export function createToolCaller({
       calls.set(call.callID, controller);
 
       const scope = scopeOf(call);
+      const key = tool.lock?.(parsed.data);
+      const turn = key === undefined ? undefined : locks.take(key, controller.signal);
+      let release: (() => void) | undefined;
 
       try {
+        release = await turn;
+
         const current = await run?.();
 
         const result = await tool.execute(parsed.data, {
@@ -152,6 +161,7 @@ export function createToolCaller({
 
         throw error;
       } finally {
+        release?.();
         signal?.removeEventListener('abort', abort);
 
         if (calls.get(call.callID) === controller) calls.delete(call.callID);
@@ -175,8 +185,14 @@ export function createToolBridge({
   permission,
   run,
   progress,
+  locks,
 }: ToolBridgeOptions): BridgeHandlers {
-  const caller = createToolCaller({ tools, permission, ...(progress ? { progress } : {}) });
+  const caller = createToolCaller({
+    tools,
+    permission,
+    ...(progress ? { progress } : {}),
+    ...(locks ? { locks } : {}),
+  });
 
   const assert = async ({
     request,

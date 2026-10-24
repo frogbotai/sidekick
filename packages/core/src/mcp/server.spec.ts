@@ -258,4 +258,35 @@ describe('the MCP server', () => {
       expect.objectContaining({ method: 'notifications/tools/list_changed' }),
     );
   });
+
+  it('runs two calls on one tab one after another (331 D1)', async () => {
+    const order: string[] = [];
+    let finish: () => void = () => undefined;
+    const setup = setupWorker({
+      page: {
+        snapshot: () => {
+          order.push('read');
+
+          return order.length === 1
+            ? new Promise((resolve) => {
+                finish = () => resolve({ title: 'One', text: '', redacted: 0, truncated: false });
+              })
+            : Promise.resolve({ title: 'Two', text: '', redacted: 0, truncated: false });
+        },
+      },
+    });
+
+    const { mcp } = await connect(setup);
+    const first = mcp.request('tools/call', { name: 'snapshot', arguments: { tab_id: 1 } });
+    const second = mcp.request('tools/call', { name: 'snapshot', arguments: { tab_id: 1 } });
+
+    await flush();
+
+    expect(order).toEqual(['read']);
+
+    finish();
+    await Promise.all([first, second]);
+
+    expect(order).toEqual(['read', 'read']);
+  });
 });

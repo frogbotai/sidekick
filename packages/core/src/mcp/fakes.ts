@@ -12,6 +12,7 @@ import { BUILTIN_MODES, type PermissionMode } from '../permission/modes';
 import { createRegistry } from '../registry/registry';
 import { installFakeChrome } from '../testing/fakeChrome';
 import { createToolCaller } from '../tool/bridge';
+import { createKeyedLock } from '../tool/lock';
 import type { ToolDefinition } from '../tool/tool';
 import type { Socket } from './transport';
 
@@ -165,7 +166,8 @@ export function setupWorker({
     emit: (type, data) => void events.push({ type, data }),
   });
 
-  const caller = createToolCaller({ tools, permission });
+  const locks = createKeyedLock();
+  const caller = createToolCaller({ tools, permission, locks });
 
-  return { storage, log, tabs, runtime, worker, tools, permission, caller, events };
+  return { storage, log, tabs, runtime, worker, tools, permission, caller, locks, events };
 }

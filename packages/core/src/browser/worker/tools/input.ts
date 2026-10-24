@@ -17,7 +17,7 @@ import {
 } from '../env';
 import { click, drag, fill, hover, press } from '../input';
 import type { Point } from '../types';
-import { action, coordinate, modifiers, pointer, ref, tabId } from './schema';
+import { action, byTab, coordinate, modifiers, pointer, ref, tabId } from './schema';
 
 const end = z.union([ref, z.object({ x: coordinate, y: coordinate })]);
 
@@ -38,12 +38,18 @@ async function focusTarget(act: Act, element: string | undefined) {
   return info;
 }
 
-async function endpoint(act: Act, target: z.infer<typeof end>): Promise<Point> {
-  if (typeof target !== 'string') return fromScreenshot(act.env, act.tabId, target);
+function endpoint(act: Act, target: z.infer<typeof end>): () => Promise<Point> {
+  if (typeof target !== 'string') {
+    const point = fromScreenshot(act.env, act.tabId, target);
 
-  await inspectTarget(act, target, 'to');
+    return () => Promise.resolve(point);
+  }
 
-  return (await race(act.env.page.scrollTo(act.tabId, target), act.signal)).point;
+  return async () => {
+    await inspectTarget(act, target, 'to');
+
+    return (await race(act.env.page.scrollTo(act.tabId, target), act.signal)).point;
+  };
 }
 
 export function inputTools(env: BrowserEnv) {
@@ -59,6 +65,7 @@ export function inputTools(env: BrowserEnv) {
       }),
       output: action,
       permission: 'input',
+      lock: byTab,
       execute: async (input, ctx) => {
         const act = await enter(env, ctx, input.tab_id, 'input');
         const point = await aim(act, input);
@@ -72,6 +79,7 @@ export function inputTools(env: BrowserEnv) {
       input: z.object(pointer),
       output: action,
       permission: 'input',
+      lock: byTab,
       execute: async (input, ctx) => {
         const act = await enter(env, ctx, input.tab_id, 'input');
         const point = await aim(act, input);
@@ -86,6 +94,7 @@ export function inputTools(env: BrowserEnv) {
       input: z.object({ tab_id: tabId, ref: ref.optional(), text: z.string() }),
       output: action,
       permission: 'input',
+      lock: byTab,
       execute: async ({ tab_id, ref: element, text }, ctx) => {
         const act = await enter(env, ctx, tab_id, 'input');
         const info = await focusTarget(act, element);
@@ -101,6 +110,7 @@ export function inputTools(env: BrowserEnv) {
       input: z.object({ tab_id: tabId, ref, values: z.array(z.string()).min(1) }),
       output: action,
       permission: 'input',
+      lock: byTab,
       execute: async ({ tab_id, ref: element, values }, ctx) => {
         const act = await enter(env, ctx, tab_id, 'input');
 
@@ -129,6 +139,7 @@ export function inputTools(env: BrowserEnv) {
       input: z.object({ tab_id: tabId, key: z.string().min(1), ref: ref.optional() }),
       output: action,
       permission: 'input',
+      lock: byTab,
       execute: async ({ tab_id, key, ref: element }, ctx) => {
         const act = await enter(env, ctx, tab_id, 'input');
 
@@ -145,11 +156,13 @@ export function inputTools(env: BrowserEnv) {
       input: z.object({ tab_id: tabId, from: end, to: end }),
       output: action,
       permission: 'input',
+      lock: byTab,
       execute: async ({ tab_id, from, to }, ctx) => {
         const act = await enter(env, ctx, tab_id, 'input');
         const start = await aim(act, typeof from === 'string' ? { ref: from } : from);
+        const target = endpoint(act, to);
 
-        return settleAfter(act, () => drag(act, start, () => endpoint(act, to)));
+        return settleAfter(act, () => drag(act, start, target));
       },
     }),
   ];

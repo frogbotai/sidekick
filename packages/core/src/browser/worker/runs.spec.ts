@@ -1,8 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { ToolError } from '../../tool/tool';
-import { later } from './fakes';
+import { fakeJpeg, later } from './fakes';
 import { drain, failure, setupBrowser } from './harness';
+import { jpegSize } from './jpeg';
 
 beforeEach(() => {
   vi.useFakeTimers();
@@ -126,7 +127,7 @@ describe('screenshots (req. 19) and their coordinates (271 D3)', () => {
 
     expect(result.content?.[1]).toEqual({
       type: 'file',
-      uri: 'data:image/jpeg;base64,SU1H',
+      uri: `data:image/jpeg;base64,${fakeJpeg({ width: 400, height: 300 })}`,
       mime: 'image/jpeg',
       name: 'screenshot',
     });
@@ -194,19 +195,103 @@ describe('screenshots (req. 19) and their coordinates (271 D3)', () => {
     ]);
   });
 
-  it('uses captureVisibleTab when attach is blocked on the active tab', async () => {
-    const { tool, ctx, cdp, runtime } = await setupBrowser();
+  it('uses captureVisibleTab when attach is blocked on the active tab, sized to the viewport × scale', async () => {
+    const { tool, ctx, cdp, runtime, tabs } = await setupBrowser();
+    const sizes: unknown[] = [];
+    const capture = tabs.captureVisible;
+
+    tabs.captureVisible = (windowId, size) => {
+      sizes.push(size);
+
+      return capture(windowId, size);
+    };
 
     cdp.attachErrors.push(new Error('Host access is restricted by policy.'));
 
-    const result = await drain(tool('screenshot').execute({ tab_id: 1 }, ctx));
+    const result = await drain(tool('screenshot').execute({ tab_id: 1, scale: 0.5 }, ctx));
 
-    expect(result.output).toEqual({ url: 'https://example.com/', width: 1600, height: 1200 });
+    expect(sizes).toEqual([{ width: 400, height: 300 }]);
+    expect(result.output).toEqual({ url: 'https://example.com/', width: 400, height: 300 });
 
     expect(runtime.env.screens.get(1)).toEqual({
       offset: { x: 0, y: 0 },
-      scale: { x: 0.5, y: 0.5 },
+      scale: { x: 2, y: 2 },
+      document: 0,
     });
+  });
+
+  it('at device pixel ratio 2, renders CSS pixels, so the JPEG is the reported size and x/y hit the page', async () => {
+    const { tool, ctx, cdp } = await setupBrowser();
+
+    cdp.ratio = 2;
+
+    const result = await drain(tool('screenshot').execute({ tab_id: 1 }, ctx));
+    const capture = cdp.sent.find(({ method }) => method === 'Page.captureScreenshot');
+    const uri = result.content?.[1]?.type === 'file' ? result.content[1].uri : '';
+
+    expect(capture?.params.clip).toMatchObject({ width: 800, height: 600, scale: 0.5 });
+    expect(result.output).toMatchObject({ width: 800, height: 600 });
+
+    expect(jpegSize(uri.replace('data:image/jpeg;base64,', ''))).toEqual({
+      width: 800,
+      height: 600,
+    });
+
+    await drain(tool('click').execute({ tab_id: 1, x: 400, y: 300 }, ctx));
+
+    expect(cdp.sent.find(({ params }) => params.type === 'mousePressed')?.params).toMatchObject({
+      x: 400,
+      y: 300,
+    });
+  });
+
+  it('at device pixel ratio 2 without attach, x/y from the resized capture hit the page', async () => {
+    const { tool, ctx, cdp } = await setupBrowser();
+
+    cdp.ratio = 2;
+    cdp.attachErrors.push(new Error('Host access is restricted by policy.'));
+
+    const result = await drain(tool('screenshot').execute({ tab_id: 1 }, ctx));
+    const uri = result.content?.[1]?.type === 'file' ? result.content[1].uri : '';
+
+    expect(result.output).toMatchObject({ width: 800, height: 600 });
+
+    expect(jpegSize(uri.replace('data:image/jpeg;base64,', ''))).toEqual({
+      width: 800,
+      height: 600,
+    });
+
+    await drain(tool('hover').execute({ tab_id: 1, x: 400, y: 300 }, ctx));
+
+    expect(cdp.sent.at(-1)?.params).toMatchObject({ type: 'mouseMoved', x: 400, y: 300 });
+  });
+
+  it('refuses x/y from before a new page with stale_screenshot, and takes them after a new screenshot (D2)', async () => {
+    const { tool, ctx, cdp, tabs } = await setupBrowser();
+
+    await drain(tool('screenshot').execute({ tab_id: 1, scale: 0.5 }, ctx));
+    tabs.commit({ tabId: 1 });
+
+    const click = await failure(tool('click').execute({ tab_id: 1, x: 100, y: 50 }, ctx));
+    const dragged = await failure(
+      tool('drag').execute({ tab_id: 1, from: 'f0e1', to: { x: 10, y: 10 } }, ctx),
+    );
+
+    expect(click).toMatchObject({
+      code: 'stale_screenshot',
+      message: 'The page changed since the last screenshot. Take a new one.',
+    });
+
+    expect(codeOf(dragged)).toBe('stale_screenshot');
+    expect(cdp.sent.filter(({ params }) => params.type === 'mousePressed')).toEqual([]);
+
+    tabs.commit({ tabId: 1, sameDocument: true });
+    await drain(tool('screenshot').execute({ tab_id: 1, scale: 0.5 }, ctx));
+    await drain(tool('click').execute({ tab_id: 1, x: 100, y: 50 }, ctx));
+
+    expect(
+      cdp.sent.filter(({ params }) => params.type === 'mousePressed').at(-1)?.params,
+    ).toMatchObject({ x: 200, y: 100 });
   });
 
   it('refuses a ref without a ref or coordinates', async () => {

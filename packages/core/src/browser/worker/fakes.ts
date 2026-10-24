@@ -1,5 +1,5 @@
 import type { PermissionRequest, ToolContext, ToolMetadata } from '../../tool/tool';
-import type { Cdp, CdpEvent, Page, TabInfo, Tabs } from './types';
+import type { Cdp, CdpEvent, Commit, Page, Size, TabInfo, Tabs } from './types';
 
 export type Log = string[];
 
@@ -46,6 +46,30 @@ function emitter<A extends unknown[]>() {
   };
 }
 
+/** A base64 JPEG that is only a start-of-frame header at `width` × `height`. */
+export function fakeJpeg({ width, height }: Size) {
+  const start = [0xff, 0xd8, 0xff, 0xc0, 0x00, 0x11, 0x08];
+  const size = [height >> 8, height & 0xff, width >> 8, width & 0xff];
+  const components = [0x03, 0x01, 0x22, 0x00, 0x02, 0x11, 0x01, 0x03, 0x11, 0x01];
+  const bytes = [...start, ...size, ...components, 0xff, 0xd9];
+
+  return btoa(String.fromCharCode(...bytes));
+}
+
+function clipOf(params: Record<string, unknown>) {
+  const clip = params.clip;
+
+  if (typeof clip !== 'object' || !clip) return { width: 1, height: 1, scale: 1 };
+
+  const number = (key: string, fallback: number) => {
+    const value: unknown = Reflect.get(clip, key);
+
+    return typeof value === 'number' ? value : fallback;
+  };
+
+  return { width: number('width', 1), height: number('height', 1), scale: number('scale', 1) };
+}
+
 export interface FakeCdp extends Cdp {
   sent: SentCommand[];
   attaching: number[];
@@ -58,6 +82,8 @@ export interface FakeCdp extends Cdp {
   emit: (event: CdpEvent) => void;
   detachByChrome: (tabId: number, reason: string) => void;
   listeners: () => number;
+  /** The screen's device pixel ratio: `Page.captureScreenshot` renders clip × scale × ratio. */
+  ratio: number;
 }
 
 export function fakeCdp(log: Log): FakeCdp {
@@ -77,9 +103,23 @@ export function fakeCdp(log: Log): FakeCdp {
         'Page.getLayoutMetrics',
         () => ({
           cssVisualViewport: { pageX: 0, pageY: 500, clientWidth: 800, clientHeight: 600 },
+          visualViewport: { clientWidth: 800 * fake.ratio },
         }),
       ],
-      ['Page.captureScreenshot', () => ({ data: 'SU1H' })],
+      [
+        'Page.captureScreenshot',
+        (params) => {
+          const { width, height, scale } = clipOf(params);
+          const pixels = scale * fake.ratio;
+
+          return {
+            data: fakeJpeg({
+              width: Math.round(width * pixels),
+              height: Math.round(height * pixels),
+            }),
+          };
+        },
+      ],
     ]),
     attach: later((tabId: number) => {
       log.push('cdp.attach');
@@ -119,6 +159,7 @@ export function fakeCdp(log: Log): FakeCdp {
       detaches.emit(tabId, reason);
     },
     listeners: events.size,
+    ratio: 1,
   };
 
   return fake;
@@ -172,12 +213,18 @@ export interface FakeTabs extends Tabs {
   tabs: Map<number, TabInfo>;
   createTab: (tab: Partial<TabInfo> & { id: number; sourceTabId?: number }) => void;
   removeGroup: (groupId: number) => void;
+  /** What `navigate` and `history` do after they return: commit a new document (the default), nothing, or fail. */
+  navigation: 'commit' | 'none' | { error: string };
+  commit: (commit: Partial<Commit> & { tabId: number }) => void;
+  failNavigation: (tabId: number, error: string) => void;
 }
 
 export function fakeTabs(log: Log, initial: TabInfo[]): FakeTabs {
   const tabs = new Map(initial.map((tab) => [tab.id, { ...tab }]));
   const opened = emitter<[{ id: number; sourceTabId: number }]>();
   const groupsRemoved = emitter<[number]>();
+  const commits = emitter<[Commit]>();
+  const errors = emitter<[{ tabId: number; error: string }]>();
   let nextGroup = 100;
   let nextTab = 1000;
 
@@ -189,8 +236,18 @@ export function fakeTabs(log: Log, initial: TabInfo[]): FakeTabs {
     return found;
   };
 
+  const navigated = (tabId: number) => {
+    const { navigation } = fake;
+
+    if (navigation === 'none') return;
+
+    if (navigation === 'commit') fake.commit({ tabId });
+    else fake.failNavigation(tabId, navigation.error);
+  };
+
   const fake: FakeTabs = {
     tabs,
+    navigation: 'commit',
     get: later((tabId: number) => ({ ...tab(tabId) })),
     active: later((windowId: number) => {
       const found = [...tabs.values()].find((entry) => entry.windowId === windowId && entry.active);
@@ -223,17 +280,30 @@ export function fakeTabs(log: Log, initial: TabInfo[]): FakeTabs {
       for (const entry of tabs.values()) entry.active = entry.id === tabId;
     }),
     navigate: later((tabId: number, url: string) => {
-      tab(tabId).url = url;
+      const entry = tab(tabId);
+
+      entry.url = url;
+      delete entry.pendingUrl;
+      navigated(tabId);
     }),
-    history: later(() => undefined),
+    history: later((tabId: number) => navigated(tabId)),
     close: later((tabId: number) => {
       tabs.delete(tabId);
     }),
     frames: later(() => [{ frameId: 0, parentFrameId: -1, url: 'https://example.com/' }]),
     waitForLoad: later(() => true),
-    captureVisible: later(() => ({ data: 'VklT', mime: 'image/jpeg', width: 1600, height: 1200 })),
+    captureVisible: later((_windowId: number, size: Size) => ({
+      data: fakeJpeg(size),
+      mime: 'image/jpeg',
+      ...size,
+    })),
     onOpened: opened.add,
     onGroupRemoved: groupsRemoved.add,
+    onCommitted: commits.add,
+    onNavigationError: errors.add,
+    commit: ({ tabId, url, sameDocument = false }) =>
+      commits.emit({ tabId, url: url ?? tab(tabId).url, sameDocument }),
+    failNavigation: (tabId, error) => errors.emit({ tabId, error }),
     createTab: ({ sourceTabId, ...entry }) => {
       tabs.set(entry.id, {
         windowId: 1,

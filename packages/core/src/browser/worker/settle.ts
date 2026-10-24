@@ -1,3 +1,4 @@
+import { ToolError } from '../../tool/tool';
 import { race } from './abort';
 import type { Sessions } from './sessions';
 import type { Cdp, CdpEvent, Page, Tabs } from './types';
@@ -19,6 +20,11 @@ const STREAMS = new Set(['WebSocket', 'EventSource']);
 export interface SettleOptions {
   /** Waits for the page load before network quiet: the session attached after requests began. */
   load?: boolean;
+  /**
+   * Waits up to the network cap for the tab's main frame to commit first: settles `false` at once
+   * without one, and fails `request_failed` on a main-frame error.
+   */
+  commit?: boolean;
 }
 
 /** Tracks requests from before `action` runs, then resolves `true` when the tab settled within the caps. */
@@ -116,6 +122,42 @@ function track(cdp: Cdp, tabId: number) {
   return { quiet, stop };
 }
 
+const ABORTED = 'net::ERR_ABORTED';
+
+type Outcome = { committed: boolean } | { error: string };
+
+function watchCommit(tabs: Tabs, tabId: number) {
+  let done: (outcome: Outcome) => void = () => {};
+
+  let timer: ReturnType<typeof setTimeout> | undefined;
+
+  const outcome = new Promise<Outcome>((resolve) => {
+    done = resolve;
+  });
+
+  const stops = [
+    tabs.onCommitted((commit) => {
+      if (commit.tabId === tabId) done({ committed: true });
+    }),
+    tabs.onNavigationError((failure) => {
+      if (failure.tabId === tabId && failure.error !== ABORTED) done({ error: failure.error });
+    }),
+  ];
+
+  return {
+    wait: () => {
+      timer = setTimeout(() => done({ committed: false }), NETWORK_CAP_MS);
+
+      return outcome;
+    },
+    stop: () => {
+      clearTimeout(timer);
+
+      for (const stop of stops) stop();
+    },
+  };
+}
+
 function capped(promise: Promise<boolean>, ms: number) {
   let timer: ReturnType<typeof setTimeout> | undefined;
 
@@ -138,12 +180,23 @@ export function createSettler({
   sessions: Sessions;
 }): Settler {
   return {
-    settle: async (tabId, signal, action, { load = false } = {}) => {
+    settle: async (tabId, signal, action, { load = false, commit = false } = {}) => {
       const network = track(cdp, tabId);
+      const committed = commit ? watchCommit(tabs, tabId) : undefined;
       const waitForLoad = () => tabs.waitForLoad(tabId, NETWORK_CAP_MS).catch(() => false);
 
       try {
         await action?.();
+
+        if (committed) {
+          const outcome = await race(committed.wait(), signal);
+
+          if ('error' in outcome) {
+            throw new ToolError('request_failed', `The page didn’t load: ${outcome.error}.`);
+          }
+
+          if (!outcome.committed) return false;
+        }
 
         const loaded = !sessions.attached(tabId)
           ? waitForLoad()
@@ -159,6 +212,7 @@ export function createSettler({
         return networkSettled && domSettled;
       } finally {
         network.stop();
+        committed?.stop();
       }
     },
   };

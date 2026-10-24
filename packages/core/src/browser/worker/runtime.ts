@@ -27,13 +27,29 @@ export function createBrowserRuntime({
   const sessions = createSessions({ cdp, tabs, page });
   const runs = createRuns(tabs);
   const settler = createSettler({ cdp, page, tabs, sessions });
-  const env: BrowserEnv = { cdp, page, tabs, sessions, settler, runs, screens: new Map(), mac };
+  const documents = new Map<number, number>();
+  const env: BrowserEnv = {
+    cdp,
+    page,
+    tabs,
+    sessions,
+    settler,
+    runs,
+    screens: new Map(),
+    documents,
+    mac,
+  };
+
+  const stopCommits = tabs.onCommitted(({ tabId, sameDocument }) => {
+    if (!sameDocument) documents.set(tabId, (documents.get(tabId) ?? 0) + 1);
+  });
 
   return {
     env,
     tools: browserTools(env),
     start: () => sessions.start(),
     dispose: () => {
+      stopCommits();
       sessions.dispose();
       runs.dispose();
     },

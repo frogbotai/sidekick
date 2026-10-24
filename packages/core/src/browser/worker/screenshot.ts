@@ -2,8 +2,9 @@ import { z } from 'zod';
 
 import { ToolError } from '../../tool/tool';
 import { race } from './abort';
-import { type Act, inspect, screenMap, send } from './env';
-import type { Capture, Rect } from './types';
+import { type Act, documentOf, inspect, screenMap, send } from './env';
+import { jpegSize } from './jpeg';
+import type { Capture, Rect, Size } from './types';
 
 const QUALITY = 80;
 
@@ -14,6 +15,7 @@ const metrics = z.object({
     clientWidth: z.number(),
     clientHeight: z.number(),
   }),
+  visualViewport: z.object({ clientWidth: z.number() }).optional(),
 });
 
 const shot = z.object({ data: z.string() });
@@ -22,17 +24,29 @@ async function hideIndicator(act: Act, hidden: boolean) {
   await act.env.page.indicator(act.tabId, { visible: !hidden }).catch(() => undefined);
 }
 
-async function visibleTab(act: Act, scale: number): Promise<Capture> {
+function sized(size: Size, scale: number): Size {
+  return {
+    width: Math.max(1, Math.round(size.width * scale)),
+    height: Math.max(1, Math.round(size.height * scale)),
+  };
+}
+
+async function visibleTab(act: Act, scale: number, document: number): Promise<Capture> {
   const viewport = await race(act.env.page.viewport(act.tabId), act.signal);
 
   await hideIndicator(act, true);
 
   try {
-    const capture = await race(act.env.tabs.captureVisible(act.tab.windowId, scale), act.signal);
+    const capture = await race(
+      act.env.tabs.captureVisible(act.tab.windowId, sized(viewport, scale)),
+      act.signal,
+    );
 
-    act.env.screens.set(act.tabId, screenMap({ x: 0, y: 0, ...viewport }, capture));
+    const image = jpegSize(capture.data) ?? capture;
 
-    return capture;
+    act.env.screens.set(act.tabId, screenMap({ x: 0, y: 0, ...viewport }, image, document));
+
+    return { ...capture, width: image.width, height: image.height };
   } finally {
     await hideIndicator(act, false);
   }
@@ -52,11 +66,16 @@ async function attached(act: Act) {
   }
 }
 
-/** `Page.captureScreenshot` with `clip.scale`; focus emulation for background tabs; `captureVisibleTab` when attach is blocked on the active tab. */
+/**
+ * `Page.captureScreenshot` in CSS pixels × `scale` (`clip.scale` divides out the device pixel
+ * ratio); focus emulation for background tabs; `captureVisibleTab` when attach is blocked on the
+ * active tab. The report and the screen map use the JPEG's real size.
+ */
 export async function screenshot(
   act: Act,
   { scale, ref }: { scale: number; ref?: string },
 ): Promise<Capture> {
+  const document = documentOf(act.env, act.tabId);
   let clip: Rect | undefined;
 
   if (ref !== undefined) {
@@ -64,9 +83,13 @@ export async function screenshot(
     clip = (await race(act.env.page.scrollTo(act.tabId, ref), act.signal)).rect;
   }
 
-  if (!(await attached(act))) return visibleTab(act, scale);
+  if (!(await attached(act))) return visibleTab(act, scale, document);
 
-  const { cssVisualViewport: view } = metrics.parse(await send(act, 'Page.getLayoutMetrics'));
+  const { cssVisualViewport: view, visualViewport: device } = metrics.parse(
+    await send(act, 'Page.getLayoutMetrics'),
+  );
+
+  const ratio = device && view.clientWidth > 0 ? device.clientWidth / view.clientWidth : 1;
   const area = clip ?? { x: 0, y: 0, width: view.clientWidth, height: view.clientHeight };
 
   if (!act.tab.active) await send(act, 'Emulation.setFocusEmulationEnabled', { enabled: true });
@@ -85,7 +108,7 @@ export async function screenshot(
         y: view.pageY + area.y,
         width: area.width,
         height: area.height,
-        scale,
+        scale: scale / ratio,
       },
     });
 
@@ -94,9 +117,9 @@ export async function screenshot(
     await hideIndicator(act, false);
   }
 
-  const image = { width: Math.round(area.width * scale), height: Math.round(area.height * scale) };
+  const image = jpegSize(data) ?? sized(area, scale);
 
-  act.env.screens.set(act.tabId, screenMap(area, image));
+  act.env.screens.set(act.tabId, screenMap(area, image, document));
 
   return { data, mime: 'image/jpeg', ...image };
 }

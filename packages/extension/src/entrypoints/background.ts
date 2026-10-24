@@ -9,6 +9,7 @@ import {
   contentProtocol,
   createBrowserRuntime,
   createBrowserWorker,
+  createKeyedLock,
   createMcpHost,
   createPermissionEngine,
   createToolBridge,
@@ -87,16 +88,19 @@ export default defineBackground(() => {
     emit: (type, data) => server?.emit(type, data),
   });
 
+  const locks = createKeyedLock();
+
   const bridge = createToolBridge({
     tools,
     permission,
     run: browser.sessionRun,
     progress: (callID, metadata) => server?.emit('tool.progress', { callID, metadata }),
+    locks,
   });
 
   const mcp = createMcpHost({
     tools,
-    caller: createToolCaller({ tools, permission }),
+    caller: createToolCaller({ tools, permission, locks }),
     worker: browser,
     lastWindow,
     version: chrome.runtime.getManifest().version,

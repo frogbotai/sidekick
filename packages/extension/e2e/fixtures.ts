@@ -45,6 +45,8 @@ export interface Options {
   extensionBuild: string;
   /** Also loads `e2e/blocker`, an extension whose iframe blocks `chrome.debugger.attach` (271 D1). */
   blocker: boolean;
+  /** Launches Chromium with `--force-device-scale-factor` and no viewport emulation, as on a Retina screen. */
+  screenScale: number | undefined;
 }
 
 /** The live runner's build beside an e2e build: `chrome-mv3-e2e` → `chrome-mv3-live`. */
@@ -98,13 +100,23 @@ function okOf(reply: TestReply, label: string) {
 export const test = base.extend<Fixtures & Options>({
   extensionBuild: ['chrome-mv3-e2e', { option: true }],
   blocker: [false, { option: true }],
-  context: async ({ extensionBuild, blocker }, use) => {
+  screenScale: [undefined, { option: true }],
+  context: async ({ extensionBuild, blocker, screenScale }, use) => {
     const build = path.join(OUTPUT, extensionBuild);
     const extensions = blocker ? `${build},${BLOCKER}` : build;
+    const scale =
+      screenScale === undefined
+        ? { args: [], viewport: {} }
+        : { args: [`--force-device-scale-factor=${screenScale}`], viewport: { viewport: null } };
 
     const context = await chromium.launchPersistentContext('', {
       channel: 'chromium',
-      args: [`--disable-extensions-except=${extensions}`, `--load-extension=${extensions}`],
+      args: [
+        `--disable-extensions-except=${extensions}`,
+        `--load-extension=${extensions}`,
+        ...scale.args,
+      ],
+      ...scale.viewport,
     });
 
     await context.route(
@@ -233,24 +245,38 @@ const completedWith = (usage?: ScriptedUsage) => [
 
 const completed = completedWith();
 
+/** One tool call in a scripted step. */
+export interface ScriptedCall {
+  name: string;
+  input: Record<string, unknown>;
+  callID: string;
+}
+
+/** An OpenAI Responses stream that calls several tools in one step, in order. */
+export function callTools(calls: ScriptedCall[]) {
+  const items = calls.flatMap(({ name, input, callID }, index) => {
+    const item = { type: 'function_call', id: `fc-${callID}`, call_id: callID, name };
+
+    return [
+      event({
+        type: 'response.output_item.added',
+        output_index: index,
+        item: { ...item, arguments: '' },
+      }),
+      event({
+        type: 'response.output_item.done',
+        output_index: index,
+        item: { ...item, arguments: JSON.stringify(input), status: 'completed' },
+      }),
+    ];
+  });
+
+  return [created, ...items, ...completed].join('');
+}
+
 /** An OpenAI Responses stream that calls one tool. */
 export function callTool(name: string, input: Record<string, unknown>, callID = 'call_1') {
-  const item = { type: 'function_call', id: `fc-${callID}`, call_id: callID, name };
-
-  return [
-    created,
-    event({
-      type: 'response.output_item.added',
-      output_index: 0,
-      item: { ...item, arguments: '' },
-    }),
-    event({
-      type: 'response.output_item.done',
-      output_index: 0,
-      item: { ...item, arguments: JSON.stringify(input), status: 'completed' },
-    }),
-    ...completed,
-  ].join('');
+  return callTools([{ name, input, callID }]);
 }
 
 /** An OpenAI Responses stream that answers `text`, reporting `usage` when given. */

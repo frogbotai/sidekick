@@ -1,4 +1,4 @@
-import type { Capture, Cdp, CdpEvent, TabInfo, Tabs } from './types';
+import type { Capture, Cdp, CdpEvent, Commit, Size, TabInfo, Tabs } from './types';
 
 const PROTOCOL_VERSION = '1.3';
 
@@ -66,11 +66,11 @@ function base64(buffer: ArrayBuffer) {
   return btoa(binary);
 }
 
-async function captureVisible(windowId: number, scale: number): Promise<Capture> {
+async function captureVisible(windowId: number, size: Size): Promise<Capture> {
   const url = await chrome.tabs.captureVisibleTab(windowId, { format: 'jpeg', quality: QUALITY });
   const bitmap = await createImageBitmap(await (await fetch(url)).blob());
-  const width = Math.max(1, Math.round(bitmap.width * scale));
-  const height = Math.max(1, Math.round(bitmap.height * scale));
+  const width = Math.max(1, Math.round(size.width));
+  const height = Math.max(1, Math.round(size.height));
   const canvas = new OffscreenCanvas(width, height);
   const context = canvas.getContext('2d');
 
@@ -110,6 +110,24 @@ function waitForLoad(tabId: number, timeout: number) {
       () => done(false),
     );
   });
+}
+
+function onCommitted(listener: (commit: Commit) => void) {
+  const main =
+    (sameDocument: boolean) =>
+    ({ tabId, frameId, url }: { tabId: number; frameId: number; url: string }) => {
+      if (frameId === 0) listener({ tabId, url, sameDocument });
+    };
+
+  const stops = [
+    listen(chrome.webNavigation.onCommitted, main(false)),
+    listen(chrome.webNavigation.onHistoryStateUpdated, main(true)),
+    listen(chrome.webNavigation.onReferenceFragmentUpdated, main(true)),
+  ];
+
+  return () => {
+    for (const stop of stops) stop();
+  };
 }
 
 export function chromeTabs(): Tabs {
@@ -154,5 +172,10 @@ export function chromeTabs(): Tabs {
         listener({ id: tabId, sourceTabId }),
       ),
     onGroupRemoved: (listener) => listen(chrome.tabGroups.onRemoved, (group) => listener(group.id)),
+    onCommitted,
+    onNavigationError: (listener) =>
+      listen(chrome.webNavigation.onErrorOccurred, ({ tabId, frameId, error }) => {
+        if (frameId === 0) listener({ tabId, error });
+      }),
   };
 }

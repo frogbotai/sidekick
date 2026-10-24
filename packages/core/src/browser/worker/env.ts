@@ -11,6 +11,8 @@ import type { Cdp, Page, Point, RefInfo, Size, TabInfo, Tabs } from './types';
 export interface ScreenMap {
   offset: Point;
   scale: Point;
+  /** The tab's `documents` count when the capture started; x/y fail `stale_screenshot` once it moves on. */
+  document: number;
 }
 
 export interface BrowserEnv {
@@ -21,6 +23,8 @@ export interface BrowserEnv {
   settler: Settler;
   runs: Runs;
   screens: Map<number, ScreenMap>;
+  /** New-document commits per tab, so a call can tell its page was replaced. */
+  documents: Map<number, number>;
   mac: boolean;
 }
 
@@ -173,18 +177,30 @@ export async function scrollIntoView(act: Act, ref: string) {
   throw new ToolError('not_visible', `${ref} isn’t visible. Take a new snapshot.`);
 }
 
+export function documentOf(env: BrowserEnv, tabId: number) {
+  return env.documents.get(tabId) ?? 0;
+}
+
 export function fromScreenshot(env: BrowserEnv, tabId: number, point: Point): Point {
   const map = env.screens.get(tabId);
 
   if (!map) return point;
 
+  if (map.document < documentOf(env, tabId)) {
+    throw new ToolError(
+      'stale_screenshot',
+      'The page changed since the last screenshot. Take a new one.',
+    );
+  }
+
   return { x: map.offset.x + point.x * map.scale.x, y: map.offset.y + point.y * map.scale.y };
 }
 
-export function screenMap(clip: Point & Size, image: Size): ScreenMap {
+export function screenMap(clip: Point & Size, image: Size, document: number): ScreenMap {
   return {
     offset: { x: clip.x, y: clip.y },
     scale: { x: clip.width / image.width, y: clip.height / image.height },
+    document,
   };
 }
 

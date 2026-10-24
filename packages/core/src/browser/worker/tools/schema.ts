@@ -8,6 +8,11 @@ export const tabId = z
   .nonnegative()
   .describe('The tab, from tabs_list or tabs_open.');
 
+/** One call at a time per tab, so a read after `navigate` sees the new page. */
+export function byTab({ tab_id }: { tab_id: number }) {
+  return `tab:${tab_id}`;
+}
+
 export const ref = z
   .string()
   .regex(/^f\d+e\d+$/)
@@ -28,7 +33,11 @@ export const modifiers = z.array(z.enum(MODIFIERS)).max(4).optional();
 
 export const action = z.object({
   url: z.string(),
-  navigated: z.boolean().describe('The URL changed during the action.'),
+  navigated: z
+    .boolean()
+    .describe(
+      'navigate: a new page loaded (a reload counts). Other actions: the URL changed during the action.',
+    ),
   settled: z.boolean().describe('The page went quiet before the time limit.'),
 });
 

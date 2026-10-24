@@ -2,14 +2,25 @@ import { z } from 'zod';
 
 import { defineTool, ToolError } from '../../../tool/tool';
 import { race } from '../abort';
-import { type Act, type BrowserEnv, enter, inspect, inspectTarget, send, untrusted } from '../env';
+import {
+  type Act,
+  type BrowserEnv,
+  enter,
+  getTab,
+  inspect,
+  inspectTarget,
+  send,
+  untrusted,
+} from '../env';
 import { screenshot } from '../screenshot';
 import type { ScrollEnd, ScrollStart } from '../types';
-import { ref, tabId } from './schema';
+import { byTab, ref, tabId } from './schema';
 
 export const MAX_CHARS = 30_000;
 
 export const MAX_CHARS_CAP = 100_000;
+
+export const MIN_CHARS = 1_000;
 
 async function attachForScroll(act: Act) {
   try {
@@ -59,8 +70,13 @@ export function readTools(env: BrowserEnv) {
       input: z.object({
         tab_id: tabId,
         scope: z.enum(['viewport', 'page']).optional(),
-        ref: ref.optional().describe('Read only this element’s subtree.'),
-        max_chars: z.number().int().min(1_000).max(MAX_CHARS_CAP).optional(),
+        ref: ref.optional().describe('Read only this element’s subtree, not the page.'),
+        max_chars: z
+          .number()
+          .int()
+          .positive()
+          .optional()
+          .describe('At most this many characters, from 1,000 to 100,000; 30,000 when left out.'),
       }),
       output: z.object({
         url: z.string(),
@@ -70,6 +86,7 @@ export function readTools(env: BrowserEnv) {
         truncated: z.boolean(),
       }),
       permission: 'read',
+      lock: byTab,
       execute: async ({ tab_id, scope, ref: subtree, max_chars }, ctx) => {
         const act = await enter(env, ctx, tab_id, 'read');
 
@@ -79,13 +96,15 @@ export function readTools(env: BrowserEnv) {
           env.page.snapshot(tab_id, {
             scope: scope ?? 'viewport',
             ref: subtree,
-            max_chars: max_chars ?? MAX_CHARS,
+            max_chars: Math.min(Math.max(max_chars ?? MAX_CHARS, MIN_CHARS), MAX_CHARS_CAP),
           }),
           act.signal,
         );
 
+        const read = await getTab(env, tab_id, act.signal);
+
         return untrusted({
-          url: act.tab.url,
+          url: read.url,
           title: snapshot.title,
           snapshot: snapshot.text,
           redacted: snapshot.redacted,
@@ -104,11 +123,13 @@ export function readTools(env: BrowserEnv) {
       }),
       output: z.object({ url: z.string(), width: z.number(), height: z.number() }),
       permission: 'read',
+      lock: byTab,
       execute: async ({ tab_id, scale, ref: element }, ctx) => {
         const act = await enter(env, ctx, tab_id, 'read');
         const capture = await screenshot(act, { scale: scale ?? 1, ref: element });
+        const read = await getTab(env, tab_id, act.signal);
 
-        return untrusted({ url: act.tab.url, width: capture.width, height: capture.height }, [
+        return untrusted({ url: read.url, width: capture.width, height: capture.height }, [
           {
             type: 'file',
             uri: `data:${capture.mime};base64,${capture.data}`,
@@ -135,6 +156,7 @@ export function readTools(env: BrowserEnv) {
       }),
       output: z.object({ moved: z.number(), container: z.string(), at_end: z.boolean() }),
       permission: 'read',
+      lock: byTab,
       execute: async ({ tab_id, ref: element, direction, amount }, ctx) => {
         const act = await enter(env, ctx, tab_id, 'read');
 
@@ -160,6 +182,7 @@ export function readTools(env: BrowserEnv) {
       input: z.object({ tab_id: tabId, ref }),
       output: z.object({ in_view: z.boolean(), obscured_by: z.string().optional() }),
       permission: 'read',
+      lock: byTab,
       execute: async ({ tab_id, ref: element }, ctx) => {
         const act = await enter(env, ctx, tab_id, 'read');
 

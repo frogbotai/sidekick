@@ -3,7 +3,14 @@ import { z } from 'zod';
 
 import type { AgentInfo } from '../agent/agent';
 import { BUILTIN_AGENTS } from '../agent/builtin';
-import { fakeCdp, fakePage, fakeTabs, type Log } from '../browser/worker/fakes';
+import {
+  type FakeCdp,
+  fakeCdp,
+  fakePage,
+  fakeTabs,
+  later,
+  type Log,
+} from '../browser/worker/fakes';
 import { OUTSIDE_TAB, START_TAB } from '../browser/worker/harness';
 import { createBrowserRuntime } from '../browser/worker/runtime';
 import { createBrowserWorker } from '../browser/worker/serve';
@@ -120,6 +127,7 @@ function realEngine(emit: Server<typeof sidekickProtocol>['emit']) {
 interface Boot {
   asserts: { request: PermissionRequest; scope: PermissionScope }[];
   runs: ReturnType<typeof createBrowserRuntime>['env']['runs'];
+  cdp: FakeCdp;
 }
 
 function boot(
@@ -129,12 +137,8 @@ function boot(
   engine?: (emit: Server<typeof sidekickProtocol>['emit']) => BridgePermission,
 ): Boot {
   const log: Log = [];
-  const runtime = createBrowserRuntime({
-    cdp: fakeCdp(log),
-    page: fakePage(log, page),
-    tabs,
-    mac: false,
-  });
+  const cdp = fakeCdp(log);
+  const runtime = createBrowserRuntime({ cdp, page: fakePage(log, page), tabs, mac: false });
 
   const browser = createBrowserWorker(runtime);
   const registry = createRegistry<ToolDefinition>('tools');
@@ -176,7 +180,7 @@ function boot(
 
   browser.connect(server);
 
-  return { asserts, runs: runtime.env.runs };
+  return { asserts, runs: runtime.env.runs, cdp };
 }
 
 async function panel(windowId = 1) {
@@ -557,5 +561,149 @@ describe('the worker tool bridge', () => {
     await client.call('permission.reply', { id: asked[0]?.id ?? '', reply: 'once' });
 
     expect((await failure(call)).code).toBe('navigated');
+  });
+});
+
+async function settleAll<T>(promises: Promise<T>[]) {
+  let done = false;
+  const all = Promise.all(promises).finally(() => (done = true));
+
+  for (let step = 0; step < 200 && !done; step++) await vi.advanceTimersByTimeAsync(100);
+
+  return all;
+}
+
+const OUTLINE = { title: 'Example', text: '- button "Go" [f0e1]', redacted: 0, truncated: false };
+
+describe('one call at a time per tab (331 D1)', () => {
+  it('runs navigate, then snapshot, on one tab sent together, and the snapshot shows the new page', async () => {
+    const tabs = fakeTabs([], [START_TAB, OUTSIDE_TAB]);
+    const read: string[] = [];
+
+    boot(tabs, undefined, {
+      snapshot: later(() => {
+        read.push(tabs.tabs.get(START_TAB.id)?.url ?? '');
+
+        return OUTLINE;
+      }),
+    });
+
+    const { tool } = await panel();
+    const url = 'https://example.com/add-site';
+
+    tabs.navigation = 'none';
+
+    const navigate = tool('navigate').execute({ tab_id: START_TAB.id, url }, context('c-nav'));
+    const snapshot = tool('snapshot').execute({ tab_id: START_TAB.id }, context('c-snap'));
+
+    await vi.advanceTimersByTimeAsync(1_000);
+
+    expect(read).toEqual([]);
+
+    tabs.commit({ tabId: START_TAB.id });
+
+    const [navigated, snapped] = await settleAll([navigate, snapshot]);
+
+    expect(navigated.output).toEqual({ url, navigated: true, settled: true });
+    expect(snapped.output).toMatchObject({ url });
+    expect(read).toEqual([url]);
+  });
+
+  it('runs a snapshot on another tab at once', async () => {
+    const tabs = fakeTabs([], [START_TAB, OUTSIDE_TAB]);
+
+    boot(tabs);
+
+    const { tool } = await panel();
+
+    await tool('tabs_list').execute({}, context('c-list'));
+    tabs.createTab({ id: 5, sourceTabId: START_TAB.id, url: 'https://example.com/other' });
+    await flush();
+
+    tabs.navigation = 'none';
+
+    let navigated = false;
+    const navigate = tool('navigate')
+      .execute({ tab_id: START_TAB.id, url: 'https://example.com/next' }, context('c-nav'))
+      .finally(() => (navigated = true));
+
+    const other = await tool('snapshot').execute({ tab_id: 5 }, context('c-other'));
+
+    expect(other.output).toMatchObject({ url: 'https://example.com/other' });
+    expect(navigated).toBe(false);
+
+    tabs.commit({ tabId: START_TAB.id });
+    await settleAll([navigate]);
+  });
+
+  it('credits a navigation to the click that caused it, not the fill after it', async () => {
+    const tabs = fakeTabs([], [START_TAB, OUTSIDE_TAB]);
+    const next = 'https://example.com/next';
+    const { cdp } = boot(tabs, undefined, { readValue: later(() => 'hi') });
+
+    cdp.replies.set('Input.dispatchMouseEvent', (params) => {
+      const tab = tabs.tabs.get(START_TAB.id);
+
+      if (params.type === 'mouseReleased' && tab) {
+        tab.url = next;
+        tabs.commit({ tabId: START_TAB.id });
+      }
+
+      return {};
+    });
+
+    const { tool } = await panel();
+
+    await tool('tabs_list').execute({}, context('c-list'));
+
+    const [clicked, filled] = await settleAll([
+      tool('click').execute({ tab_id: START_TAB.id, ref: 'f0e1' }, context('c-click')),
+      tool('fill').execute({ tab_id: START_TAB.id, ref: 'f0e2', text: 'hi' }, context('c-fill')),
+    ]);
+
+    expect(clicked.output).toEqual({ url: next, navigated: true, settled: true });
+    expect(filled.output).toEqual({ url: next, navigated: false, settled: true });
+  });
+
+  it('drops a waiting call aborted before its turn, and a failing call frees the tab', async () => {
+    const tabs = fakeTabs([], [START_TAB, OUTSIDE_TAB]);
+    let reads = 0;
+
+    boot(tabs, undefined, {
+      snapshot: later(() => {
+        reads++;
+
+        if (reads === 1) throw new ToolError('unsupported_page', 'No.');
+
+        return OUTLINE;
+      }),
+    });
+
+    const { tool } = await panel();
+
+    tabs.navigation = 'none';
+
+    const navigate = tool('navigate').execute(
+      { tab_id: START_TAB.id, go: 'reload' },
+      context('c-nav'),
+    );
+
+    const waiting = context('c-wait');
+    const aborted = failure(tool('snapshot').execute({ tab_id: START_TAB.id }, waiting));
+    const failing = failure(tool('snapshot').execute({ tab_id: START_TAB.id }, context('c-fail')));
+    const after = tool('snapshot').execute({ tab_id: START_TAB.id }, context('c-after'));
+
+    await flush();
+    waiting.controller.abort();
+
+    expect((await aborted).code).toBe('cancelled');
+
+    tabs.commit({ tabId: START_TAB.id });
+
+    const [, read] = await settleAll([navigate, after]);
+
+    expect((await failing).code).toBe('unsupported_page');
+    expect(read.output).toMatchObject({ url: START_TAB.url });
+    expect(reads).toBe(2);
   });
 });

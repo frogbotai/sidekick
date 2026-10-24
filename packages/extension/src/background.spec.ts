@@ -44,7 +44,12 @@ function start() {
       detach: () => Promise.resolve(),
     },
     tabs: { query },
-    webNavigation: { onCreatedNavigationTarget: event() },
+    webNavigation: {
+      onCreatedNavigationTarget: event(),
+      onCommitted: event(),
+      onHistoryStateUpdated: event(),
+      onReferenceFragmentUpdated: event(),
+    },
     tabGroups: { onRemoved: event() },
     scripting: { executeScript },
   });

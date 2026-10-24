@@ -3,7 +3,7 @@ import path from 'node:path';
 
 import type { Page } from '@playwright/test';
 
-import { callTool, expect, reply, scriptOpenAI, test } from './fixtures';
+import { callTool, callTools, expect, reply, scriptOpenAI, test } from './fixtures';
 
 const SOURCE = path.resolve(import.meta.dirname, '../src');
 
@@ -163,6 +163,48 @@ test('snapshot and screenshot cards: the page title, the screenshot as an image,
   await expect(panel.getByText('Looked at the rows.')).toBeVisible();
 
   expect(await toolView(panel)).toEqual(live);
+});
+
+test('navigate and snapshot sent together on one tab: the snapshot reads the new page (331)', async ({
+  context,
+  openPanel,
+  origin,
+}) => {
+  const tabOf = (body: string | undefined) => {
+    const found = /tab_id\\*"\s*:\s*(\d+)/.exec(body ?? '')?.[1];
+
+    if (!found) throw new Error(`No tab_id in ${body}`);
+
+    return Number(found);
+  };
+
+  const { bodies } = await scriptOpenAI(context, [
+    callTool('tabs_open', { url: `${origin()}/rows.html` }, 'call_open'),
+    () => {
+      const tab_id = tabOf(bodies.at(-1));
+
+      return Promise.resolve(
+        callTools([
+          { name: 'navigate', input: { tab_id, url: `${origin()}/color.html` }, callID: 'call_go' },
+          { name: 'snapshot', input: { tab_id }, callID: 'call_snap' },
+        ]),
+      );
+    },
+    reply('Read the new page.'),
+  ]);
+
+  const panel = await openPanel();
+
+  await connect(panel);
+  await send(panel, 'Open rows, then go to the color page and read it');
+  await expect(panel.getByText('Read the new page.')).toBeVisible({ timeout: 20_000 });
+
+  await expect(panel.locator('[data-part="tool"] .fb-tool-card__title')).toContainText([
+    'Read Color',
+  ]);
+
+  expect(bodies.at(-1)).toContain('color.html');
+  expect(bodies.at(-1)).not.toContain('Five thousand rows');
 });
 
 function watchQueued(panel: Page) {

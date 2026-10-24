@@ -47,6 +47,13 @@ export interface Capture extends Size {
   mime: string;
 }
 
+/** A tab's main frame committed: a new document, or a same-document `#` or history step. */
+export interface Commit {
+  tabId: number;
+  url: string;
+  sameDocument: boolean;
+}
+
 /** The parts of `chrome.tabs`, `tabGroups`, `windows` and `webNavigation` the worker uses. */
 export interface Tabs {
   get(tabId: number): Promise<TabInfo>;
@@ -62,10 +69,15 @@ export interface Tabs {
   close(tabId: number): Promise<void>;
   frames(tabId: number): Promise<FrameInfo[]>;
   waitForLoad(tabId: number, timeout: number): Promise<boolean>;
-  captureVisible(windowId: number, scale: number): Promise<Capture>;
+  /** The window's visible tab as a JPEG resized to `size`. */
+  captureVisible(windowId: number, size: Size): Promise<Capture>;
   /** A page in `sourceTabId` opened tab `id` (a link with a target, `window.open`); not a tab the user opened. */
   onOpened(listener: (tab: { id: number; sourceTabId: number }) => void): () => void;
   onGroupRemoved(listener: (groupId: number) => void): () => void;
+  /** Main-frame commits only (`webNavigation`, `frameId` 0). */
+  onCommitted(listener: (commit: Commit) => void): () => void;
+  /** Main-frame navigation errors only, with Chrome's text, like `net::ERR_NAME_NOT_RESOLVED`. */
+  onNavigationError(listener: (failure: { tabId: number; error: string }) => void): () => void;
 }
 
 /** A ref's frame and what it needs before acting. */

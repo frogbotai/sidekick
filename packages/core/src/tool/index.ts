@@ -7,6 +7,8 @@ export type {
   ToolOutcome,
 } from './bridge';
 export { createToolBridge, createToolCaller, schemaOf } from './bridge';
+export type { KeyedLock, Release } from './lock';
+export { createKeyedLock } from './lock';
 export type { SidekickClient, WorkerToolOptions } from './proxy';
 export {
   NOT_CONNECTED,

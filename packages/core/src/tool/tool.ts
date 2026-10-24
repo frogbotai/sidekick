@@ -58,11 +58,14 @@ export interface ToolDefinition<I extends z.ZodType = z.ZodType, O extends z.Zod
   permission: PermissionAction;
   /** The description one agent sees, when it depends on the caller, as `subagent`'s list of agents. */
   describe?: (agent: AgentInfo) => string;
+  /** The resource a call holds while it runs, as `tab:7`: calls on one key run one at a time, in order. */
+  lock?(input: z.output<I>): string | undefined;
   execute(input: z.output<I>, ctx: ToolContext): Promise<ToolResult<z.input<O>>>;
 }
 
 export const TOOL_ERROR_CODES = [
   'stale_ref',
+  'stale_screenshot',
   'navigated',
   'not_visible',
   'obscured',

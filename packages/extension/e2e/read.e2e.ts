@@ -263,3 +263,71 @@ test('screenshots a background tab in the group, scaled', async ({ context, orig
 
   expect(Math.abs(red - 220) + Math.abs(green - 40) + Math.abs(blue - 40)).toBeLessThanOrEqual(6);
 });
+
+test('navigate waits for a slow page, so the next snapshot reads it (331)', async ({
+  context,
+  origin,
+  sidekick,
+}) => {
+  await context.route('**/slow.html', async (route) => {
+    await new Promise((resolve) => setTimeout(resolve, 1_500));
+
+    await route.fulfill({
+      contentType: 'text/html',
+      body: '<!doctype html><title>Slow</title><button>Slow button</button>',
+    });
+  });
+
+  const page = await context.newPage();
+
+  await page.goto(`${origin()}/tabs.html`);
+
+  const run = await sidekick.start(page);
+  const url = `${origin()}/slow.html`;
+
+  expect(await run.call('navigate', { url })).toEqual({ url, navigated: true, settled: true });
+
+  const read = await run.call<SnapshotOutput>('snapshot');
+
+  expect(read.url).toBe(url);
+  expect(read.title).toBe('Slow');
+  expect(read.snapshot).toContain('"Slow button"');
+
+  expect(await run.call('navigate', { url })).toMatchObject({ url, navigated: true });
+});
+
+test.describe('on a 2× screen', () => {
+  test.use({ screenScale: 2 });
+
+  test('a screenshot’s image is the size it reports, in page pixels (331 D3)', async ({
+    context,
+    origin,
+    sidekick,
+  }) => {
+    const page = await context.newPage();
+
+    await page.goto(`${origin()}/color.html`);
+
+    expect(await page.evaluate(() => window.devicePixelRatio)).toBe(2);
+
+    const run = await sidekick.start(page);
+    const shot = await run.reply('screenshot');
+
+    if ('error' in shot) throw new Error(shot.error.message);
+
+    const image = shot.content?.find((item) => item.type === 'file');
+
+    if (image?.type !== 'file') throw new Error('No image');
+
+    const decoded = await page.evaluate(async (uri) => {
+      const bitmap = await createImageBitmap(await (await fetch(uri)).blob());
+
+      return { width: bitmap.width, height: bitmap.height };
+    }, image.uri);
+
+    const reported = shot.ok as { width: number; height: number };
+
+    expect(decoded).toEqual({ width: reported.width, height: reported.height });
+    expect(reported.width).toBe(await page.evaluate(() => document.documentElement.clientWidth));
+  });
+});
