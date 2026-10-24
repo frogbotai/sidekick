@@ -1,4 +1,12 @@
-import { expect, INDICATOR, isolatedWorld, test } from './fixtures';
+import {
+  expect,
+  INDICATOR,
+  isolatedWorld,
+  refFor,
+  type SidekickRun,
+  type SnapshotOutput,
+  test,
+} from './fixtures';
 
 const RING = `(() => {
   const root = ${INDICATOR};
@@ -69,3 +77,103 @@ for (const reducedMotion of ['no-preference', 'reduce'] as const) {
     }
   });
 }
+
+const OPACITY = `(() => {
+  const overlay = ${INDICATOR}?.querySelector('.overlay');
+
+  return overlay ? getComputedStyle(overlay).opacity : null;
+})()`;
+
+const WATCH = `(() => {
+  const root = ${INDICATOR};
+  const overlay = root.querySelector('.overlay');
+  const watch = { samples: [], removed: 0, frame: 0 };
+
+  new MutationObserver((records) => {
+    for (const record of records) {
+      if ([...record.removedNodes].includes(root.host)) watch.removed += 1;
+    }
+  }).observe(document.documentElement, { childList: true });
+
+  const sample = () => {
+    watch.samples.push({ connected: root.host.isConnected, opacity: getComputedStyle(overlay).opacity });
+    watch.frame = requestAnimationFrame(sample);
+  };
+
+  globalThis.sidekickWatch = watch;
+  sample();
+})()`;
+
+const SAMPLES = `new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => {
+  const { samples, removed, frame } = globalThis.sidekickWatch;
+  cancelAnimationFrame(frame);
+  resolve({ removed, samples });
+})))`;
+
+interface Watch {
+  removed: number;
+  samples: { connected: boolean; opacity: string }[];
+}
+
+async function steadyAcrossScreenshots(
+  evaluate: (expression: string) => Promise<unknown>,
+  run: SidekickRun,
+) {
+  await expect.poll(() => evaluate(OPACITY)).toBe('1');
+  await evaluate(WATCH);
+  await run.call('screenshot');
+  await run.call('screenshot');
+
+  const watch = (await evaluate(SAMPLES)) as Watch;
+  const changed = watch.samples.filter(({ connected, opacity }) => !connected || opacity !== '1');
+
+  expect(watch.removed).toBe(0);
+  expect(watch.samples.length).toBeGreaterThan(1);
+  expect(changed).toEqual([]);
+}
+
+test('a CDP screenshot leaves the indicator on the page, at full opacity', async ({
+  context,
+  extensionId,
+  origin,
+  sidekick,
+}) => {
+  const page = await context.newPage();
+
+  await page.goto(`${origin()}/color.html`);
+
+  const evaluate = await isolatedWorld(context, page, extensionId);
+  const run = await sidekick.start(page);
+
+  await steadyAcrossScreenshots(evaluate, run);
+});
+
+test.describe('attach blocked on the active tab', () => {
+  test.use({ blocker: true });
+
+  test('a captureVisibleTab screenshot leaves the indicator on the page, at full opacity', async ({
+    context,
+    extensionId,
+    origin,
+    sidekick,
+  }) => {
+    const page = await context.newPage();
+
+    await page.goto(`${origin()}/blocked.html`);
+    await expect(page.locator('iframe[title="Blocker frame"]')).toHaveCount(1);
+
+    const evaluate = await isolatedWorld(context, page, extensionId);
+    const run = await sidekick.start(page);
+    const { snapshot } = await run.call<SnapshotOutput>('snapshot');
+
+    await context
+      .serviceWorkers()[0]
+      ?.evaluate(() => chrome.storage.local.set({ stripExtensionFrames: false }));
+
+    expect(await run.fail('click', { ref: refFor(snapshot, 'Blocked button') })).toMatchObject({
+      code: 'attach_blocked',
+    });
+
+    await steadyAcrossScreenshots(evaluate, run);
+  });
+});

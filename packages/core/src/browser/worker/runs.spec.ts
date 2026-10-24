@@ -116,7 +116,16 @@ describe('runs and tab groups (req. 20, 22)', () => {
 });
 
 describe('screenshots (req. 19) and their coordinates (271 D3)', () => {
-  it('captures the viewport through CDP at the asked scale', async () => {
+  it('tells the model the indicator in the image isn’t the page (333 req. 2)', async () => {
+    const { tool } = await setupBrowser();
+    const { description } = tool('screenshot');
+
+    expect(description).toContain('“Stop Sidekick”');
+    expect(description).toContain('isn’t part of the page');
+    expect(description).toContain('never click that button');
+  });
+
+  it('captures the viewport through CDP at the asked scale, leaving the indicator alone', async () => {
     const { tool, ctx, cdp, log } = await setupBrowser();
 
     const result = await drain(tool('screenshot').execute({ tab_id: 1, scale: 0.5 }, ctx));
@@ -132,9 +141,8 @@ describe('screenshots (req. 19) and their coordinates (271 D3)', () => {
       name: 'screenshot',
     });
 
-    const shot = log.indexOf('cdp.Page.captureScreenshot');
-
-    expect([log[shot - 1], log[shot + 1]]).toEqual(['page.indicator', 'page.indicator']);
+    expect(log).toContain('cdp.Page.captureScreenshot');
+    expect(log).not.toContain('page.indicator');
     expect(log).not.toContain('cdp.Emulation.setFocusEmulationEnabled');
   });
 
@@ -196,7 +204,7 @@ describe('screenshots (req. 19) and their coordinates (271 D3)', () => {
   });
 
   it('uses captureVisibleTab when attach is blocked on the active tab, sized to the viewport × scale', async () => {
-    const { tool, ctx, cdp, runtime, tabs } = await setupBrowser();
+    const { tool, ctx, cdp, runtime, tabs, log } = await setupBrowser();
     const sizes: unknown[] = [];
     const capture = tabs.captureVisible;
 
@@ -212,6 +220,7 @@ describe('screenshots (req. 19) and their coordinates (271 D3)', () => {
 
     expect(sizes).toEqual([{ width: 400, height: 300 }]);
     expect(result.output).toEqual({ url: 'https://example.com/', width: 400, height: 300 });
+    expect(log).not.toContain('page.indicator');
 
     expect(runtime.env.screens.get(1)).toEqual({
       offset: { x: 0, y: 0 },

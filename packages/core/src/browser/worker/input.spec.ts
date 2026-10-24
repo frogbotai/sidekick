@@ -488,3 +488,77 @@ describe('targets in progress (315 D2)', () => {
     expect(point.ctx.reports).toEqual([]);
   });
 });
+
+describe('Sidekick’s Stop button (333 req. 3)', () => {
+  const STOP = { x: 400, y: 580 };
+
+  const onStop = later(
+    (_tabId: number, point: { x: number; y: number }) => point.x === STOP.x && point.y === STOP.y,
+  );
+
+  it('refuses click, hover and either end of a drag at Stop’s x/y, and sends no input', async () => {
+    for (const [name, input] of [
+      ['click', STOP],
+      ['hover', STOP],
+      ['drag', { from: STOP, to: { x: 10, y: 10 } }],
+      ['drag', { from: { x: 10, y: 10 }, to: STOP }],
+    ] as const) {
+      const { tool, ctx, cdp } = await setupBrowser({ page: { stopAt: onStop } });
+      const error = await failure(tool(name).execute({ tab_id: 1, ...input }, ctx));
+
+      expect({ name, input, code: codeOf(error) }).toEqual({ name, input, code: 'invalid_target' });
+
+      expect((error as Error).message).toBe(
+        'That point is Sidekick’s Stop button, not the page. Pick a point on the page.',
+      );
+
+      expect(inputs(cdp.sent)).toEqual([]);
+    }
+  });
+
+  it('asks after mapping the screenshot point, and lets a point beside Stop through', async () => {
+    const { tool, ctx, cdp, log } = await setupBrowser({ page: { stopAt: onStop } });
+
+    await drain(tool('click').execute({ tab_id: 1, x: STOP.x, y: STOP.y - 1 }, ctx));
+
+    expect(log.indexOf('page.stopAt')).toBeGreaterThan(log.indexOf('cdp.attach'));
+    expect(log.indexOf('page.stopAt')).toBeLessThan(log.indexOf('cdp.Input.dispatchMouseEvent'));
+    expect(inputs(cdp.sent).length).toBeGreaterThan(0);
+  });
+
+  it('maps a scaled screenshot point before asking', async () => {
+    const asked: unknown[] = [];
+
+    const { tool, ctx } = await setupBrowser({
+      page: {
+        stopAt: later((_tabId: number, point: { x: number; y: number }) => {
+          asked.push(point);
+
+          return false;
+        }),
+      },
+    });
+
+    await drain(tool('screenshot').execute({ tab_id: 1, scale: 0.5 }, ctx));
+    await drain(tool('click').execute({ tab_id: 1, x: 100, y: 50 }, ctx));
+
+    expect(asked).toEqual([{ x: 200, y: 100 }]);
+  });
+
+  it('treats a frame that can’t answer as no Stop, and never asks for a ref', async () => {
+    const failing = await setupBrowser({
+      page: { stopAt: () => Promise.reject(new Error('No receiving end')) },
+    });
+
+    await drain(failing.tool('click').execute({ tab_id: 1, ...STOP }, failing.ctx));
+
+    expect(inputs(failing.cdp.sent).length).toBeGreaterThan(0);
+
+    const { tool, ctx, log } = await setupBrowser({ page: { stopAt: onStop } });
+
+    await drain(tool('click').execute({ tab_id: 1, ref: 'f0e1' }, ctx));
+    await drain(tool('drag').execute({ tab_id: 1, from: 'f0e1', to: 'f0e2' }, ctx));
+
+    expect(log).not.toContain('page.stopAt');
+  });
+});

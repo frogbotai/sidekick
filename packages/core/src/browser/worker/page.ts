@@ -428,5 +428,6 @@ export function chromePage({ tabs, inject, refs = memoryRefStore() }: ChromePage
     indicator: async (tabId, state) => {
       await call(tabId, 0, 'page.indicator', state);
     },
+    stopAt: (tabId, point) => call(tabId, 0, 'page.stopAt', { point }),
   };
 }

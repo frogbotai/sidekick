@@ -273,6 +273,7 @@ export const frameProtocol = defineProtocol({
       input: z.object({ visible: z.optional(z.boolean()), cursor: z.optional(point) }),
       output: outcome(z.null()),
     },
+    'page.stopAt': { input: z.object({ point }), output: outcome(z.boolean()) },
   },
 });
 

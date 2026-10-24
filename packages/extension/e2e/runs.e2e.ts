@@ -195,3 +195,78 @@ test('the indicator ignores a synthetic Stop and honours a trusted one', async (
   await expect.poll(() => evaluate(`Boolean(${STOP_BUTTON})`)).toBe(false);
   expect(await run.fail('snapshot')).toMatchObject({ code: 'stopped' });
 });
+
+test('x/y on the Stop button fail invalid_target and send nothing; a point beside it works (333 req. 3)', async ({
+  context,
+  extensionId,
+  origin,
+  sidekick,
+}) => {
+  const page = await context.newPage();
+
+  await page.goto(`${origin()}/color.html`);
+
+  expect(await page.evaluate(() => window.devicePixelRatio)).toBe(1);
+
+  const evaluate = await isolatedWorld(context, page, extensionId);
+  const run = await sidekick.start(page);
+
+  await expect.poll(() => evaluate(`Boolean(${STOP_BUTTON})`)).toBe(true);
+  await run.call('screenshot');
+
+  let height = 0;
+
+  await expect
+    .poll(
+      async () => {
+        const previous = height;
+
+        height = await page.evaluate(() => innerHeight);
+
+        return height === previous;
+      },
+      { message: 'the debugging bar has finished shrinking the viewport', intervals: [250] },
+    )
+    .toBe(true);
+
+  await run.call('screenshot');
+
+  const stop = (await evaluate(
+    `${STOP_BUTTON}.getBoundingClientRect().toJSON()`,
+  )) as DOMRectReadOnly;
+
+  const centre = {
+    x: Math.round(stop.x + stop.width / 2),
+    y: Math.round(stop.y + stop.height / 2),
+  };
+
+  await page.evaluate(() => {
+    for (const type of ['pointerdown', 'pointermove']) {
+      addEventListener(type, () => window.log.push(type), true);
+    }
+  });
+
+  for (const [tool, input] of [
+    ['click', centre],
+    ['hover', centre],
+    ['drag', { from: centre, to: { x: 10, y: 10 } }],
+    ['drag', { from: { x: 10, y: 10 }, to: centre }],
+  ] as const) {
+    expect({ tool, input, error: await run.fail(tool, input) }).toMatchObject({
+      tool,
+      input,
+      error: {
+        code: 'invalid_target',
+        message: 'That point is Sidekick’s Stop button, not the page. Pick a point on the page.',
+      },
+    });
+  }
+
+  expect(await sidekick.runs()).toContainEqual({ runId: run.runId, groupId: run.groupId });
+  expect(await page.evaluate(() => window.log)).toEqual([]);
+
+  await run.call<ActionOutput>('click', { x: centre.x, y: Math.floor(stop.top) - 1 });
+
+  expect(await page.evaluate(() => window.log)).toContain('pointerdown');
+  expect(await sidekick.runs()).toContainEqual({ runId: run.runId, groupId: run.groupId });
+});

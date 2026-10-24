@@ -173,4 +173,6 @@ export interface Page {
     input: { reported: string[]; surplus: number },
   ): Promise<string[]>;
   indicator(tabId: number, state: { visible?: boolean; cursor?: Point }): Promise<void>;
+  /** Whether a top-level viewport point is on Sidekick's Stop button. */
+  stopAt(tabId: number, point: Point): Promise<boolean>;
 }

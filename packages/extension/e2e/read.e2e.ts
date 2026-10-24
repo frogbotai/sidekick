@@ -297,8 +297,13 @@ test('screenshots a background tab in the group, scaled', async ({ context, orig
   }, image.uri);
 
   const [red = 0, green = 0, blue = 0] = pixel;
+  const tinted = (page: number, tint: number) => page * 0.75 + tint * 0.25;
 
-  expect(Math.abs(red - 220) + Math.abs(green - 40) + Math.abs(blue - 40)).toBeLessThanOrEqual(6);
+  expect(
+    Math.abs(red - tinted(220, 16)) +
+      Math.abs(green - tinted(40, 24)) +
+      Math.abs(blue - tinted(40, 40)),
+  ).toBeLessThanOrEqual(10);
 });
 
 test('navigate waits for a slow page, so the next snapshot reads it (331)', async ({

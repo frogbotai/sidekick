@@ -115,7 +115,7 @@ export function readTools(env: BrowserEnv) {
     defineTool({
       id: 'screenshot',
       description:
-        'Capture the visible part of a tab, or one element. click, hover and drag accept x and y in this image’s pixels.',
+        'Capture the visible part of a tab, or one element. click, hover and drag accept x and y in this image’s pixels. While Sidekick runs, the image also shows Sidekick’s own indicator, which isn’t part of the page: a dim tint with a coloured glow at the edges, a green arrow where the pointer last was, and a red “Stop Sidekick” button at the bottom centre; never click that button.',
       input: z.object({
         tab_id: tabId,
         scale: z.number().min(0.1).max(1).optional(),

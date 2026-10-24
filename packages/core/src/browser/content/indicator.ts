@@ -44,6 +44,8 @@ function sheetOf(css: string) {
 export interface Indicator {
   set(state: { visible?: boolean; cursor?: Point }): void;
   visible(): boolean;
+  /** Whether a viewport point is on the Stop button, edges included, while it's shown. */
+  covers(point: Point): boolean;
 }
 
 /**
@@ -105,5 +107,12 @@ export function createIndicator(onStop: () => void): Indicator {
       if (point) cursor.style.transform = `translate(${point.x - 3}px, ${point.y - 2}px)`;
     },
     visible: () => shown && host.isConnected,
+    covers: ({ x, y }) => {
+      if (!shown || !host.isConnected) return false;
+
+      const rect = stop.getBoundingClientRect();
+
+      return x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom;
+    },
   };
 }

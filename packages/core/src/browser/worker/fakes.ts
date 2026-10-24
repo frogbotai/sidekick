@@ -210,6 +210,7 @@ export function fakePage(log: Log, overrides: Partial<Page> = {}): Page {
     iframes: later(() => []),
     strip: later(() => []),
     indicator: later(() => undefined),
+    stopAt: later(() => false),
     ...overrides,
   };
 

@@ -11,6 +11,7 @@ import {
   focusedField,
   fromScreenshot,
   inspectTarget,
+  offStop,
   recheck,
   report,
   scrollIntoView,
@@ -94,9 +95,9 @@ async function check(act: Act, element: string, checked: boolean) {
   return untrusted({ ...(await finish(act, settled)), checked, changed: true });
 }
 
-function endpoint(act: Act, target: z.infer<typeof end>): () => Promise<Point> {
+async function endpoint(act: Act, target: z.infer<typeof end>): Promise<() => Promise<Point>> {
   if (typeof target !== 'string') {
-    const point = fromScreenshot(act.env, act.tabId, target);
+    const point = await offStop(act, fromScreenshot(act.env, act.tabId, target));
 
     return () => Promise.resolve(point);
   }
@@ -240,7 +241,7 @@ export function inputTools(env: BrowserEnv) {
       execute: async ({ tab_id, from, to }, ctx) => {
         const act = await enter(env, ctx, tab_id, 'input');
         const start = await aim(act, typeof from === 'string' ? { ref: from } : from);
-        const target = endpoint(act, to);
+        const target = await endpoint(act, to);
 
         return settleAfter(act, () => drag(act, start, target));
       },

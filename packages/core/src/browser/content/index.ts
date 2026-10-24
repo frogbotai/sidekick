@@ -168,6 +168,7 @@ export function createContent({
 
         return null;
       }),
+    'page.stopAt': ({ point }) => guard(() => top && indicator?.covers(point) === true),
   };
 
   return { handlers, indicator: () => indicator };

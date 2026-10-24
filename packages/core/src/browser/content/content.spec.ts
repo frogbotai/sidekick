@@ -424,4 +424,38 @@ describe('indicator', () => {
     expect(stop?.textContent).toBe('Stop Sidekick');
     expect(worker.stop).not.toHaveBeenCalled();
   });
+
+  it('says whether a point is on Stop, edges included, only while it shows (333 req. 3)', async () => {
+    const { handlers } = setup();
+
+    unwrap(await handlers['page.indicator']({ visible: true }));
+
+    const stop = closedRoots.get(hostOf())?.querySelector('.stop');
+
+    vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(function (
+      this: Element,
+    ) {
+      return this === stop ? new DOMRect(340, 550, 120, 32) : new DOMRect();
+    });
+
+    const at = async (x: number, y: number) =>
+      unwrap(await handlers['page.stopAt']({ point: { x, y } }));
+
+    expect(await at(400, 566)).toBe(true);
+    expect(await at(340, 550)).toBe(true);
+    expect(await at(460, 582)).toBe(true);
+    expect(await at(400, 549)).toBe(false);
+    expect(await at(339, 566)).toBe(false);
+    expect(await at(400, 583)).toBe(false);
+
+    unwrap(await handlers['page.indicator']({ visible: false }));
+
+    expect(await at(400, 566)).toBe(false);
+  });
+
+  it('says no Stop before the indicator ever shows', async () => {
+    const { handlers } = setup();
+
+    expect(unwrap(await handlers['page.stopAt']({ point: { x: 0, y: 0 } }))).toBe(false);
+  });
 });

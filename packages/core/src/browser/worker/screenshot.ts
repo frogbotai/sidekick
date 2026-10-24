@@ -20,10 +20,6 @@ const metrics = z.object({
 
 const shot = z.object({ data: z.string() });
 
-async function hideIndicator(act: Act, hidden: boolean) {
-  await act.env.page.indicator(act.tabId, { visible: !hidden }).catch(() => undefined);
-}
-
 function sized(size: Size, scale: number): Size {
   return {
     width: Math.max(1, Math.round(size.width * scale)),
@@ -34,22 +30,16 @@ function sized(size: Size, scale: number): Size {
 async function visibleTab(act: Act, scale: number, document: number): Promise<Capture> {
   const viewport = await race(act.env.page.viewport(act.tabId), act.signal);
 
-  await hideIndicator(act, true);
+  const capture = await race(
+    act.env.tabs.captureVisible(act.tab.windowId, sized(viewport, scale)),
+    act.signal,
+  );
 
-  try {
-    const capture = await race(
-      act.env.tabs.captureVisible(act.tab.windowId, sized(viewport, scale)),
-      act.signal,
-    );
+  const image = jpegSize(capture.data) ?? capture;
 
-    const image = jpegSize(capture.data) ?? capture;
+  act.env.screens.set(act.tabId, screenMap({ x: 0, y: 0, ...viewport }, image, document));
 
-    act.env.screens.set(act.tabId, screenMap({ x: 0, y: 0, ...viewport }, image, document));
-
-    return { ...capture, width: image.width, height: image.height };
-  } finally {
-    await hideIndicator(act, false);
-  }
+  return { ...capture, width: image.width, height: image.height };
 }
 
 async function attached(act: Act) {
@@ -94,29 +84,20 @@ export async function screenshot(
 
   if (!act.tab.active) await send(act, 'Emulation.setFocusEmulationEnabled', { enabled: true });
 
-  await hideIndicator(act, true);
+  const result = await send(act, 'Page.captureScreenshot', {
+    format: 'jpeg',
+    quality: QUALITY,
+    captureBeyondViewport: false,
+    clip: {
+      x: view.pageX + area.x,
+      y: view.pageY + area.y,
+      width: area.width,
+      height: area.height,
+      scale: scale / ratio,
+    },
+  });
 
-  let data: string;
-
-  try {
-    const result = await send(act, 'Page.captureScreenshot', {
-      format: 'jpeg',
-      quality: QUALITY,
-      captureBeyondViewport: false,
-      clip: {
-        x: view.pageX + area.x,
-        y: view.pageY + area.y,
-        width: area.width,
-        height: area.height,
-        scale: scale / ratio,
-      },
-    });
-
-    data = shot.parse(result).data;
-  } finally {
-    await hideIndicator(act, false);
-  }
-
+  const { data } = shot.parse(result);
   const image = jpegSize(data) ?? sized(area, scale);
 
   act.env.screens.set(act.tabId, screenMap(area, image, document));

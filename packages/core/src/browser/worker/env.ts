@@ -255,7 +255,27 @@ export async function aim(
   await recheck(act);
   await act.env.sessions.ensure(act.tabId, act.signal);
 
-  return fromScreenshot(act.env, act.tabId, { x: input.x, y: input.y });
+  return offStop(act, fromScreenshot(act.env, act.tabId, { x: input.x, y: input.y }));
+}
+
+/** Refuses a screenshot point on Sidekick's Stop button; a frame that can't answer has no Stop. */
+export async function offStop(act: Act, point: Point): Promise<Point> {
+  const onStop = await race(act.env.page.stopAt(act.tabId, point), act.signal).catch(
+    (error: unknown) => {
+      if (act.signal.aborted) throw error;
+
+      return false;
+    },
+  );
+
+  if (onStop) {
+    throw new ToolError(
+      'invalid_target',
+      'That point is Sidekick’s Stop button, not the page. Pick a point on the page.',
+    );
+  }
+
+  return point;
 }
 
 export async function cursor(act: Act, point: Point) {
