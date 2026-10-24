@@ -4,20 +4,16 @@ import { markOwn } from './dom';
 const CSS = `
 :host { all: initial; position: fixed; inset: 0; pointer-events: none; z-index: 2147483647; }
 .overlay { position: fixed; inset: 0; pointer-events: none; opacity: 0; animation: fb-overlay-in 0.8s ease-in-out forwards; }
-:host(.is-leaving) .overlay { animation: fb-overlay-out 0.8s ease-in-out forwards; }
-:host(.is-leaving) .stop { pointer-events: none; opacity: 0; transition: opacity 0.8s ease-in-out; }
 .overlay__tint { position: absolute; inset: 6px; background-color: rgba(16, 24, 40, 0.25); box-shadow: inset 0 0 16px rgba(134, 239, 172, 0.6), inset 0 0 28px rgba(147, 197, 253, 0.4), inset 0 0 40px rgba(216, 180, 254, 0.3); }
 .overlay__frame { position: absolute; inset: 0; overflow: hidden; clip-path: polygon(0% 0%, 0% 6px, calc(100% - 6px) 6px, calc(100% - 6px) calc(100% - 6px), 6px calc(100% - 6px), 6px 6px, 0% 6px, 0% 100%, 100% 100%, 100% 0%); box-shadow: inset 0 0 12px rgba(134, 239, 172, 0.6), inset 0 0 24px rgba(147, 197, 253, 0.4), inset 0 0 36px rgba(216, 180, 254, 0.3); filter: drop-shadow(0 0 12px rgba(134, 239, 172, 0.6)) drop-shadow(0 0 24px rgba(147, 197, 253, 0.4)) drop-shadow(0 0 36px rgba(216, 180, 254, 0.3)); }
 .overlay__gradient { position: absolute; top: -100%; left: -100%; width: 300%; height: 300%; background: conic-gradient(from 0deg at 50% 50%, transparent 0deg, transparent 150deg, #66eb96 180deg, #78b6fc 210deg, #cb9afe 240deg, #f598a2 270deg, #cb9afe 300deg, #78b6fc 330deg, #66eb96 360deg); animation: fb-overlay-rotate 8s linear infinite; filter: drop-shadow(0 0 12px rgba(134, 239, 172, 0.6)) drop-shadow(0 0 24px rgba(147, 197, 253, 0.4)) drop-shadow(0 0 36px rgba(216, 180, 254, 0.3)); }
 @keyframes fb-overlay-rotate { to { transform: rotate(360deg); } }
 @keyframes fb-overlay-in { from { opacity: 0; } to { opacity: 1; } }
-@keyframes fb-overlay-out { from { opacity: 1; } to { opacity: 0; } }
 @media (prefers-reduced-motion: reduce) { .overlay__gradient { animation: none; } }
 .cursor { position: fixed; left: 0; top: 0; width: 22px; height: 22px; transform: translate(-100px, -100px); transition: transform 200ms ease-out; }
 .stop { position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%); pointer-events: auto; font: 600 13px system-ui, sans-serif; color: #fff; background: #b91c1c; border: 0; border-radius: 999px; padding: 8px 16px; cursor: pointer; box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3); }
 `;
 
-const FADE_MS = 800;
 const SVG = 'http://www.w3.org/2000/svg';
 
 function arrow() {
@@ -66,7 +62,6 @@ export function createIndicator(onStop: () => void): Indicator {
   const cursor = document.createElement('div');
   const stop = document.createElement('button');
   let shown = false;
-  let leaving: ReturnType<typeof setTimeout> | undefined;
 
   markOwn(host);
   root.adoptedStyleSheets = [sheetOf(CSS)];
@@ -99,15 +94,12 @@ export function createIndicator(onStop: () => void): Indicator {
     set: ({ visible, cursor: point }) => {
       if (visible === true && !shown) {
         shown = true;
-        clearTimeout(leaving);
-        host.classList.remove('is-leaving');
         document.documentElement.append(host);
         restore.observe(document.documentElement, { childList: true });
       } else if (visible === false && shown) {
         shown = false;
         restore.disconnect();
-        host.classList.add('is-leaving');
-        leaving = setTimeout(() => host.remove(), FADE_MS);
+        host.remove();
       }
 
       if (point) cursor.style.transform = `translate(${point.x - 3}px, ${point.y - 2}px)`;

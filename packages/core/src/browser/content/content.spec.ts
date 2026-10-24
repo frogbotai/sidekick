@@ -401,9 +401,7 @@ describe('redaction', () => {
 
 describe('indicator', () => {
   function hostOf() {
-    const host = [...document.documentElement.children].find(
-      (element) => closedRoots.has(element) && !element.classList.contains('is-leaving'),
-    );
+    const host = [...document.documentElement.children].find((element) => closedRoots.has(element));
 
     if (!host) throw new Error('No indicator');
 
@@ -440,9 +438,7 @@ describe('indicator', () => {
 
     unwrap(await handlers['page.indicator']({ visible: false }));
 
-    expect(host.classList.contains('is-leaving')).toBe(true);
-
-    await vi.waitFor(() => expect(host.isConnected).toBe(false));
+    expect(host.isConnected).toBe(false);
   });
 
   it('frames the page with the old Sidekick overlay: a tint and a turning gradient frame', async () => {
