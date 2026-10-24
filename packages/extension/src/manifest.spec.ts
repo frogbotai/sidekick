@@ -10,9 +10,21 @@ const ROOT = path.resolve(import.meta.dirname, '..');
 
 const STORE_ID = 'kilnglameccalibejghopglodbidhkmj';
 
+const PERMISSIONS = [
+  'sidePanel',
+  'storage',
+  'tabs',
+  'tabGroups',
+  'scripting',
+  'debugger',
+  'webNavigation',
+  'favicon',
+];
+
 let outBase: string;
 let outDir: string;
 let manifest: Record<string, unknown>;
+let devManifest: Record<string, unknown>;
 
 function extensionId(key: string) {
   const hash = createHash('sha256').update(Buffer.from(key, 'base64')).digest('hex');
@@ -36,7 +48,12 @@ beforeAll(async () => {
   await build({ root: ROOT, outDir: outBase });
   outDir = path.join(outBase, 'chrome-mv3');
   manifest = JSON.parse(await readFile(path.join(outDir, 'manifest.json'), 'utf8'));
-}, 120_000);
+  await build({ root: ROOT, outDir: outBase, mode: 'development' });
+
+  devManifest = JSON.parse(
+    await readFile(path.join(outBase, 'chrome-mv3-dev', 'manifest.json'), 'utf8'),
+  );
+}, 180_000);
 
 afterAll(async () => {
   vi.unstubAllEnvs();
@@ -86,16 +103,7 @@ describe('built manifest', () => {
   });
 
   it('asks for exactly the MVP permissions', () => {
-    expect(manifest.permissions).toEqual([
-      'sidePanel',
-      'storage',
-      'tabs',
-      'tabGroups',
-      'scripting',
-      'debugger',
-      'webNavigation',
-      'favicon',
-    ]);
+    expect(manifest.permissions).toEqual(PERMISSIONS);
 
     expect(manifest.host_permissions).toEqual(['<all_urls>']);
     expect(manifest.permissions).not.toContain('cookies');
@@ -136,6 +144,11 @@ describe('built manifest', () => {
   it('has no offscreen permission', () => {
     expect(manifest.permissions).not.toContain('offscreen');
   });
+
+  it('adds only nativeMessaging in a development build, for saving runs (328)', () => {
+    expect(devManifest.permissions).toEqual([...PERMISSIONS, 'nativeMessaging']);
+    expect(devManifest.key).toBe(manifest.key);
+  });
 });
 
 describe('built files', () => {
@@ -158,5 +171,19 @@ describe('built files', () => {
     const source = await readFile(path.join(outDir, 'background.js'), 'utf8');
 
     expect(source).not.toContain('sidekickTest');
+  });
+
+  it('leaves run saving out of production, and keeps it in development (328)', async () => {
+    const bundled = async (dir: string) => {
+      const scripts = (await listFiles(dir)).filter((file) => file.endsWith('.js'));
+      const sources = await Promise.all(
+        scripts.map((file) => readFile(path.join(dir, file), 'utf8')),
+      );
+
+      return sources.some((source) => source.includes('ai.frogbot.sidekick_runs'));
+    };
+
+    expect(await bundled(outDir)).toBe(false);
+    expect(await bundled(path.join(outBase, 'chrome-mv3-dev'))).toBe(true);
   });
 });

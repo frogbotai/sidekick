@@ -187,4 +187,34 @@ describe('createChatAdapter', () => {
 
     expect(await adapter.loadManifest({ signal: new AbortController().signal })).toBe(manifest);
   });
+
+  it('exports a chat with its subagent sessions as <slug>.json', async () => {
+    const fake = fakeEngine();
+    const saved: { name: string; lines: readonly string[] }[] = [];
+
+    fake.sessions.set('ses_1', { ...fake.sessions.get('ses_1')!, title: 'Fix DNS' });
+    fake.sessions.set('ses_c', { ...fake.sessions.get('ses_1')!, id: 'ses_c', parentID: 'ses_1' });
+    fake.sessions.set('ses_2', { ...fake.sessions.get('ses_1')!, id: 'ses_2' });
+
+    const adapter = createChatAdapter({
+      engine: fake.engine,
+      chat: openChat(),
+      manifest,
+      save: (name, lines) => void saved.push({ name, lines }),
+    });
+
+    await adapter.exportChat?.('ses_1');
+
+    const [file] = saved;
+    const parsed = JSON.parse(file?.lines.join('\n') ?? '') as {
+      sidekickExport: number;
+      sessions: { info: { id: string }; events?: unknown }[];
+    };
+
+    expect(file?.name).toBe('fix-dns.json');
+    expect(parsed.sidekickExport).toBe(1);
+    expect(parsed.sessions.map(({ info }) => info.id)).toEqual(['ses_1', 'ses_c']);
+    expect(parsed.sessions[0]).not.toHaveProperty('events');
+    await expect(adapter.exportChat?.('ses_gone')).rejects.toThrow('no longer exists');
+  });
 });

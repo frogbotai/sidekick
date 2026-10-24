@@ -2,7 +2,13 @@ import '@frogbotai/ui/fonts.css';
 import '@frogbotai/ui/styles.css';
 import '../sidepanel/panel.css';
 
-import { connectWorker, sidekickProtocol, theme } from '@frogbotai/sidekick-core';
+import {
+  connectWorker,
+  createSessionStore,
+  openDatabase,
+  sidekickProtocol,
+  theme,
+} from '@frogbotai/sidekick-core';
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 
@@ -12,7 +18,9 @@ const root = document.getElementById('root');
 
 if (!root) throw new Error('Missing #root');
 
-const initialMode = await theme.get();
+const [initialMode, database] = await Promise.all([theme.get(), openDatabase()]);
+
+const sessions = createSessionStore(database);
 
 const worker = connectWorker(sidekickProtocol);
 
@@ -22,6 +30,6 @@ const disconnect = (pairingID: string) => {
 
 createRoot(root).render(
   <StrictMode>
-    <Options initialMode={initialMode} disconnect={disconnect} />
+    <Options initialMode={initialMode} disconnect={disconnect} sessions={sessions} />
   </StrictMode>,
 );

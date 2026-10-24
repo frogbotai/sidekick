@@ -21,6 +21,17 @@ export {
 } from './compaction-prompt';
 export type { Clock, CreateInput, SessionEngine, SessionEngineOptions } from './engine';
 export { createSessionEngine, MAX_STEPS_PROMPT, realClock, STEP_INTERRUPTED } from './engine';
+export type { ExportOptions, ExportReader } from './export';
+export {
+  allFileName,
+  EXPORT_NOTICE,
+  EXPORT_VERSION,
+  exportFileName,
+  exportLines,
+  REDACTED,
+  runFileName,
+  runKey,
+} from './export';
 export type { Admitted, PromptInput, Queued, SessionLocks } from './queue';
 export { lockName, webLocks } from './queue';
 export type { Change, Projection, Reducer, ReducerTarget } from './reducer';

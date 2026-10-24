@@ -19,6 +19,10 @@ const PERMISSIONS = {
   favicon: 'site icons in link cards, from Chrome’s own cache (315 D1)',
 } as const;
 
+const DEV_PERMISSIONS = {
+  nativeMessaging: 'save each run to .idea/runs through the local writer (328)',
+} as const;
+
 const FRAME_SCRIPT = 'frame.js';
 
 const FROGBOT_URL = 'https://app.frogbot.ai';
@@ -35,15 +39,20 @@ const e2e = live || process.env.SIDEKICK_E2E === '1';
 
 const outSuffix = live ? '-live' : e2e ? '-e2e' : '';
 
+const savesRuns = (mode: string) => mode === 'development' && !e2e;
+
 export default defineConfig({
   srcDir: 'src',
   outDirTemplate: `{{browser}}-mv{{manifestVersion}}${outSuffix}{{modeSuffix}}`,
   imports: false,
   modules: ['@wxt-dev/module-react'],
-  vite: () =>
+  vite: ({ mode }) =>
     mergeConfig(
       {
-        define: { 'import.meta.env.SIDEKICK_E2E': JSON.stringify(e2e) },
+        define: {
+          'import.meta.env.SIDEKICK_E2E': JSON.stringify(e2e),
+          'import.meta.env.SIDEKICK_RUNS': JSON.stringify(savesRuns(mode)),
+        },
         build: { cssTarget: `chrome${MINIMUM_CHROME}` },
         resolve: {
           alias: { '@ai-sdk/gateway': path.resolve(import.meta.dirname, 'src/stubs/gateway.ts') },
@@ -51,12 +60,15 @@ export default defineConfig({
       },
       linkedVite(SIDEKICK_ROOT, import.meta.dirname),
     ),
-  manifest: {
+  manifest: ({ mode }) => ({
     name: 'FrogBot Sidekick',
     description: 'Your AI work assistant, right in your browser.',
     key: STORE_KEY,
     minimum_chrome_version: String(MINIMUM_CHROME),
-    permissions: Object.keys(PERMISSIONS),
+    permissions: [
+      ...Object.keys(PERMISSIONS),
+      ...(savesRuns(mode) ? Object.keys(DEV_PERMISSIONS) : []),
+    ],
     host_permissions: ['<all_urls>'],
     externally_connectable: { matches: [`${FROGBOT_URL}/*`] },
     content_scripts: [
@@ -77,7 +89,7 @@ export default defineConfig({
       48: 'icons/icon-48.png',
       128: 'icons/icon-128.png',
     },
-  },
+  }),
   hooks: {
     'config:resolved': (wxt) => {
       Object.assign(wxt.config.imports, { exclude: unimportExclude(SIDEKICK_ROOT) });

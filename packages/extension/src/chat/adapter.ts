@@ -16,6 +16,7 @@ import type {
 } from '@frogbotai/ui/chat';
 import type { UIMessage } from 'ai';
 
+import { type downloadLines, exportChat } from '../session/export';
 import { createSessionTransport, type SessionTransportOptions, type WindowChat } from './transport';
 
 type TurnState = Awaited<ReturnType<NonNullable<ChatPlatformAdapter['loadTurnState']>>>;
@@ -70,6 +71,8 @@ export interface ChatAdapterOptions extends Pick<
   locks?: () => Promise<Set<string>>;
   /** Whether this window runs the session's turn itself. */
   busy?: (sessionID: string) => boolean;
+  /** Saves an export; a Blob download by default. */
+  save?: typeof downloadLines;
 }
 
 function chatDocument(session: SessionInfo): ChatDocument {
@@ -81,7 +84,7 @@ function chatDocument(session: SessionInfo): ChatDocument {
   };
 }
 
-/** `@frogbotai/ui`'s chat over the local engine: list, rename and delete, and no uploads. */
+/** `@frogbotai/ui`'s chat over the local engine: list, rename, export and delete, and no uploads. */
 export function createChatAdapter(options: ChatAdapterOptions): ChatPlatformAdapter {
   const { engine, chat, manifest } = options;
   const locks = options.locks ?? (() => heldLocks());
@@ -147,6 +150,7 @@ export function createChatAdapter(options: ChatAdapterOptions): ChatPlatformAdap
 
       await engine.sessions.delete(String(chatId));
     },
+    exportChat: (chatId) => exportChat(engine, String(chatId), options.save),
     loadTurnState: async (_agent, chatId): Promise<TurnState> =>
       (await locks()).has(lockName(String(chatId))) ? 'running' : 'idle',
   };

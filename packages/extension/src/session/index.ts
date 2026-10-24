@@ -28,6 +28,7 @@ import type { WindowChat } from '../chat/transport';
 import type { SidekickWorker } from '../entrypoints/sidepanel/worker';
 import { createPermissionRequests, type PermissionRequests } from '../permission/requests';
 import { currentCatalog } from '../providers/catalog';
+import { runSaver } from './runs';
 
 const OPEN_CHAT = 'openChat';
 
@@ -137,7 +138,7 @@ export function registerPanelExtensions() {
  * Starts the panel's session engine: built-in agents, modes and commands, the worker's tools as proxies, the
  * worker's permission seam and asks, `subagent` over the engine itself, and the sweep for turns a
  * closed panel left behind. Each message carries the active tab's page, whose site joins the chat's
- * sites; a subagent's messages don't.
+ * sites; a subagent's messages don't. `pnpm dev` builds also save each finished run to `.idea/runs`.
  */
 export async function startSessions(
   worker: SidekickWorker,
@@ -162,8 +163,11 @@ export async function startSessions(
   const prompted = new Set<string>();
   const models = modelSource();
 
+  const store = createSessionStore(await openDatabase(), { relay: broadcastRelay() });
+  const runs = import.meta.env.SIDEKICK_RUNS ? runSaver({ reader: store }) : undefined;
+
   const base = createSessionEngine({
-    store: createSessionStore(await openDatabase(), { relay: broadcastRelay() }),
+    store,
     models,
     tools,
     agents,
@@ -171,6 +175,7 @@ export async function startSessions(
     locks: webLocks(),
     onIdle: (sessionID) => {
       worker.call('run.end', { sessionID, close: false }).catch(() => undefined);
+      runs?.save(sessionID);
     },
   });
 

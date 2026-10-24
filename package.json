@@ -9,7 +9,7 @@
   "scripts": {
     "catalog:snapshot": "node scripts/catalog-snapshot.mjs",
     "check": "node scripts/check.mjs",
-    "dev": "node packages/extension/scripts/linked-cli.ts prepare && pnpm --filter @frogbotai/sidekick-extension dev",
+    "dev": "node packages/extension/scripts/linked-cli.ts prepare && pnpm --filter @frogbotai/sidekick-mcp build && node packages/extension/scripts/runs-host.ts && pnpm --filter @frogbotai/sidekick-extension dev",
     "lint": "eslint . --max-warnings=0 --cache --cache-location node_modules/.cache/eslint",
     "lint:fix": "eslint . --fix --max-warnings=0 --cache --cache-location node_modules/.cache/eslint",
     "oxlint": "oxlint --type-aware",

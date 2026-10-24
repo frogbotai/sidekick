@@ -129,7 +129,8 @@ export function fakeEngine(sessionID = 'ses_1') {
     },
     messages: () => Promise.resolve<SessionMessage[]>([]),
     sessions: {
-      list: () => Promise.resolve([...sessions.values()]),
+      list: ({ parentID } = {}) =>
+        Promise.resolve([...sessions.values()].filter((session) => session.parentID === parentID)),
       get: (id) => Promise.resolve(sessions.get(id)),
       rename: (id, title) => {
         const found = sessions.get(id);

@@ -11,10 +11,12 @@ Sidekick builds against a local FrogBot checkout, never an npm release. By defau
 ```sh
 pnpm install      # links ../frogbot, builds the FrogBot packages Sidekick uses
 pnpm check        # format, eslint, oxlint, typecheck
-pnpm dev          # wxt dev
+pnpm dev          # wxt dev; saves each run to .idea/runs
 pnpm test:unit
 pnpm test:e2e
 ```
+
+`pnpm dev` builds save every finished run, its subagents and event log included, to `.idea/runs/<date>-<title>-<id>.json` in the main checkout (`~/code/frogbot/sidekick`), even from a `sidekick-ticket<n>` worktree, so runs survive removing the extension and a coding agent can read them. On macOS, `pnpm dev` registers the small writer from `@frogbotai/sidekick-mcp` with Chrome; the store, `wxt build` and e2e builds don't save runs. Chats can also be exported from a chat's ⋯ menu, or all at once in Settings → Export.
 
 To use another checkout, set `SIDEKICK_FROGBOT` to its path, or to a ticket key for a FrogBot worktree (`290` means `../frogbot-ticket290`):
 
