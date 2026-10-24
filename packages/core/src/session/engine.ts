@@ -1,11 +1,10 @@
-import type { ModelMessage } from 'ai';
-
 import type { AgentInfo } from '../agent/agent';
 import type { PermissionSeam } from '../permission/engine';
 import { BUILD_MODE, type PermissionMode } from '../permission/modes';
 import { permissionModes } from '../registry';
 import type { Registry } from '../registry/registry';
 import type { ToolDefinition } from '../tool/tool';
+import { markRequest } from './cache';
 import {
   ceiling,
   COMPACTION_DEFAULTS,
@@ -288,9 +287,14 @@ export function createSessionEngine(options: SessionEngineOptions): SessionEngin
         reasoning: model.reasoning,
       });
 
-      const messages: ModelMessage[] = limited
-        ? [...request, { role: 'assistant', content: MAX_STEPS_PROMPT }]
-        : request;
+      const marked = markRequest({
+        route: model.cache,
+        ...(agent.system ? { system: agent.system } : {}),
+        messages: limited
+          ? [...request, { role: 'assistant', content: MAX_STEPS_PROMPT }]
+          : request,
+        sessionID,
+      });
 
       const result = await runStep({
         store,
@@ -299,7 +303,7 @@ export function createSessionEngine(options: SessionEngineOptions): SessionEngin
         messageID,
         agent,
         language: model.language,
-        messages,
+        ...marked,
         tools: offered,
         ...(limited ? { toolChoice: 'none' as const } : {}),
         permission,

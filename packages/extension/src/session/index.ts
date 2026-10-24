@@ -1,6 +1,7 @@
 import {
   agents,
   broadcastRelay,
+  cacheRoute,
   CONNECTED,
   createSessionEngine,
   createSessionStore,
@@ -43,10 +44,14 @@ export function modelSource(): ModelSource {
         (model) => model.providerID === providerID && model.id === modelID,
       );
 
+      const definition = providers.get(providerID);
+      const cache = cacheRoute(definition, listed ?? { id: modelID });
+
       return {
         language,
-        reasoning: reasoningPolicy(providers.get(providerID), listed ?? { id: modelID }),
+        reasoning: reasoningPolicy(definition, listed ?? { id: modelID }),
         ...(listed?.limit ? { limit: listed.limit } : {}),
+        ...(cache ? { cache } : {}),
       };
     },
   };

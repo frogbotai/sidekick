@@ -59,6 +59,7 @@ export const BUILTIN_PROVIDERS: readonly ProviderDefinition[] = [
       name: 'OpenRouter',
       route: '@openrouter/ai-sdk-provider',
       baseURL: 'https://openrouter.ai/api/v1',
+      cache: (model) => (model.id.startsWith('anthropic/') ? 'openai-compatible' : undefined),
     },
     listEndpointTest({ path: '/key', auth: bearer }),
   ),

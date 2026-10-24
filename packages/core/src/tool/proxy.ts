@@ -103,7 +103,7 @@ export async function workerTools(client: SidekickClient, options: WorkerToolOpt
   return listed.map((info) => proxy(client, info, options));
 }
 
-/** Registers the worker's tools in the panel's `tools` registry under the source `worker`. */
+/** Registers the worker's tools in the panel's `tools` registry under the source `worker`, in the previous list's place. */
 export async function registerWorkerTools(
   registry: Pick<Registry<ToolDefinition>, 'register'>,
   client: SidekickClient,
@@ -111,9 +111,13 @@ export async function registerWorkerTools(
 ) {
   const proxies = await workerTools(client, options);
 
-  return registry.register(WORKER_SOURCE, (draft) => {
-    for (const tool of proxies) draft.add(tool);
-  });
+  return registry.register(
+    WORKER_SOURCE,
+    (draft) => {
+      for (const tool of proxies) draft.add(tool);
+    },
+    { replace: true },
+  );
 }
 
 /**

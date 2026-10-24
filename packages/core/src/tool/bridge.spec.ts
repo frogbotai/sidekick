@@ -433,6 +433,35 @@ describe('the worker tool bridge', () => {
     ).toBe('stale_ref');
   });
 
+  it('keeps the worker’s tools in their place when it reconnects', async () => {
+    const tabs = fakeTabs([], [START_TAB, OUTSIDE_TAB]);
+
+    boot(tabs, [slow]);
+
+    const { client } = await panel();
+    const registry = createRegistry<ToolDefinition>('tools');
+    let unregister = await registerWorkerTools(registry, client, { windowId: 1 });
+
+    registry.register('search', (draft) => draft.add({ ...slow, id: 'web_search' }));
+
+    const before = registry.list().map(({ id }) => id);
+
+    client.on(CONNECTED, () => {
+      void registerWorkerTools(registry, client, { windowId: 1 }).then((next) => {
+        unregister();
+        unregister = next;
+      });
+    });
+
+    fake.stopWorker();
+    boot(tabs, [slow]);
+    await vi.advanceTimersByTimeAsync(MIN_BACKOFF);
+    await flush();
+
+    expect(before.at(-1)).toBe('web_search');
+    expect(registry.list().map(({ id }) => id)).toEqual(before);
+  });
+
   it('sends the panel’s web_search assert to the worker’s seam', async () => {
     const { asserts } = boot();
     const { client } = await panel();

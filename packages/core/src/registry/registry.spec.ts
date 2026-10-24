@@ -76,6 +76,60 @@ describe('createRegistry', () => {
     expect(listener).toHaveBeenCalledTimes(1);
   });
 
+  describe('register with replace', () => {
+    const ids = (registry: ReturnType<typeof createRegistry<Item>>) =>
+      registry.list().map(({ id }) => id);
+
+    it('takes the first slot of its source and drops the others', () => {
+      const registry = createRegistry<Item>('test');
+
+      registry.register('worker', (draft) => draft.add(item('a')));
+      registry.register('search', (draft) => draft.add(item('s')));
+      registry.register('worker', (draft) => draft.add(item('b')));
+      registry.register('worker', (draft) => draft.add(item('c')), { replace: true });
+
+      expect(ids(registry)).toEqual(['c', 's']);
+    });
+
+    it('turns the replaced disposers into no-ops', () => {
+      const registry = createRegistry<Item>('test');
+      const listener = vi.fn();
+      const old = registry.register('worker', (draft) => draft.add(item('a')));
+
+      registry.register('search', (draft) => draft.add(item('s')));
+      registry.register('worker', (draft) => draft.add(item('b')), { replace: true });
+      registry.subscribe(listener);
+      old();
+
+      expect(ids(registry)).toEqual(['b', 's']);
+      expect(listener).not.toHaveBeenCalled();
+    });
+
+    it('is removed by its own disposer', () => {
+      const registry = createRegistry<Item>('test');
+
+      registry.register('worker', (draft) => draft.add(item('a')));
+      registry.register('search', (draft) => draft.add(item('s')));
+
+      const dispose = registry.register('worker', (draft) => draft.add(item('b')), {
+        replace: true,
+      });
+
+      dispose();
+
+      expect(ids(registry)).toEqual(['s']);
+    });
+
+    it('appends when its source has no registration yet', () => {
+      const registry = createRegistry<Item>('test');
+
+      registry.register('search', (draft) => draft.add(item('s')));
+      registry.register('worker', (draft) => draft.add(item('a')), { replace: true });
+
+      expect(ids(registry)).toEqual(['s', 'a']);
+    });
+  });
+
   it('skips a throwing transform, with its partial edits, and lists it in errors()', () => {
     const registry = createRegistry<Item>('test');
     const failure = new Error('broken plugin');

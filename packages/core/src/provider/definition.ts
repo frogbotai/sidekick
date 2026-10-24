@@ -76,4 +76,9 @@ export interface ProviderDefinition {
    * models that reject history without it; unset follows the session engine's default.
    */
   reasoning?: (model: Pick<ProviderModel, 'id' | 'family'>) => 'strip' | 'keep' | undefined;
+  /**
+   * Whether an OpenAI-compatible route takes cache markers for this model, such as Claude behind a
+   * proxy. Unset sends none; `@ai-sdk/anthropic` and `@ai-sdk/openai` routes cache without it.
+   */
+  cache?: (model: Pick<ProviderModel, 'id' | 'family'>) => 'openai-compatible' | undefined;
 }

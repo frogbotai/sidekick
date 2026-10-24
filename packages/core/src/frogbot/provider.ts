@@ -163,4 +163,5 @@ export const frogbotProvider: ProviderDefinition = {
   listModels: frogbotModels,
   wrapFetch: omitCredentials,
   middleware: frogbotMiddleware,
+  cache: (model) => (/claude/i.test(model.id) ? 'openai-compatible' : undefined),
 };

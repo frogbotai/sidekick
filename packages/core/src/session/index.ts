@@ -1,3 +1,5 @@
+export type { CacheRoute, MarkedRequest, MarkInput } from './cache';
+export { cacheRoute, markRequest } from './cache';
 export type { CompactionSettings, RequestShape, SizeInput, Split } from './compaction';
 export {
   ceiling,

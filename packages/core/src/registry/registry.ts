@@ -7,6 +7,11 @@ export interface RegistryDraft<T extends { id: string }> {
 
 export type RegistryTransform<T extends { id: string }> = (draft: RegistryDraft<T>) => void;
 
+/** `replace` puts the transform in its source's first slot and drops that source's others, whose disposers become no-ops. */
+export interface RegisterOptions {
+  replace?: boolean;
+}
+
 export interface RegistryError {
   source: string;
   error: unknown;
@@ -14,7 +19,11 @@ export interface RegistryError {
 
 export interface Registry<T extends { id: string }> {
   readonly name: string;
-  register: (source: string, transform: RegistryTransform<T>) => () => void;
+  register: (
+    source: string,
+    transform: RegistryTransform<T>,
+    options?: RegisterOptions,
+  ) => () => void;
   get: (id: string) => T | undefined;
   list: () => T[];
   revision: () => number;
@@ -94,10 +103,24 @@ export function createRegistry<T extends { id: string }>(
 
   return {
     name,
-    register: (source, transform) => {
+    register: (source, transform, { replace = false } = {}) => {
       const key = Symbol(source);
+      const entry = { source, transform };
+      const first = replace
+        ? [...transforms.values()].findIndex((item) => item.source === source)
+        : -1;
 
-      transforms.set(key, { source, transform });
+      if (first < 0) {
+        transforms.set(key, entry);
+      } else {
+        const kept = [...transforms].filter(([, item]) => item.source !== source);
+
+        kept.splice(first, 0, [key, entry]);
+        transforms.clear();
+
+        for (const [slot, item] of kept) transforms.set(slot, item);
+      }
+
       changed();
 
       return () => {

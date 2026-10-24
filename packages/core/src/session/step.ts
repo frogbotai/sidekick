@@ -2,6 +2,7 @@ import {
   type LanguageModel,
   type ModelMessage,
   streamText,
+  type SystemModelMessage,
   tool,
   type ToolChoice,
   type ToolSet,
@@ -47,6 +48,10 @@ export interface StepInput {
   agent: AgentInfo;
   language: LanguageModel;
   messages: ModelMessage[];
+  /** The system prompt as sent, with any cache marker. */
+  system?: string | SystemModelMessage;
+  /** Call-level options, such as OpenAI's prompt cache key. */
+  providerOptions?: SystemModelMessage['providerOptions'];
   tools: readonly ToolDefinition[];
   toolChoice?: ToolChoice<ToolSet>;
   permission: PermissionSeam;
@@ -265,10 +270,11 @@ export async function runStep(input: StepInput): Promise<StepResult> {
   try {
     const result = streamText({
       model: input.language,
-      ...(agent.system ? { system: agent.system } : {}),
+      ...(input.system ? { system: input.system } : {}),
       messages: input.messages,
       tools: toolSet(input.tools),
       ...(input.toolChoice ? { toolChoice: input.toolChoice } : {}),
+      ...(input.providerOptions ? { providerOptions: input.providerOptions } : {}),
       abortSignal: signal,
       maxRetries: 0,
     });
