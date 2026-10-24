@@ -64,6 +64,7 @@
             frame.title = 'runner';
             frame.width = 420;
             frame.height = 80;
+            root.append(frame);
             frame.src = `${other}/runner.html?state=1`;
             frame.addEventListener(
               'load',
@@ -75,7 +76,6 @@
               },
               { once: true },
             );
-            root.append(frame);
           }
         },
       );

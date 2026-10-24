@@ -99,7 +99,7 @@ export function ProvidersScreen({ models }: { models: Models }) {
   const customIDs = new Set(custom.map(({ id }) => id));
 
   return (
-    <section className="sidekick-stack" aria-label="Providers">
+    <div className="sidekick-stack">
       <Alert>
         <AlertDescription>
           Keys stay on this device. They are stored unencrypted in this browser profile and never
@@ -120,6 +120,6 @@ export function ProvidersScreen({ models }: { models: Models }) {
         ))}
       <CustomProviderForm />
       <WebSearchSection keys={keys} />
-    </section>
+    </div>
   );
 }
