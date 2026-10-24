@@ -20,6 +20,7 @@
     "**/.output/*",
     "**/.wxt/*",
     ".frogbot/**",
+    ".idea/**",
     "**/*.tsbuildinfo",
     "**/*.{js,mjs,cjs}"
   ],

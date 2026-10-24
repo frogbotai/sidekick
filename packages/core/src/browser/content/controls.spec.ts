@@ -99,3 +99,34 @@ describe('check state (329 req. 5)', () => {
     });
   });
 });
+
+describe('fill by ref refuses fields that take no text (F-351)', () => {
+  it('points a checkbox or radio to check, and refuses a range or read-only field', async () => {
+    document.body.innerHTML = [
+      '<label><input type="checkbox"> Agree</label>',
+      '<label><input type="radio" name="plan"> Monthly</label>',
+      '<input type="range" aria-label="Volume">',
+      '<input readonly aria-label="Locked" value="x">',
+      '<input aria-label="Name">',
+    ].join('');
+
+    const { handlers, text } = setup();
+    const page = await text();
+    const select = (label: string) => handlers['page.selectContents']({ ref: refOf(page, label) });
+    const refused = async (label: string) => failure(Promise.resolve(select(label)).then(unwrap));
+
+    expect(await refused('Agree')).toMatchObject({
+      code: 'invalid_target',
+      message: expect.stringContaining('is a checkbox, not a text field. Use check'),
+    });
+
+    expect(await refused('Monthly')).toMatchObject({
+      message: expect.stringContaining('is a radio, not a text field'),
+    });
+
+    expect(await refused('Volume')).toMatchObject({ code: 'invalid_target' });
+    expect(await refused('Locked')).toMatchObject({ code: 'invalid_target' });
+
+    unwrap(await select('Name'));
+  });
+});

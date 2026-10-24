@@ -40,6 +40,15 @@ export function focusElement(element: Element) {
 
 /** Playwright's `fill` preparation: select the field's whole contents, so one `insertText` replaces it. */
 export function selectContents(element: Element, ref: string) {
+  if (element instanceof HTMLInputElement && CHECKABLE_INPUTS.has(element.type)) {
+    throw new ToolError(
+      'invalid_target',
+      `${ref} is a ${element.type}, not a text field. Use check to set it.`,
+    );
+  }
+
+  if (isTextField(element) && !isEditable(element)) throw notText(ref);
+
   if (isTextField(element)) {
     element.focus({ preventScroll: true });
     element.select();
@@ -58,6 +67,8 @@ export function selectContents(element: Element, ref: string) {
   selection?.removeAllRanges();
   selection?.addRange(range);
 }
+
+const CHECKABLE_INPUTS = new Set(['checkbox', 'radio']);
 
 const NOT_TEXT = new Set([
   'button',

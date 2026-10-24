@@ -17,6 +17,7 @@ const IGNORES = [
   '**/.output/*',
   '**/.wxt/*',
   '.frogbot/',
+  '.idea/',
 ];
 
 const SPECS = ['**/*.spec.ts', '**/*.spec.tsx'];
