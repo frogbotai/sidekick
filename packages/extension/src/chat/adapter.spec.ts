@@ -168,6 +168,26 @@ describe('createChatAdapter', () => {
     expect(fake.calls).toContain('delete:ses_2');
   });
 
+  it('steers a message into the chat’s turn, with its parts and the picked mode', async () => {
+    const { engine, steers } = fakeEngine();
+    const adapter = createChatAdapter({ engine, chat: openChat(), manifest, mode: () => 'plan' });
+
+    await adapter.steerMessage?.('ses_1', {
+      id: 'msg_s1',
+      role: 'user',
+      parts: [{ type: 'text', text: 'Skip the footer' }],
+    });
+
+    expect(steers).toEqual([
+      {
+        sessionID: 'ses_1',
+        messageID: 'msg_s1',
+        parts: [{ type: 'text', text: 'Skip the footer' }],
+        mode: 'plan',
+      },
+    ]);
+  });
+
   it('loads queued messages beside the stored ones', async () => {
     const fake = fakeEngine();
     const adapter = createChatAdapter({ engine: fake.engine, chat: openChat(), manifest });

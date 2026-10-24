@@ -907,7 +907,7 @@ describe('compaction', () => {
     expect(assistants(failed)[0]?.error?.message).toBe('This chat is full. Start a new one.');
   });
 
-  it('runs engine.compact after the running turn’s idle, and writes nothing on a new chat', async () => {
+  it('runs a mid-turn engine.compact at the boundary, before idle, and writes nothing on a new chat', async () => {
     const hold = gate();
 
     const { engine, session } = await setup({
@@ -939,7 +939,7 @@ describe('compaction', () => {
 
     const messages = await engine.messages(session.id);
 
-    expect(kinds(messages)).toEqual(['user', 'assistant', 'idle:succeeded', 'compaction']);
+    expect(kinds(messages)).toEqual(['user', 'assistant', 'compaction', 'idle:succeeded']);
     expect(compactions(messages)[0]).toMatchObject({ status: 'completed', reason: 'manual' });
 
     const fresh = await engine.create({ model: 'openai/gpt-5' });
@@ -977,5 +977,446 @@ describe('compaction', () => {
       status: 'failed',
       error: { type: 'aborted', message: 'Compaction was interrupted' },
     });
+  });
+});
+
+const users = (messages: SessionMessage[]) =>
+  messages.flatMap((message) =>
+    message.type === 'user'
+      ? [message.parts.map((part) => (part.type === 'text' ? part.text : part.type)).join('')]
+      : [],
+  );
+
+function held(script: LanguageModelV4StreamPart[]) {
+  const hold = gate();
+
+  return {
+    hold,
+    step: async () => {
+      await hold.opened;
+
+      return script;
+    },
+  };
+}
+
+describe('steers', () => {
+  const steer = (
+    engine: Awaited<ReturnType<typeof setup>>['engine'],
+    sessionID: string,
+    messageID: string,
+  ) => engine.steer({ sessionID, messageID, parts: [{ type: 'text', text: messageID }] });
+
+  it('writes two steers at one boundary and steps again with both', async () => {
+    const first = held(call('echo', { text: 'a' }));
+
+    const { engine, model, session } = await setup({
+      steps: [first.step, text('Took both')],
+    });
+
+    const sent = await engine.prompt({
+      sessionID: session.id,
+      parts: [{ type: 'text', text: 'Go' }],
+    });
+
+    await expect.poll(() => engine.busy(session.id)).toBe(true);
+
+    await steer(engine, session.id, 'msg_steer_a');
+    await steer(engine, session.id, 'msg_steer_b');
+    await steer(engine, session.id, 'msg_steer_a');
+
+    expect(engine.queued(session.id)).toEqual([]);
+
+    first.hold.open();
+    await sent.done;
+
+    const messages = await engine.messages(session.id);
+
+    expect(kinds(messages)).toEqual([
+      'user',
+      'assistant',
+      'user',
+      'user',
+      'assistant',
+      'idle:succeeded',
+    ]);
+
+    expect(users(messages)).toEqual(['Go', 'msg_steer_a', 'msg_steer_b']);
+    expect(model.doStreamCalls).toHaveLength(2);
+    expect(promptOf(model.doStreamCalls[1])).toContain('msg_steer_b');
+  });
+
+  it('steps again after a last step that took a steer, with the step count reset', async () => {
+    const capped = BUILTIN_AGENTS.map((agent) =>
+      agent.id === 'build' ? { ...agent, steps: 2 } : agent,
+    );
+
+    const last = held(text('Out of steps'));
+
+    const { engine, model, session } = await setup({
+      agents: capped,
+      steps: [call('echo', { text: 'a' }), last.step, text('Answered')],
+    });
+
+    const sent = await engine.prompt({
+      sessionID: session.id,
+      parts: [{ type: 'text', text: 'Go' }],
+    });
+
+    await expect.poll(() => model.doStreamCalls.length).toBe(2);
+
+    await steer(engine, session.id, 'msg_steer');
+
+    last.hold.open();
+    await sent.done;
+
+    const messages = await engine.messages(session.id);
+
+    expect(kinds(messages)).toEqual([
+      'user',
+      'assistant',
+      'assistant',
+      'user',
+      'assistant',
+      'idle:succeeded',
+    ]);
+
+    expect(model.doStreamCalls[1]?.toolChoice).toEqual({ type: 'none' });
+    expect(model.doStreamCalls[2]?.toolChoice).toEqual({ type: 'auto' });
+    expect(assistants(messages)[2]?.content).toMatchObject([{ text: 'Answered' }]);
+  });
+
+  it('runs a mid-turn compaction before the steers, and the turn goes on', async () => {
+    const first = held(call('echo', { text: 'a' }));
+
+    const { engine, session } = await setup({
+      steps: [first.step, text(SUMMARY), text('After')],
+    });
+
+    const sent = await engine.prompt({
+      sessionID: session.id,
+      parts: [{ type: 'text', text: 'Go' }],
+    });
+
+    await expect.poll(() => engine.busy(session.id)).toBe(true);
+
+    await steer(engine, session.id, 'msg_steer');
+
+    const compacted = engine.compact({ sessionID: session.id });
+
+    first.hold.open();
+    await sent.done;
+
+    expect(await compacted).toEqual({ status: 'completed' });
+
+    const messages = await engine.messages(session.id);
+
+    expect(kinds(messages)).toEqual([
+      'user',
+      'assistant',
+      'compaction',
+      'user',
+      'assistant',
+      'idle:succeeded',
+    ]);
+
+    expect(compactions(messages)[0]).toMatchObject({ status: 'completed', reason: 'manual' });
+  });
+
+  it('fails the turn when a mid-turn compaction fails', async () => {
+    const first = held(call('echo', { text: 'a' }));
+
+    const { engine, model, session } = await setup({
+      steps: [first.step, text('no'), text('still no')],
+    });
+
+    const sent = await engine.prompt({
+      sessionID: session.id,
+      parts: [{ type: 'text', text: 'Go' }],
+    });
+
+    await expect.poll(() => engine.busy(session.id)).toBe(true);
+
+    const compacted = engine.compact({ sessionID: session.id });
+
+    first.hold.open();
+    await sent.done;
+
+    expect(await compacted).toMatchObject({ status: 'failed', error: { type: 'compaction' } });
+
+    expect(kinds(await engine.messages(session.id))).toEqual([
+      'user',
+      'assistant',
+      'compaction',
+      'idle:failed',
+    ]);
+
+    expect(model.doStreamCalls).toHaveLength(3);
+  });
+
+  it('starts one new turn with every steer after Stop, once the compaction has run', async () => {
+    const { engine, model, session, idle } = await setup({
+      steps: [call('hang', {}), text(SUMMARY), text('Resumed')],
+    });
+
+    const sent = await engine.prompt({
+      sessionID: session.id,
+      parts: [{ type: 'text', text: 'Go' }],
+    });
+
+    await expect
+      .poll(async () => JSON.stringify(await engine.messages(session.id)))
+      .toContain('"status":"running"');
+
+    await steer(engine, session.id, 'msg_steer_a');
+    await steer(engine, session.id, 'msg_steer_b');
+
+    const compacted = engine.compact({ sessionID: session.id });
+
+    engine.abort(session.id);
+    await sent.done;
+
+    expect(await compacted).toEqual({ status: 'completed' });
+    await expect.poll(() => idle.length).toBe(2);
+
+    const messages = await engine.messages(session.id);
+
+    expect(kinds(messages)).toEqual([
+      'user',
+      'assistant',
+      'idle:interrupted',
+      'compaction',
+      'user',
+      'user',
+      'assistant',
+      'idle:succeeded',
+    ]);
+
+    expect(users(messages)).toEqual(['Go', 'msg_steer_a', 'msg_steer_b']);
+    expect(model.doStreamCalls).toHaveLength(3);
+    expect(assistants(messages)[1]?.content).toMatchObject([{ text: 'Resumed' }]);
+  });
+
+  it('prompts when no turn runs in this window', async () => {
+    const { engine, session, idle } = await setup({ steps: [text('Hi')] });
+
+    await steer(engine, session.id, 'msg_steer');
+
+    await expect.poll(() => idle.length).toBe(1);
+
+    const messages = await engine.messages(session.id);
+
+    expect(kinds(messages)).toEqual(['user', 'assistant', 'idle:succeeded']);
+    expect(messages[0]?.id).toBe('msg_steer');
+  });
+
+  it('drops waiting steers and settles a waiting compaction when the chat is deleted', async () => {
+    const first = held(text('First'));
+
+    const { engine, model, session } = await setup({ steps: [first.step] });
+
+    const sent = await engine.prompt({
+      sessionID: session.id,
+      parts: [{ type: 'text', text: 'Go' }],
+    });
+
+    await expect.poll(() => model.doStreamCalls.length).toBe(1);
+
+    await steer(engine, session.id, 'msg_steer');
+
+    const compacted = engine.compact({ sessionID: session.id });
+
+    const removed = engine.sessions.delete(session.id);
+
+    first.hold.open();
+    await Promise.all([sent.done, removed]);
+
+    expect(await compacted).toEqual({
+      status: 'failed',
+      error: { type: 'aborted', message: 'Compaction was interrupted' },
+    });
+
+    expect(model.doStreamCalls).toHaveLength(1);
+  });
+
+  it('starts a steer a failed turn never reached as the next turn', async () => {
+    const hold = gate();
+
+    const { engine, session, idle } = await setup({
+      steps: [
+        async () => {
+          await hold.opened;
+
+          throw new APICallError({
+            message: 'Bad request',
+            url: 'https://api.test',
+            requestBodyValues: {},
+            statusCode: 400,
+            isRetryable: false,
+          });
+        },
+        text('Answered the steer'),
+      ],
+    });
+
+    const sent = await engine.prompt({
+      sessionID: session.id,
+      parts: [{ type: 'text', text: 'Go' }],
+    });
+
+    await expect.poll(() => engine.busy(session.id)).toBe(true);
+
+    await steer(engine, session.id, 'msg_steer');
+
+    hold.open();
+    await sent.done;
+
+    await expect.poll(() => idle.length).toBe(2);
+
+    const messages = await engine.messages(session.id);
+
+    expect(kinds(messages).filter((kind) => kind.startsWith('idle'))).toEqual([
+      'idle:failed',
+      'idle:succeeded',
+    ]);
+
+    expect(users(messages)).toEqual(['Go', 'msg_steer']);
+    expect(assistants(messages).at(-1)?.content).toMatchObject([{ text: 'Answered the steer' }]);
+  });
+
+  it('compacts once for two mid-turn compacts, and settles both', async () => {
+    const first = held(call('echo', { text: 'a' }));
+
+    const { engine, model, session } = await setup({
+      steps: [first.step, text(SUMMARY), text('After')],
+    });
+
+    const sent = await engine.prompt({
+      sessionID: session.id,
+      parts: [{ type: 'text', text: 'Go' }],
+    });
+
+    await expect.poll(() => engine.busy(session.id)).toBe(true);
+
+    const one = engine.compact({ sessionID: session.id });
+    const two = engine.compact({ sessionID: session.id });
+
+    first.hold.open();
+    await sent.done;
+
+    expect(await Promise.all([one, two])).toEqual([
+      { status: 'completed' },
+      { status: 'completed' },
+    ]);
+
+    expect(compactions(await engine.messages(session.id))).toHaveLength(1);
+    expect(model.doStreamCalls).toHaveLength(3);
+  });
+
+  it('settles a mid-turn compact interrupted on Stop during it, then resumes the steer', async () => {
+    const first = held(call('echo', { text: 'a' }));
+    const summary = held(text(SUMMARY));
+
+    const { engine, model, session, idle } = await setup({
+      steps: [first.step, summary.step],
+    });
+
+    const sent = await engine.prompt({
+      sessionID: session.id,
+      parts: [{ type: 'text', text: 'Go' }],
+    });
+
+    await expect.poll(() => engine.busy(session.id)).toBe(true);
+
+    await steer(engine, session.id, 'msg_steer');
+
+    const compacted = engine.compact({ sessionID: session.id });
+
+    first.hold.open();
+
+    await expect.poll(async () => compactions(await engine.messages(session.id)).length).toBe(1);
+
+    engine.abort(session.id);
+    summary.hold.open();
+    await sent.done;
+
+    expect(await compacted).toMatchObject({ status: 'failed', error: { type: 'aborted' } });
+    await expect.poll(() => idle.length).toBe(2);
+
+    const messages = await engine.messages(session.id);
+
+    expect(kinds(messages).filter((kind) => kind.startsWith('idle'))).toEqual([
+      'idle:interrupted',
+      'idle:succeeded',
+    ]);
+
+    expect(users(messages)).toEqual(['Go', 'msg_steer']);
+    expect(promptOf(model.doStreamCalls.at(-1))).toMatch(/"text":"msg_steer"}]}]$/);
+  });
+
+  it('queues a steer behind an idle /compact, then runs it as a prompt', async () => {
+    const summary = held(text(SUMMARY));
+
+    const { engine, session, idle } = await setup({
+      steps: [text('Hi back'), summary.step, text('Answered')],
+    });
+
+    await send(engine, session.id, 'Hi');
+
+    const compacted = engine.compact({ sessionID: session.id });
+
+    await expect.poll(() => engine.busy(session.id)).toBe(true);
+
+    await steer(engine, session.id, 'msg_steer');
+
+    expect(engine.queued(session.id).map(({ messageID }) => messageID)).toEqual(['msg_steer']);
+
+    summary.hold.open();
+
+    expect(await compacted).toEqual({ status: 'completed' });
+    await expect.poll(() => idle.length).toBe(2);
+
+    const messages = await engine.messages(session.id);
+
+    expect(kinds(messages).slice(-4)).toEqual([
+      'compaction',
+      'user',
+      'assistant',
+      'idle:succeeded',
+    ]);
+
+    expect(assistants(messages).at(-1)?.content).toMatchObject([{ text: 'Answered' }]);
+  });
+
+  it('queues a steer sent to another window’s turn as a prompt after it', async () => {
+    const locks = memoryLocks();
+    const first = held(text('One'));
+    const one = await setup({ locks, steps: [first.step] });
+    const two = await setup({ locks, store: one.store, steps: [text('Two')] });
+    const sessionID = one.session.id;
+
+    const sent = await one.engine.prompt({ sessionID, parts: [{ type: 'text', text: 'Go' }] });
+
+    await expect.poll(() => one.model.doStreamCalls.length).toBe(1);
+
+    await steer(two.engine, sessionID, 'msg_steer');
+
+    expect(two.engine.queued(sessionID).map(({ messageID }) => messageID)).toEqual(['msg_steer']);
+
+    first.hold.open();
+    await sent.done;
+
+    await expect.poll(() => two.idle.length).toBe(1);
+
+    expect(kinds(await one.store.messages(sessionID))).toEqual([
+      'user',
+      'assistant',
+      'idle:succeeded',
+      'user',
+      'assistant',
+      'idle:succeeded',
+    ]);
+
+    expect(one.model.doStreamCalls).toHaveLength(1);
   });
 });

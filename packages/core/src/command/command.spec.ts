@@ -184,6 +184,40 @@ describe('user commands', () => {
     ]);
   });
 
+  it('queue mid-reply, and settle only once their turn ends', async () => {
+    installFakeChrome();
+    await userCommands.set([{ name: 'sum', template: 'Summarize' }]);
+    disposers.push(registerBuiltinCommands(), registerUserCommands());
+    await flush();
+
+    const { ctx, engine } = context('ses_1');
+    let end = () => {};
+
+    const done = new Promise<void>((resolve) => {
+      end = resolve;
+    });
+
+    engine.prompt.mockResolvedValueOnce({ messageID: 'msg_1', done });
+
+    const sum = composer('sum', ctx);
+    let settled = false;
+    const ran = Promise.resolve(sum.execute('')).then(() => {
+      settled = true;
+    });
+
+    await flush();
+
+    expect(sum.queue).toBe(true);
+    expect(composer('compact', ctx).queue).toBeUndefined();
+    expect(engine.prompt).toHaveBeenCalledOnce();
+    expect(settled).toBe(false);
+
+    end();
+    await ran;
+
+    expect(settled).toBe(true);
+  });
+
   it('skip a template named after a built-in, list it in errors(), and keep the rest', async () => {
     installFakeChrome();
     disposers.push(registerBuiltinCommands(), registerUserCommands());

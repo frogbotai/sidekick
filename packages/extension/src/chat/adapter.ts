@@ -1,5 +1,6 @@
 import {
   type AgentInfo,
+  fromUIParts,
   lockName,
   type SessionEngine,
   type SessionInfo,
@@ -84,7 +85,10 @@ function chatDocument(session: SessionInfo): ChatDocument {
   };
 }
 
-/** `@frogbotai/ui`'s chat over the local engine: list, rename, export and delete, and no uploads. */
+/**
+ * `@frogbotai/ui`'s chat over the local engine: list, rename, export and delete, steer a running
+ * turn, and no uploads.
+ */
 export function createChatAdapter(options: ChatAdapterOptions): ChatPlatformAdapter {
   const { engine, chat, manifest } = options;
   const locks = options.locks ?? (() => heldLocks());
@@ -151,6 +155,16 @@ export function createChatAdapter(options: ChatAdapterOptions): ChatPlatformAdap
       await engine.sessions.delete(String(chatId));
     },
     exportChat: (chatId) => exportChat(engine, String(chatId), options.save),
+    steerMessage: async (chatId, message) => {
+      const mode = options.mode?.();
+
+      await engine.steer({
+        sessionID: String(chatId),
+        messageID: message.id,
+        parts: fromUIParts(message.parts),
+        ...(mode ? { mode } : {}),
+      });
+    },
     loadTurnState: async (_agent, chatId): Promise<TurnState> =>
       (await locks()).has(lockName(String(chatId))) ? 'running' : 'idle',
   };

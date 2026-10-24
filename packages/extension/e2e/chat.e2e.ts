@@ -410,3 +410,240 @@ test('the extension source has no Tailwind and no fb- selector', async () => {
   expect(files.length).toBeGreaterThan(10);
   expect(found).toEqual([]);
 });
+
+function holdReply() {
+  let release = () => {};
+
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+
+  return {
+    release,
+    reply: (text: string) => async () => {
+      await held;
+
+      return reply(text);
+    },
+  };
+}
+
+const queueStrip = (panel: Page) => panel.getByRole('list', { name: 'Queued messages' });
+
+test('Stop with text in the composer only stops the reply, and sends nothing (334)', async ({
+  context,
+  openPanel,
+}) => {
+  const first = holdReply();
+  const { bodies } = await scriptOpenAI(context, [first.reply('Too late.'), reply('Not sent.')]);
+  const panel = await openPanel();
+  const box = panel.getByRole('textbox');
+
+  await connect(panel);
+  await send(panel, 'Start something long');
+
+  const stop = panel.getByRole('button', { name: 'Stop' });
+
+  await expect(stop).toBeVisible();
+  await expect.poll(() => bodies.length).toBe(1);
+  await box.fill('A draft');
+  await stop.click();
+
+  await expect(stop).toBeHidden();
+  await expect(box).toHaveText('A draft');
+  await expect(queueStrip(panel)).toHaveCount(0);
+
+  first.release();
+
+  await expect
+    .poll(() =>
+      panel.evaluate(async () => {
+        const engine = window.sidekick.engine;
+        const [session] = (await engine?.sessions.list()) ?? [];
+
+        return session ? engine?.busy(session.id) : undefined;
+      }),
+    )
+    .toBe(false);
+
+  await expect(panel.getByText('Too late.')).toHaveCount(0);
+  expect(bodies).toHaveLength(1);
+  expect(lastUserText(bodies[0])).toContain('Start something long');
+});
+
+test('a message sent while a reply runs queues, then runs after it (334)', async ({
+  context,
+  openPanel,
+}) => {
+  const first = holdReply();
+
+  const { bodies } = await scriptOpenAI(context, [
+    first.reply('Answer one.'),
+    reply('Answer two.'),
+  ]);
+
+  const panel = await openPanel();
+
+  await connect(panel);
+  await send(panel, 'First question');
+  await expect.poll(() => bodies.length).toBe(1);
+  await send(panel, 'Second question');
+
+  const entry = queueStrip(panel).getByRole('listitem');
+
+  await expect(entry).toHaveAttribute('data-state', 'queued');
+  await expect(entry).toContainText('Second question');
+  await expect(panel.getByRole('textbox')).toHaveText('');
+  expect(bodies).toHaveLength(1);
+
+  first.release();
+
+  await expect(panel.getByText('Answer one.')).toBeVisible();
+  await expect(panel.getByText('Answer two.')).toBeVisible();
+  await expect(queueStrip(panel)).toHaveCount(0);
+
+  expect(bodies).toHaveLength(2);
+  expect(lastUserText(bodies[1])).toContain('Second question');
+});
+
+test('Steer hands a queued message to the running reply, which shows and answers it (334)', async ({
+  context,
+  openPanel,
+}) => {
+  const first = holdReply();
+  const second = holdReply();
+
+  const { bodies } = await scriptOpenAI(context, [
+    first.reply('Reading the page.'),
+    second.reply('Skipped the footer.'),
+  ]);
+
+  const panel = await openPanel();
+
+  await connect(panel);
+  await send(panel, 'Summarize the page');
+  await expect.poll(() => bodies.length).toBe(1);
+  await send(panel, 'Skip the footer links');
+
+  const entry = queueStrip(panel).getByRole('listitem');
+
+  await entry.getByRole('button', { name: 'Steer' }).click();
+  await expect(entry).toHaveAttribute('data-state', 'steering');
+
+  first.release();
+
+  const answer = panel.locator('[data-message][data-role="assistant"]', {
+    has: panel.getByText('Reading the page.'),
+  });
+
+  await expect(answer.locator('[data-part="steered"]')).toHaveText('Skip the footer links');
+  await expect(queueStrip(panel)).toHaveCount(0);
+  await expect(panel.getByRole('button', { name: 'Stop' })).toBeVisible();
+
+  second.release();
+
+  await expect(panel.getByText('Skipped the footer.')).toBeVisible();
+
+  expect(bodies).toHaveLength(2);
+  expect(lastUserText(bodies[1])).toContain('Skip the footer links');
+
+  const users = panel.locator('[data-message][data-role="user"]');
+
+  await expect(users).toHaveCount(2);
+  await expect(users.last()).toContainText('Skip the footer links');
+  await expect(panel.getByRole('button', { name: 'Stop' })).toBeHidden();
+});
+
+test('/compact while a reply runs compacts at the next step, inside the reply (334)', async ({
+  context,
+  openPanel,
+}) => {
+  const second = holdReply();
+
+  const { bodies } = await scriptOpenAI(context, [
+    reply('Hello back.'),
+    second.reply('Second answer.'),
+    reply('## Objective\n- Say hello', { usage: { input: 300, output: 20 } }),
+  ]);
+
+  const panel = await openPanel();
+  const box = panel.getByRole('textbox');
+
+  await connect(panel);
+  await send(panel, 'Hello');
+  await expect(panel.getByText('Hello back.')).toBeVisible({ timeout: 20_000 });
+
+  await send(panel, 'Again');
+  await expect.poll(() => bodies.length).toBe(2);
+
+  await box.fill('/compact');
+  await expect(panel.getByRole('listbox', { name: 'Commands' })).toBeVisible();
+  await box.press('Enter');
+  await expect(queueStrip(panel)).toHaveCount(0);
+
+  second.release();
+
+  const reply2 = panel.locator('[data-message][data-role="assistant"]', {
+    has: panel.getByText('Second answer.'),
+  });
+
+  await expect(reply2.locator('[data-part="compaction"]')).toHaveAttribute(
+    'data-state',
+    'completed',
+    { timeout: 20_000 },
+  );
+
+  await expect(panel.getByRole('alert')).toHaveCount(0);
+  expect(bodies).toHaveLength(3);
+  expect(bodies[2]).toContain('You MUST summarize');
+});
+
+test('a steer Stop cut off runs next, and a message sent meanwhile keeps its answer shown (334)', async ({
+  context,
+  openPanel,
+}) => {
+  const first = holdReply();
+  const second = holdReply();
+
+  const { bodies } = await scriptOpenAI(context, [
+    first.reply('Reading the page.'),
+    second.reply('Skipped the footer.'),
+    reply('Third answer.'),
+  ]);
+
+  const panel = await openPanel();
+
+  await connect(panel);
+  await send(panel, 'Summarize the page');
+  await expect.poll(() => bodies.length).toBe(1);
+  await send(panel, 'Skip the footer links');
+
+  const entry = queueStrip(panel).getByRole('listitem');
+
+  await entry.getByRole('button', { name: 'Steer' }).click();
+  await expect(entry).toHaveAttribute('data-state', 'steering');
+  await panel.getByRole('button', { name: 'Stop' }).click();
+  await expect(queueStrip(panel)).toHaveCount(0);
+
+  first.release();
+
+  await expect.poll(() => bodies.length).toBe(2);
+  expect(lastUserText(bodies[1])).toContain('Skip the footer links');
+
+  await send(panel, 'Third question');
+  await expect(panel.getByRole('textbox')).toHaveText('');
+
+  second.release();
+
+  await expect(panel.getByText('Third answer.')).toBeVisible();
+  await expect(panel.getByText('Skipped the footer.')).toBeVisible();
+
+  expect(bodies).toHaveLength(3);
+  expect(lastUserText(bodies[2])).toContain('Third question');
+
+  await expect(panel.locator('[data-message][data-role="user"]')).toHaveText([
+    /Summarize the page/,
+    /Skip the footer links/,
+    /Third question/,
+  ]);
+});

@@ -34,6 +34,9 @@ export interface PromptInput {
   site?: string;
 }
 
+/** A message handed to the running turn, which takes it at its next step boundary. */
+export type SteerInput = Omit<PromptInput, 'from'> & { messageID: string };
+
 export interface Queued {
   messageID: string;
   parts: UserPart[];

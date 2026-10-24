@@ -14,6 +14,7 @@ import {
   CompactionPart,
   type DataRenderer,
   emitChatMutation,
+  SteeredPart,
   type ToolRenderer,
   useChats,
 } from '@frogbotai/ui/chat';
@@ -38,7 +39,10 @@ import type { RetryNotice } from './transport';
 
 const RELOAD_DELAY = 100;
 
-const DATA_RENDERERS: readonly DataRenderer[] = [{ kind: 'compaction', render: CompactionPart }];
+const DATA_RENDERERS: readonly DataRenderer[] = [
+  { kind: 'compaction', render: CompactionPart },
+  { kind: 'steered', render: SteeredPart },
+];
 
 const TOOL_RENDERERS: readonly ToolRenderer[] = [
   ...TOOL_CARDS,
@@ -140,11 +144,11 @@ export function ChatPanel({
         onRetry: (sessionID, notice) => {
           if (sessionID === chat.current()) setRetry(notice);
         },
-        onStreaming: (sessionID, active, queued) => {
+        onStreaming: (sessionID, active, reloads) => {
           if (active) streaming.current.add(sessionID);
           else streaming.current.delete(sessionID);
 
-          if (!active && queued) scheduleReload();
+          if (!active && reloads) scheduleReload();
         },
       }),
     [engine, chat, manifest],

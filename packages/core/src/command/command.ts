@@ -35,6 +35,8 @@ export interface CommandInfo {
   title: string;
   description?: string;
   arguments?: boolean;
+  /** Typed while a reply runs, it waits in the composer's queue instead of running at once. */
+  queue?: boolean;
   /** Whether the command can run now; a disabled one isn't offered. */
   enabled?: (ctx: CommandContext) => boolean;
   execute: (input: string, ctx: CommandContext) => void | Promise<void>;
@@ -46,6 +48,7 @@ export interface ComposerCommandLike {
   title: string;
   description?: string;
   arguments?: boolean;
+  queue?: boolean;
   disabled?: boolean;
   execute: (input: string) => void | Promise<void>;
 }
@@ -57,6 +60,7 @@ export function toComposerCommand(info: CommandInfo, ctx: CommandContext): Compo
     title: info.title,
     ...(info.description === undefined ? {} : { description: info.description }),
     ...(info.arguments ? { arguments: true } : {}),
+    ...(info.queue ? { queue: true } : {}),
     disabled: info.enabled ? !info.enabled(ctx) : false,
     execute: (input) => info.execute(input, ctx),
   };

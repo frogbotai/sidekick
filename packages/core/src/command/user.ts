@@ -17,20 +17,26 @@ export function commandNameError(name: string, others: readonly string[]) {
   return undefined;
 }
 
-/** A user's template as a command: the expanded text goes to the open chat, on its model when set. */
+/**
+ * A user's template as a command: the expanded text goes to the open chat, on its model when set.
+ * It queues like a message, and settles once its turn ends, so the next queued entry waits for it.
+ */
 export function templateCommand({ name, description, template, model }: UserCommand): CommandInfo {
   return {
     id: name,
     title: description ?? name,
     arguments: true,
+    queue: true,
     execute: async (input, { engine, ui }) => {
       const text = expandTemplate(template, input);
 
-      await engine.prompt({
+      const admitted = await engine.prompt({
         sessionID: await ui.open(),
         parts: [{ type: 'text', text }],
         ...(model ? { model } : {}),
       });
+
+      await admitted.done;
     },
   };
 }

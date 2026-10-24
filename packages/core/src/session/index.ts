@@ -32,7 +32,7 @@ export {
   runFileName,
   runKey,
 } from './export';
-export type { Admitted, PromptInput, Queued, SessionLocks } from './queue';
+export type { Admitted, PromptInput, Queued, SessionLocks, SteerInput } from './queue';
 export { lockName, webLocks } from './queue';
 export type { Change, Projection, Reducer, ReducerTarget } from './reducer';
 export { apply, reduce, replay, targetOf } from './reducer';

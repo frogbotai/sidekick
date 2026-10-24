@@ -5,13 +5,8 @@ import { permissionModes } from '../registry';
 import type { Registry } from '../registry/registry';
 import type { ToolDefinition } from '../tool/tool';
 import { markRequest } from './cache';
-import {
-  ceiling,
-  COMPACTION_DEFAULTS,
-  COMPACTION_INTERRUPTED,
-  type CompactionSettings,
-  due,
-} from './compaction';
+import { ceiling, COMPACTION_DEFAULTS, type CompactionSettings, due } from './compaction';
+import { COMPACT_INTERRUPTED, createInbox } from './inbox';
 import { modeReminder, offeredTools, promptChanges } from './mode';
 import {
   type Admitted,
@@ -23,9 +18,10 @@ import {
   type PromptInput,
   type Queued,
   type SessionLocks,
+  type SteerInput,
   webLocks,
 } from './queue';
-import { buildRequest, TOOL_INTERRUPTED } from './request';
+import { buildRequest } from './request';
 import { classify, MAX_RETRIES, retryDelay, sessionError } from './retry';
 import {
   ascending,
@@ -33,10 +29,9 @@ import {
   type DurableEventBody,
   type IdleMessage,
   type SessionInfo,
-  type SessionMessage,
-  type UserPart,
 } from './schema';
-import { modelOf, running, stranded, unsettled } from './state';
+import { settle } from './settle';
+import { modelOf, stranded } from './state';
 import { type Clock, MAX_STEPS_PROMPT, realClock, runStep } from './step';
 
 export type { Clock } from './step';
@@ -48,9 +43,9 @@ import {
   type CompactResult,
   manualResult,
 } from './summarize';
-import { generateTitle, isUntitledRoot, type ModelSource, titleInput } from './title';
+import { type ModelSource, titleFirst } from './title';
 
-export const STEP_INTERRUPTED = 'Step interrupted';
+export { STEP_INTERRUPTED } from './settle';
 
 export interface SessionEngineOptions {
   store: SessionStore;
@@ -88,7 +83,15 @@ export interface SessionEngine {
   create: (input: CreateInput) => Promise<SessionInfo>;
   /** Queues a message; it runs once the session's current turn, in any window, ends. */
   prompt: (input: PromptInput) => Promise<Admitted>;
-  /** Compacts the session now, or after its running turn, in any window, ends. */
+  /**
+   * Hands a message to this window's running turn, which takes it at its next step boundary; with
+   * no turn running here, it is `prompt`. A steer the turn never reached starts the next turn.
+   */
+  steer: (input: SteerInput) => Promise<void>;
+  /**
+   * Compacts the session now. During this window's turn it runs at the next step boundary and the
+   * turn goes on; during another window's, it waits for that turn to end.
+   */
   compact: (input: { sessionID: string }) => Promise<CompactResult>;
   abort: (sessionID: string) => void;
   /** Takes back a queued message before it runs; false once it has started. */
@@ -124,6 +127,7 @@ export function createSessionEngine(options: SessionEngineOptions): SessionEngin
   const settings = { ...COMPACTION_DEFAULTS, ...options.compaction };
   const results = new Map<string, CompactResult>();
   const controllers = new Map<string, AbortController>();
+  const inbox = createInbox();
   const deleted = new Set<string>();
   const titled = new Set<string>();
 
@@ -136,43 +140,8 @@ export function createSessionEngine(options: SessionEngineOptions): SessionEngin
 
   const agentOf = (session: SessionInfo) => agents.get(session.agent) ?? agents.get(defaultAgent);
 
-  const settle = async (sessionID: string, messages: readonly SessionMessage[]) => {
-    for (const message of messages) {
-      if (running(message)) {
-        await publish(sessionID, {
-          type: 'session.compaction.failed',
-          messageID: message.id,
-          error: { type: 'aborted', message: COMPACTION_INTERRUPTED },
-        });
-      }
-
-      if (!unsettled(message)) continue;
-
-      for (const part of message.content) {
-        if (part.type !== 'tool') continue;
-
-        if (part.state.status !== 'streaming' && part.state.status !== 'running') continue;
-
-        await publish(sessionID, {
-          type: 'session.tool.failed',
-          messageID: message.id,
-          callID: part.id,
-          error: { message: TOOL_INTERRUPTED, code: 'cancelled' },
-        });
-      }
-
-      if (message.time.completed === undefined) {
-        await publish(sessionID, {
-          type: 'session.step.failed',
-          messageID: message.id,
-          error: { type: 'aborted', message: STEP_INTERRUPTED },
-        });
-      }
-    }
-  };
-
   const interrupt = async (sessionID: string): Promise<Outcome> => {
-    await settle(sessionID, await store.messages(sessionID));
+    await settle(store, sessionID);
 
     return 'interrupted';
   };
@@ -390,6 +359,57 @@ export function createSessionEngine(options: SessionEngineOptions): SessionEngin
     }
   };
 
+  const manual = async (
+    session: SessionInfo,
+    agent: AgentInfo,
+    signal: AbortSignal,
+  ): Promise<CompactOutcome> => {
+    const ref = modelOf(agent, session);
+
+    try {
+      const model = { ...(await models.resolve(ref)), ref };
+
+      return await summarize(
+        session.id,
+        agent,
+        session.mode ?? BUILD_MODE,
+        model,
+        'manual',
+        signal,
+      );
+    } catch (error) {
+      return { status: 'failed', error: sessionError(error) };
+    }
+  };
+
+  const write = async (sessionID: string, entries: readonly PromptEntry[]) => {
+    for (const { messageID, parts } of entries) {
+      await publish(sessionID, { type: 'session.prompted', messageID, parts });
+    }
+  };
+
+  const boundary = async (
+    session: SessionInfo,
+    agent: AgentInfo,
+    signal: AbortSignal,
+  ): Promise<Outcome | boolean> => {
+    if (signal.aborted) return interrupt(session.id);
+
+    const { compacted, steers } = await inbox.take(session.id, () =>
+      manual(session, agent, signal),
+    );
+
+    if (compacted?.status === 'aborted') return interrupt(session.id);
+
+    if (compacted?.status === 'failed') return 'failed';
+
+    if (compacted?.status === 'completed') await remind(session.id, session.mode ?? BUILD_MODE);
+
+    await write(session.id, steers);
+
+    return steers.length > 0;
+  };
+
   const turn = async (sessionID: string, signal: AbortSignal): Promise<Outcome> => {
     for (let count = 1; ; count++) {
       if (signal.aborted) return interrupt(sessionID);
@@ -397,31 +417,25 @@ export function createSessionEngine(options: SessionEngineOptions): SessionEngin
       const session = await store.sessions.get(sessionID);
       const agent = session && agentOf(session);
 
-      if (!agent) return 'failed';
+      if (!session || !agent) return 'failed';
 
       const outcome = await step(sessionID, agent, count, signal);
 
-      if (outcome !== 'continue') return outcome;
+      if (outcome !== 'continue' && outcome !== 'succeeded') return outcome;
+
+      const steered = await boundary(session, agent, signal);
+
+      if (typeof steered === 'string') return steered;
+
+      if (steered) count = 0;
+      else if (outcome === 'succeeded') return outcome;
     }
-  };
-
-  const title = async (session: SessionInfo, parts: readonly UserPart[]) => {
-    const agent = agents.get(titleAgent);
-
-    if (!agent || titled.has(session.id) || !isUntitledRoot(session)) return;
-
-    const users = (await store.messages(session.id)).filter(({ type }) => type === 'user');
-
-    if (users.length !== 1) return;
-
-    titled.add(session.id);
-    void generateTitle({ store, models, agent, session, text: titleInput(parts) });
   };
 
   const recover = async (sessionID: string) => {
     if (!stranded(await store.last(sessionID))) return;
 
-    await settle(sessionID, await store.messages(sessionID));
+    await settle(store, sessionID);
     await publish(sessionID, { type: 'session.idle', messageID: id(), outcome: 'interrupted' });
   };
 
@@ -433,35 +447,18 @@ export function createSessionEngine(options: SessionEngineOptions): SessionEngin
 
     await recover(sessionID);
 
-    const ref = modelOf(agent, session);
     const controller = new AbortController();
 
     controllers.set(sessionID, controller);
 
     try {
-      const model = { ...(await models.resolve(ref)), ref };
-
-      results.set(
-        messageID,
-        manualResult(
-          await summarize(
-            sessionID,
-            agent,
-            session.mode ?? BUILD_MODE,
-            model,
-            'manual',
-            controller.signal,
-          ),
-        ),
-      );
-    } catch (error) {
-      results.set(messageID, { status: 'failed', error: sessionError(error) });
+      results.set(messageID, manualResult(await manual(session, agent, controller.signal)));
     } finally {
       controllers.delete(sessionID);
     }
   };
 
-  const runPrompt = async (entry: PromptEntry) => {
+  const startTurn = async (entry: PromptEntry) => {
     const { sessionID } = entry;
     const session = await store.sessions.get(sessionID);
 
@@ -493,13 +490,12 @@ export function createSessionEngine(options: SessionEngineOptions): SessionEngin
 
     for (const body of changes) await publish(sessionID, body);
 
-    await publish(sessionID, {
-      type: 'session.prompted',
-      messageID: entry.messageID,
-      parts: entry.parts,
-    });
+    await write(sessionID, [entry, ...inbox.followers(entry.messageID)]);
 
-    await title(session, entry.parts);
+    await titleFirst(
+      { store, models, agent: agents.get(titleAgent), session, titled },
+      entry.parts,
+    );
 
     const controller = new AbortController();
 
@@ -522,6 +518,33 @@ export function createSessionEngine(options: SessionEngineOptions): SessionEngin
     }
   };
 
+  const runPrompt = async (entry: PromptEntry) => {
+    inbox.begin(entry.sessionID);
+
+    try {
+      await startTurn(entry);
+    } finally {
+      inbox.end(entry.sessionID, {
+        compact: () => compactLater(entry.sessionID),
+        prompt: (first) => void queue.admit(first),
+      });
+    }
+  };
+
+  const compactLater = async (sessionID: string): Promise<CompactResult> => {
+    const messageID = id();
+
+    await (
+      await queue.admit({ kind: 'compact', sessionID, messageID })
+    ).done;
+
+    const result = results.get(messageID) ?? COMPACT_INTERRUPTED;
+
+    results.delete(messageID);
+
+    return result;
+  };
+
   const run = (entry: Entry) => (entry.kind === 'compact' ? compactNow(entry) : runPrompt(entry));
 
   const queue = createSessionQueue({ locks, run, stored });
@@ -537,6 +560,7 @@ export function createSessionEngine(options: SessionEngineOptions): SessionEngin
   const deleteSession = async (sessionID: string): Promise<void> => {
     deleted.add(sessionID);
     queue.drop(sessionID);
+    inbox.drop(sessionID);
     controllers.get(sessionID)?.abort();
 
     for (const child of await store.sessions.list({ parentID: sessionID })) {
@@ -587,25 +611,25 @@ export function createSessionEngine(options: SessionEngineOptions): SessionEngin
 
       return queue.admit({ ...input, kind: 'prompt', messageID: input.messageID ?? id() });
     },
+    steer: async (input) => {
+      if (!(await store.sessions.get(input.sessionID))) {
+        throw new Error(`No session ${input.sessionID}`);
+      }
+
+      if (inbox.turning(input.sessionID)) inbox.steer({ ...input, kind: 'prompt' });
+      else await queue.admit({ ...input, kind: 'prompt' });
+    },
     compact: async ({ sessionID }) => {
       if (!(await store.sessions.get(sessionID))) throw new Error(`No session ${sessionID}`);
 
-      const messageID = id();
-
-      await (
-        await queue.admit({ kind: 'compact', sessionID, messageID })
-      ).done;
-
-      const result = results.get(messageID);
-
-      results.delete(messageID);
-
-      return (
-        result ?? { status: 'failed', error: { type: 'aborted', message: COMPACTION_INTERRUPTED } }
-      );
+      return inbox.turning(sessionID) ? inbox.compact(sessionID) : compactLater(sessionID);
     },
     abort: (sessionID) => controllers.get(sessionID)?.abort(),
-    cancel: queue.cancel,
+    cancel: (sessionID, messageID) => {
+      inbox.cancel(messageID);
+
+      return queue.cancel(sessionID, messageID);
+    },
     sweep: async () => {
       for (const session of await store.all()) await sweepOne(session);
     },

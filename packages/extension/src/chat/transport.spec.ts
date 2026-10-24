@@ -40,6 +40,7 @@ function setup({
 }: { chatId?: string | null; heldElsewhere?: boolean; mode?: string } = {}) {
   const fake = fakeEngine();
   const retries: (RetryNotice | undefined)[] = [];
+  const streams: string[] = [];
   const order: string[] = fake.calls;
   const chat = windowChat(order, 'ses_old');
 
@@ -54,6 +55,8 @@ function setup({
     onChatId: (id) => order.push(`onChatId:${id}`),
     heldElsewhere: () => Promise.resolve(heldElsewhere),
     onRetry: (_sessionID, notice) => retries.push(notice),
+    onStreaming: (sessionID, active, reload) =>
+      streams.push(`${sessionID}:${active ? 'start' : 'end'}${reload ? ':reload' : ''}`),
     ...(mode ? { mode: () => mode } : {}),
   });
 
@@ -69,7 +72,7 @@ function setup({
       abortSignal: options.signal,
     });
 
-  return { ...fake, transport, retries, send };
+  return { ...fake, transport, retries, streams, send };
 }
 
 async function read(stream: ReadableStream<UIMessageChunk>) {
@@ -368,6 +371,85 @@ describe('createSessionTransport', () => {
     expect(queued.calls).toContain('cancel:msg_q');
     expect(queued.calls).not.toContain('abort:ses_1');
     expect(queued.engine.queued('ses_1')).toEqual([]);
+  });
+
+  it('streams a steer as data-steered where the turn took it, then asks for a reload', async () => {
+    const { send, play, streams } = setup();
+    const stream = await send([user('msg_u1')]);
+    const [forUI, forChunks] = stream.tee();
+    const seen: UIMessage[] = [];
+    const reading = (async () => {
+      for await (const message of readUIMessageStream({ stream: forUI })) {
+        seen.push(structuredClone(message));
+      }
+    })();
+
+    const chunks = read(forChunks);
+
+    play(
+      { type: 'session.prompted', messageID: 'msg_u1', parts: [] },
+      { type: 'session.step.started', messageID: 'msg_a1', agent: 'build', model: 'm' },
+      { type: 'session.step.ended', messageID: 'msg_a1', finish: 'tool-calls' },
+      {
+        type: 'session.prompted',
+        messageID: 'msg_s1',
+        parts: [
+          { type: 'text', text: 'Skip the footer' },
+          { type: 'text', text: 'links' },
+        ],
+      },
+      { type: 'session.step.started', messageID: 'msg_a2', agent: 'build', model: 'm' },
+      { type: 'session.step.ended', messageID: 'msg_a2', finish: 'stop' },
+      { type: 'session.idle', messageID: 'msg_i', outcome: 'succeeded' },
+    );
+
+    const steered = {
+      type: 'data-steered',
+      id: 'msg_s1',
+      data: { messageId: 'msg_s1', text: 'Skip the footer\nlinks' },
+    };
+
+    expect(await chunks).toEqual([
+      { type: 'start', messageId: 'msg_a1' },
+      { type: 'start-step' },
+      { type: 'finish-step' },
+      steered,
+      { type: 'start-step' },
+      { type: 'finish-step' },
+      { type: 'finish' },
+    ]);
+
+    await reading;
+
+    expect(seen.at(-1)?.parts.filter(({ type }) => type === 'data-steered')).toEqual([steered]);
+    expect(streams).toEqual(['ses_1:start', 'ses_1:end:reload']);
+
+    const plain = setup();
+    const done = read(await plain.send([user('msg_u2')]));
+
+    plain.play(
+      { type: 'session.prompted', messageID: 'msg_u2', parts: [] },
+      { type: 'session.idle', messageID: 'msg_i2', outcome: 'succeeded' },
+    );
+
+    await done;
+
+    expect(plain.streams).toEqual(['ses_1:start', 'ses_1:end']);
+  });
+
+  it('asks for a reload when its message waited behind another turn in this window', async () => {
+    const { send, play, streams } = setup();
+    const reading = read(await send([user('msg_u2')]));
+
+    play(
+      { type: 'session.prompted', messageID: 'msg_steer', parts: [] },
+      { type: 'session.idle', messageID: 'msg_i1', outcome: 'succeeded' },
+      { type: 'session.prompted', messageID: 'msg_u2', parts: [] },
+      { type: 'session.idle', messageID: 'msg_i2', outcome: 'succeeded' },
+    );
+
+    expect(await reading).toEqual([{ type: 'finish' }]);
+    expect(streams).toEqual(['ses_1:start', 'ses_1:end:reload']);
   });
 
   it('sets the retry notice on retry.scheduled and clears it on the next step', async () => {

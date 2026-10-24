@@ -93,3 +93,27 @@ export async function generateTitle({ store, models, agent, session, text }: Tit
     await store.sessions.rename(session.id, title);
   } catch {}
 }
+
+/** Titles an untitled root once, after its first message, in the background. */
+export async function titleFirst(
+  {
+    agent,
+    titled,
+    ...input
+  }: Omit<TitleInput, 'agent' | 'text'> & {
+    agent: AgentInfo | undefined;
+    titled: Set<string>;
+  },
+  parts: readonly UserPart[],
+) {
+  const { store, session } = input;
+
+  if (!agent || titled.has(session.id) || !isUntitledRoot(session)) return;
+
+  const users = (await store.messages(session.id)).filter(({ type }) => type === 'user');
+
+  if (users.length !== 1) return;
+
+  titled.add(session.id);
+  void generateTitle({ ...input, agent, text: titleInput(parts) });
+}

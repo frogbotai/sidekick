@@ -33,8 +33,11 @@ export interface SessionTransportOptions {
   /** The permission mode picked for the next message, sent with it like the model. */
   mode?: () => string | undefined;
   onRetry?: (sessionID: string, notice: RetryNotice | undefined) => void;
-  /** Called when a stream starts and when it settles; `queued` when it waited on another window. */
-  onStreaming?: (sessionID: string, streaming: boolean, queued: boolean) => void;
+  /**
+   * Called when a stream starts and when it settles; `reload` when the stream can't show the turn
+   * as the log stores it: it waited behind another turn, or took a steer.
+   */
+  onStreaming?: (sessionID: string, streaming: boolean, reload: boolean) => void;
 }
 
 type Send = Parameters<ChatTransport<UIMessage>['sendMessages']>[0];
@@ -52,10 +55,12 @@ function tokensOf(tokens: TokenUsage | undefined) {
 /**
  * Turns one turn's engine events into `useChat` chunks, after the research table. A compaction is
  * a `data-compaction` part with the compaction's id, so each update replaces it in place; a tool's
- * progress re-sends its input with the progress as `toolMetadata`.
+ * progress re-sends its input with the progress as `toolMetadata`. A message the turn takes after
+ * its own is a steer, a `data-steered` part where the turn took it, and `steered()` turns true.
  */
 export function chunker() {
   let started = false;
+  let steered = false;
   let open = false;
   let failure: string | undefined;
   const reasons = new Map<string, CompactionData['reason']>();
@@ -96,8 +101,26 @@ export function chunker() {
     return [{ type: 'finish-step' }];
   };
 
-  return (event: LogEvent): { chunks: UIMessageChunk[]; done?: boolean } => {
+  const map = (event: LogEvent): { chunks: UIMessageChunk[]; done?: boolean } => {
     switch (event.type) {
+      case 'session.prompted':
+        steered = true;
+
+        return {
+          chunks: [
+            ...head(event.messageID),
+            {
+              type: 'data-steered',
+              id: event.messageID,
+              data: {
+                messageId: event.messageID,
+                text: event.parts
+                  .flatMap((part) => (part.type === 'text' ? [part.text] : []))
+                  .join('\n'),
+              },
+            },
+          ],
+        };
       case 'session.step.started':
         return { chunks: step(event.messageID) };
       case 'session.step.ended':
@@ -263,6 +286,8 @@ export function chunker() {
         return { chunks: [] };
     }
   };
+
+  return Object.assign(map, { steered: () => steered });
 }
 
 /**
@@ -329,6 +354,7 @@ export function createSessionTransport(options: SessionTransportOptions): ChatTr
 
     const map = chunker();
     let settled = false;
+    let waited = false;
 
     const settle = () => {
       if (settled) return;
@@ -336,7 +362,7 @@ export function createSessionTransport(options: SessionTransportOptions): ChatTr
       settled = true;
       follow.abort();
       options.onRetry?.(sessionID, undefined);
-      options.onStreaming?.(sessionID, false, queued);
+      options.onStreaming?.(sessionID, false, queued || waited || map.steered());
     };
 
     return new ReadableStream<UIMessageChunk>({
@@ -380,6 +406,7 @@ export function createSessionTransport(options: SessionTransportOptions): ChatTr
 
             if (!mine) {
               mine = event.type === 'session.prompted' && event.messageID === messageID;
+              waited ||= event.type === 'session.idle';
               continue;
             }
 

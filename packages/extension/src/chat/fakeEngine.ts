@@ -9,6 +9,7 @@ import type {
   SessionEngine,
   SessionInfo,
   SessionMessage,
+  SteerInput,
 } from '@frogbotai/sidekick-core';
 
 function isEphemeral(body: DurableEventBody | EphemeralEventBody): body is EphemeralEventBody {
@@ -19,6 +20,7 @@ function isEphemeral(body: DurableEventBody | EphemeralEventBody): body is Ephem
 export function fakeEngine(sessionID = 'ses_1') {
   const calls: string[] = [];
   const prompts: PromptInput[] = [];
+  const steers: SteerInput[] = [];
   const creates: CreateInput[] = [];
   const listeners = new Set<(event: LogEvent) => void>();
   const queue: Queued[] = [];
@@ -100,6 +102,12 @@ export function fakeEngine(sessionID = 'ses_1') {
 
       return Promise.resolve(admitted);
     },
+    steer: (input) => {
+      calls.push(`steer:${input.messageID}`);
+      steers.push(input);
+
+      return Promise.resolve();
+    },
     compact: ({ sessionID: id }) => {
       calls.push(`compact:${id}`);
 
@@ -152,6 +160,7 @@ export function fakeEngine(sessionID = 'ses_1') {
     engine,
     calls,
     prompts,
+    steers,
     creates,
     play,
     sessions,

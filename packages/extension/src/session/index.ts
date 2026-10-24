@@ -193,6 +193,13 @@ export async function startSessions(
 
       return base.prompt({ ...input, ...(site ? { site } : {}) });
     },
+    steer: async (input) => {
+      prompted.add(input.sessionID);
+
+      const site = input.site ?? (await activePage(windowId));
+
+      return base.steer({ ...input, ...(site ? { site } : {}) });
+    },
     sessions: {
       ...base.sessions,
       delete: async (sessionID) => {
