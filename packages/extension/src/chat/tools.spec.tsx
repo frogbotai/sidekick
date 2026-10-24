@@ -146,6 +146,22 @@ const CASES: [string, Done, string, string][] = [
     'Typing',
     'Typed ••••••',
   ],
+  [
+    'check',
+    { input: { ref: 'f0e1', checked: true }, metadata: { target: 'checkbox “Auto-renew”' } },
+    'Checking checkbox “Auto-renew”',
+    'Checked checkbox “Auto-renew”',
+  ],
+  [
+    'check',
+    {
+      input: { ref: 'f0e1', checked: false },
+      output: { changed: false },
+      metadata: { target: 'checkbox “Auto-renew”' },
+    },
+    'Unchecking checkbox “Auto-renew”',
+    'Left checkbox “Auto-renew” unchecked',
+  ],
   ['select', { input: { values: ['red', 'blue'] } }, 'Choosing', 'Chose “red, blue”'],
   ['press', { input: { key: 'Enter' } }, 'Pressing Enter', 'Pressed Enter'],
   [
@@ -187,6 +203,7 @@ describe('tool cards', () => {
         'click',
         'hover',
         'fill',
+        'check',
         'select',
         'press',
         'drag',

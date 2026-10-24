@@ -437,7 +437,7 @@ export class LiveRunner {
       try {
         await this.call('fill', { tab_id: tabId, ref: target.ref, text });
 
-        return `“${text}” in ${target.ref}, read back by fill`;
+        return `“${text}” in ${target.ref} by fill`;
       } catch (error) {
         const max = maxLengthOf(error);
 
@@ -446,7 +446,7 @@ export class LiveRunner {
         text = FILL_TEXT.slice(0, max);
         await this.call('fill', { tab_id: tabId, ref: target.ref, text });
 
-        return `“${FILL_TEXT}” refused (${target.ref} takes at most ${max} characters), then “${text}”, read back by fill`;
+        return `“${FILL_TEXT}” refused (${target.ref} takes at most ${max} characters), then “${text}” by fill`;
       }
     };
 

@@ -188,7 +188,14 @@ export function fakePage(log: Log, overrides: Partial<Page> = {}): Page {
     })),
     focus: later(() => undefined),
     selectContents: later(() => undefined),
-    readValue: later(() => ''),
+    focused: later(() => ({
+      frameId: 0,
+      frameOrigin: 'https://example.com',
+      editable: true,
+      role: 'textbox',
+      name: 'Cell',
+    })),
+    checkState: later(() => ({ role: 'checkbox', checked: false, disabled: false })),
     selectOptions: later((_tabId: number, _ref: string, values: string[]) => values),
     scrollStart: later(() => ({
       token: 't1',

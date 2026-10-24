@@ -92,6 +92,23 @@ export interface RefInfo {
   max_length?: number;
 }
 
+/** The focused element, in the innermost frame that has focus. */
+export interface Focused {
+  frameId: number;
+  frameOrigin: string;
+  /** An enabled text input, a textarea or contenteditable: something `insertText` types into. */
+  editable: boolean;
+  role: string;
+  name: string;
+}
+
+/** A checkbox, radio or switch's state. */
+export interface CheckState {
+  role: string;
+  checked: boolean;
+  disabled: boolean;
+}
+
 /** A ref scrolled into view: `point` and `rect` are in top-level viewport CSS pixels. */
 export interface Target {
   point: Point;
@@ -136,7 +153,10 @@ export interface Page {
   scrollTo(tabId: number, ref: string): Promise<Target>;
   focus(tabId: number, ref: string): Promise<void>;
   selectContents(tabId: number, ref: string): Promise<void>;
-  readValue(tabId: number, ref: string): Promise<string>;
+  /** What has focus, following focused frames inward. */
+  focused(tabId: number): Promise<Focused>;
+  /** `invalid_target` for anything but a checkbox, radio, switch or checkable menu item. */
+  checkState(tabId: number, ref: string): Promise<CheckState>;
   selectOptions(tabId: number, ref: string, values: string[]): Promise<string[]>;
   scrollStart(
     tabId: number,

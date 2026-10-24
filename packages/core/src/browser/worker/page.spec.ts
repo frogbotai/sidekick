@@ -5,7 +5,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { frameProtocol } from '../../protocol';
 import { answerFrames } from '../../rpc/frames';
 import { installFakeRuntime } from '../../testing/fakeRuntime';
-import { ToolError } from '../../tool/tool';
 import { createContent } from '../content';
 import { fakeTabs } from './fakes';
 import { drain, failure, setupBrowser } from './harness';
@@ -82,7 +81,7 @@ describe('the worker’s Page over the content script', () => {
     expect(text).toContain('value="Ada"');
   });
 
-  it('never echoes a redacted value when fill can’t replace it', async () => {
+  it('fills a password field without echoing its old or new value', async () => {
     const setup = await browserOverContent(
       '<label>Password <input type="password" value="hunter2"></label>',
     );
@@ -94,14 +93,33 @@ describe('the worker’s Page over the content script', () => {
     Object.assign(document, { elementsFromPoint: () => [field] });
 
     const ref = refFor((await setup.snapshot()).snapshot, 'Password');
-    const error = await failure(
+    const result = await drain(
       setup.tool('fill').execute({ tab_id: 1, ref, text: 'swordfish' }, setup.ctx),
     );
 
-    expect(error).toBeInstanceOf(ToolError);
-    expect(error).toMatchObject({ code: 'input_mismatch', detail: undefined });
-    expect(JSON.stringify(error)).not.toContain('hunter2');
-    expect(error instanceof Error ? error.message : '').not.toContain('hunter2');
+    expect(JSON.stringify(result)).not.toMatch(/hunter2|swordfish/);
+    expect(setup.ctx.reports.at(-1)).toMatchObject({ redacted: 'true' });
+  });
+
+  it('fills the field focused inside a shadow root without a ref', async () => {
+    const setup = await browserOverContent('<div id="host"></div>');
+    const root = document.getElementById('host')?.attachShadow({ mode: 'open' });
+
+    if (!root) throw new Error('No host');
+
+    root.innerHTML = '<textarea aria-label="Note"></textarea>';
+    root.querySelector('textarea')?.focus();
+
+    await drain(setup.tool('fill').execute({ tab_id: 1, text: 'hi' }, setup.ctx));
+
+    expect(setup.ctx.reports.at(-1)).toEqual({ target: 'textbox “Note”' });
+    expect(setup.cdp.sent.filter(({ method }) => method === 'Input.insertText')).toHaveLength(1);
+
+    root.querySelector('textarea')?.blur();
+
+    const error = await failure(setup.tool('fill').execute({ tab_id: 1, text: 'hi' }, setup.ctx));
+
+    expect(error).toMatchObject({ code: 'not_editable' });
   });
 
   it('turns a ref whose element left the page into stale_ref before any input', async () => {

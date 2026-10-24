@@ -114,6 +114,37 @@ export function frameElements(): FrameElement[] {
   return found;
 }
 
+function isDialog(element: Element) {
+  if (element instanceof HTMLDialogElement) return element.open;
+
+  const role = element.getAttribute('role')?.trim().split(/\s+/)[0];
+
+  return role === 'dialog' || role === 'alertdialog';
+}
+
+/** Open dialogs, in open and closed shadow roots too; a dialog inside another isn't listed again. */
+export function dialogElements(): Element[] {
+  const found: Element[] = [];
+
+  const visit = (root: Document | ShadowRoot) => {
+    for (const element of root.querySelectorAll('*')) {
+      if (isOwn(element)) continue;
+
+      if (isDialog(element)) found.push(element);
+
+      const shadow = shadowOf(element);
+
+      if (shadow) visit(shadow);
+    }
+  };
+
+  visit(document);
+
+  return found.filter(
+    (dialog) => !found.some((outer) => outer !== dialog && contains(outer, dialog)),
+  );
+}
+
 /** A child frame of this frame, as `webNavigation` reports it to the worker. */
 export interface ChildFrame {
   frameId: number;

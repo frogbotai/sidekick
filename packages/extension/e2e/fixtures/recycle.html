@@ -7,6 +7,7 @@
   <body>
     <h1>Recycling list</h1>
     <ul id="list"></ul>
+    <div id="domain"></div>
     <script>
       const list = document.getElementById('list');
 
@@ -27,6 +28,23 @@
       };
 
       window.removeAll = () => list.replaceChildren();
+
+      const domain = document.getElementById('domain');
+      const field = (value) => {
+        domain.innerHTML = '<label>Domain <input placeholder="example.com" /></label>';
+
+        const input = domain.querySelector('input');
+
+        input.value = value;
+        input.addEventListener('input', () => {
+          window.swaps++;
+          field(input.value);
+        });
+      };
+
+      window.swaps = 0;
+      window.domainValue = () => domain.querySelector('input').value;
+      field('');
     </script>
   </body>
 </html>

@@ -4,8 +4,9 @@ import { callFrame } from '../../rpc/frames';
 import { RpcError } from '../../rpc/wire';
 import { ToolError, type ToolErrorCode, type ToolErrorDetail } from '../../tool/tool';
 import { removed } from '../content/refs';
+import { createRefCounter, memoryRefStore, type RefStore } from './refs';
 import { type FrameOutline, stitch } from './stitch';
-import type { Page, Point, ScrollStart, Tabs } from './types';
+import type { Focused, Page, Point, ScrollStart, Tabs } from './types';
 
 type Methods = (typeof frameProtocol)['methods'];
 
@@ -69,13 +70,16 @@ export interface ChromePageOptions {
   tabs: Tabs;
   /** Injects the content script into a frame that has none, such as a tab open before install. */
   inject?: (tabId: number, frameId: number) => Promise<void>;
+  /** Where each tab's ref counter reserves its blocks; `chrome.storage.session` in the extension. */
+  refs?: RefStore;
 }
 
 /** `Page` over `chrome.tabs.sendMessage`: one content script per frame, refs routed by their frame. */
-export function chromePage({ tabs, inject }: ChromePageOptions): Page {
+export function chromePage({ tabs, inject, refs = memoryRefStore() }: ChromePageOptions): Page {
   const docs = new Map<number, Map<number, string>>();
   const learned = new Map<number, Map<number, number>>();
   const key = crypto.randomUUID();
+  const counter = createRefCounter(refs);
 
   const call = async <K extends PageMethod>(
     tabId: number,
@@ -216,6 +220,7 @@ export function chromePage({ tabs, inject }: ChromePageOptions): Page {
       const start = ref === undefined ? 0 : frameOfRef(ref);
       const outlines = new Map<number, FrameOutline | undefined>();
       const childrenOf = await childFrames(tabId);
+      const base = await counter.base(tabId);
 
       const read = async (frameId: number, subtree?: string) => {
         const result = await call(
@@ -228,12 +233,18 @@ export function chromePage({ tabs, inject }: ChromePageOptions): Page {
             ref: subtree,
             doc: subtree === undefined ? undefined : docOf(tabId, frameId),
             max_chars,
+            base,
             children: childrenOf(frameId),
             key,
           },
           { ref: subtree, timeout: SNAPSHOT_TIMEOUT_MS },
-        );
+        ).catch((error: unknown) => {
+          if (!(error instanceof ToolError && error.code === 'stale_ref')) counter.lost(tabId);
 
+          throw error;
+        });
+
+        await counter.seen(tabId, result.next);
         remember(tabId, frameId, result.doc);
         outlines.set(frameId, result);
 
@@ -318,10 +329,30 @@ export function chromePage({ tabs, inject }: ChromePageOptions): Page {
 
       await call(tabId, frameId, 'page.selectContents', input, { ref });
     },
-    readValue: async (tabId, ref) => {
+    focused: async (tabId) => {
+      const childrenOf = await childFrames(tabId);
+
+      const look = async (frameId: number, depth: number): Promise<Focused> => {
+        const { descend, ...field } = await call(tabId, frameId, 'page.focused', {
+          children: childrenOf(frameId),
+          key,
+        });
+
+        if (descend && depth < MAX_DEPTH) {
+          const inner = await look(descend.frameId, depth + 1).catch(() => undefined);
+
+          if (inner) return inner;
+        }
+
+        return { frameId, ...field };
+      };
+
+      return look(0, 1);
+    },
+    checkState: async (tabId, ref) => {
       const { frameId, input } = byRef(tabId, ref);
 
-      return call(tabId, frameId, 'page.readValue', input, { ref });
+      return call(tabId, frameId, 'page.checkState', input, { ref });
     },
     selectOptions: async (tabId, ref, values) => {
       const { frameId, input } = byRef(tabId, ref);

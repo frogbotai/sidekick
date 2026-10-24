@@ -137,6 +137,34 @@ export async function inspectTarget(act: Act, ref: string, key = 'target') {
   return info;
 }
 
+/** The focused field for `fill` without a ref: `not_editable` when nothing editable has focus. */
+export async function focusedField(act: Act) {
+  const field = await race(act.env.page.focused(act.tabId), act.signal);
+
+  if (!field.editable) {
+    throw new ToolError(
+      'not_editable',
+      'Nothing editable has focus. Click the field first, or fill by ref.',
+      field.role && field.frameOrigin === act.origin ? { focused: targetName(field) } : undefined,
+    );
+  }
+
+  if (field.frameOrigin !== act.origin) {
+    await race(
+      act.ctx.permission.assert({
+        action: act.action,
+        resource: act.origin,
+        frameOrigin: field.frameOrigin,
+      }),
+      act.signal,
+    );
+  }
+
+  await report(act, { target: targetName(field) });
+
+  return field;
+}
+
 export async function recheck(act: Act) {
   const tab = await getTab(act.env, act.tabId, act.signal);
 

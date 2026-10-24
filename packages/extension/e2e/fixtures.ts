@@ -72,6 +72,12 @@ declare global {
     passwordValue: () => string;
     scrolls: () => { page: number; outer: number; inner: number };
     targetBox: () => { top: number; bottom: number; header: number; viewport: number };
+    checks: () => Record<'native' | 'aria' | 'switch' | 'resetting' | 'rerender', boolean> & {
+      billing: string;
+    };
+    swaps: number;
+    domainValue: () => string;
+    nameservers: () => string[];
   }
 }
 

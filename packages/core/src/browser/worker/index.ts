@@ -2,6 +2,8 @@ export { chromeCdp, chromeTabs } from './chrome';
 export type { ActionOutput, BrowserEnv, ScreenMap } from './env';
 export type { ChromePageOptions } from './page';
 export { chromePage, frameOfRef } from './page';
+export type { RefStore } from './refs';
+export { sessionRefStore } from './refs';
 export type { Run, Runs, RunStopped, StopReason } from './runs';
 export type { BrowserRuntime } from './runtime';
 export { createBrowserRuntime } from './runtime';

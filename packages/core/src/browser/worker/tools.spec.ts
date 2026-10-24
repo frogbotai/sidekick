@@ -21,6 +21,7 @@ const SAMPLES: Record<string, { input: Record<string, unknown>; resource: string
   click: { input: { tab_id: 1, ref: 'f0e1' }, resource: 'https://example.com' },
   hover: { input: { tab_id: 1, ref: 'f0e1' }, resource: 'https://example.com' },
   fill: { input: { tab_id: 1, ref: 'f0e1', text: 'hi' }, resource: 'https://example.com' },
+  check: { input: { tab_id: 1, ref: 'f0e1', checked: false }, resource: 'https://example.com' },
   select: { input: { tab_id: 1, ref: 'f0e1', values: ['a'] }, resource: 'https://example.com' },
   press: { input: { tab_id: 1, key: 'Enter' }, resource: 'https://example.com' },
   drag: { input: { tab_id: 1, from: 'f0e1', to: 'f0e2' }, resource: 'https://example.com' },
@@ -72,7 +73,7 @@ describe('browser tools in the tools registry', () => {
   it.each(Object.entries(SAMPLES))(
     '%s asserts its action and resource before anything else',
     async (id, { input, resource }) => {
-      const { tool, ctx, log } = await setupBrowser({ page: { readValue: later(() => 'hi') } });
+      const { tool, ctx, log } = await setupBrowser();
       const definition = tool(id);
       const result = await drain(definition.execute(definition.input.parse(input), ctx));
 

@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Domain portfolio</title>
+  </head>
+  <body>
+    <nav aria-label="Domains" id="nav"></nav>
+    <main>
+      <h1>Domain portfolio</h1>
+      <button id="edit" type="button">Edit nameservers</button>
+    </main>
+    <script>
+      const nav = document.getElementById('nav');
+
+      for (let index = 1; index <= 120; index++) {
+        const link = document.createElement('a');
+
+        link.href = `#domain-${index}`;
+        link.textContent = `frogbot-domain-${index}.com`;
+        nav.append(link, ' ');
+      }
+
+      window.nameservers = () =>
+        Array.from(document.querySelectorAll('[role=dialog] input'), (input) => input.value);
+
+      document.getElementById('edit').addEventListener('click', () => {
+        const dialog = document.createElement('div');
+
+        dialog.setAttribute('role', 'dialog');
+        dialog.setAttribute('aria-modal', 'true');
+        dialog.setAttribute('aria-label', 'Edit nameservers');
+        dialog.innerHTML = [
+          '<label>Nameserver 1 <input /></label>',
+          '<label>Nameserver 2 <input /></label>',
+          '<button type="button">Save</button>',
+        ].join('');
+
+        document.body.append(dialog);
+      });
+    </script>
+  </body>
+</html>

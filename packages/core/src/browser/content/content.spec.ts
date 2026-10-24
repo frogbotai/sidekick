@@ -1,14 +1,10 @@
 // @vitest-environment happy-dom
 // @vitest-environment-options { "url": "https://example.com/", "settings": { "disableIframePageLoading": true } }
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { ToolError } from '../../tool/tool';
 import { stitch } from '../worker/stitch';
-import { createContent } from '.';
-
-type Handlers = ReturnType<typeof createContent>['handlers'];
-
-const closedRoots = new WeakMap<Element, ShadowRoot>();
+import { cleanups, closedRoots, failure, refOf, setup, unwrap, useContentDom } from './harness';
 
 const AUTOCOMPLETE = [
   'current-password',
@@ -20,98 +16,7 @@ const AUTOCOMPLETE = [
   'cc-name',
 ];
 
-const attachShadow = Element.prototype.attachShadow;
-
-const cleanups: (() => void)[] = [];
-
-function unwrap<T>(
-  outcome:
-    | { ok: T }
-    | { error: { code: ToolError['code']; message: string; detail?: ToolError['detail'] } },
-) {
-  if ('error' in outcome) {
-    throw new ToolError(outcome.error.code, outcome.error.message, outcome.error.detail);
-  }
-
-  return outcome.ok;
-}
-
-async function failure(promise: Promise<unknown>) {
-  return promise.then(
-    () => undefined,
-    (error: unknown) => error,
-  );
-}
-
-function setup({ visible = false } = {}) {
-  const worker = {
-    visible: vi.fn(() => Promise.resolve(visible)),
-    stop: vi.fn(() => Promise.resolve()),
-    identify: vi.fn(() => Promise.resolve({ frameId: 0, key: 'secret' })),
-  };
-
-  const { handlers, indicator } = createContent({ top: true, worker });
-
-  cleanups.push(() => indicator()?.set({ visible: false }));
-
-  const snapshot = async (input: Partial<Parameters<Handlers['page.snapshot']>[0]> = {}) =>
-    unwrap(
-      await handlers['page.snapshot']({ frameId: 0, scope: 'page', max_chars: 30_000, ...input }),
-    );
-
-  const text = async (input: Partial<Parameters<Handlers['page.snapshot']>[0]> = {}) =>
-    (await snapshot(input)).lines
-      .map((line) => `${'  '.repeat(line.depth)}${line.text}`)
-      .join('\n');
-
-  const inspect = async (ref: string, doc?: string) =>
-    unwrap(await handlers['page.inspect']({ ref, doc }));
-
-  return { handlers, indicator, worker, snapshot, text, inspect };
-}
-
-function refOf(text: string, label: string) {
-  const ref = text
-    .split('\n')
-    .filter((entry) => entry.includes(label))
-    .map((entry) => /\[(f\d+e\d+)\]/.exec(entry)?.[1])
-    .find((found) => found !== undefined);
-
-  if (!ref) throw new Error(`No ref for ${label} in:\n${text}`);
-
-  return ref;
-}
-
-beforeEach(() => {
-  document.body.innerHTML = '';
-  document.title = 'Fixture';
-
-  vi.spyOn(Element.prototype, 'attachShadow').mockImplementation(function (this: Element, init) {
-    const root = attachShadow.call(this, init);
-
-    if (init.mode === 'closed') closedRoots.set(this, root);
-
-    return root;
-  });
-
-  Object.assign(globalThis, {
-    chrome: {
-      runtime: {
-        id: 'sidekicktestid',
-      },
-      dom: {
-        openOrClosedShadowRoot: (element: HTMLElement) =>
-          element.shadowRoot ?? closedRoots.get(element) ?? null,
-      },
-    },
-  });
-});
-
-afterEach(() => {
-  for (const cleanup of cleanups.splice(0)) cleanup();
-
-  vi.restoreAllMocks();
-});
+useContentDom();
 
 describe('snapshot refs', () => {
   it('keeps refs stable across two snapshots', async () => {
@@ -180,7 +85,7 @@ describe('snapshot refs', () => {
     });
   });
 
-  it('gives stale_ref removed for a ref from an earlier document', async () => {
+  it('gives stale_ref navigated for a ref from an earlier document', async () => {
     document.body.innerHTML = '<button>Go</button>';
 
     const { text, inspect } = setup();
@@ -188,8 +93,58 @@ describe('snapshot refs', () => {
 
     expect(await failure(inspect(ref, 'an-earlier-document'))).toMatchObject({
       code: 'stale_ref',
-      detail: { reason: 'removed' },
+      message: `${ref} is from before the page changed. Take a new snapshot and use its refs.`,
+      detail: { reason: 'navigated' },
     });
+  });
+
+  it('after a reload, gives the same form’s field a ref it never had', async () => {
+    document.body.innerHTML = '<label>Domain <input></label>';
+
+    const before = setup();
+    const first = await before.snapshot();
+    const old = refOf(first.lines.map((line) => line.text).join('\n'), 'Domain');
+
+    document.body.innerHTML = '<label>Domain <input></label>';
+
+    const after = setup();
+    const fresh = refOf(await after.text({ base: first.next }), 'Domain');
+
+    expect(fresh).not.toBe(old);
+    expect(Number(fresh.slice(3))).toBeGreaterThanOrEqual(first.next);
+  });
+
+  it('gives navigated for a ref below the document’s first number, or before any snapshot', async () => {
+    document.body.innerHTML = '<button>Go</button>';
+
+    const unread = setup();
+
+    expect(await failure(unread.inspect('f0e1'))).toMatchObject({
+      code: 'stale_ref',
+      detail: { reason: 'navigated' },
+    });
+
+    const { text, inspect } = setup();
+    const ref = refOf(await text({ base: 120 }), 'Go');
+
+    expect(ref).toBe('f0e120');
+    expect(await failure(inspect('f0e119'))).toMatchObject({ detail: { reason: 'navigated' } });
+    expect(await failure(inspect('f0e121'))).toMatchObject({ detail: { reason: 'removed' } });
+  });
+
+  it('keeps an element’s ref, and moves on to a later base for new ones', async () => {
+    document.body.innerHTML = '<button>Go</button>';
+
+    const { snapshot, text } = setup();
+
+    expect((await snapshot({ base: 5 })).next).toBe(6);
+
+    document.body.insertAdjacentHTML('beforeend', '<button>Stop</button>');
+
+    const again = await text({ base: 40 });
+
+    expect(refOf(again, 'Go')).toBe('f0e5');
+    expect(refOf(again, 'Stop')).toBe('f0e40');
   });
 });
 

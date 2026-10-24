@@ -1,4 +1,4 @@
-import { describe, frameIdOf, isFrame, isOwn, shadowOf } from './dom';
+import { contains, describe, dialogElements, frameIdOf, isFrame, isOwn, shadowOf } from './dom';
 import type { Refs } from './refs';
 import {
   clip,
@@ -34,6 +34,8 @@ export interface SnapshotOptions {
   refs: Refs;
   scope: 'viewport' | 'page';
   root?: Element;
+  /** The root's ref, for the line that names a dialog open outside it. */
+  rootRef?: string;
   maxChars: number;
 }
 
@@ -99,13 +101,22 @@ function fieldLine(element: Element, role: string, ref: string) {
 }
 
 /**
- * Reads one frame as an outline. The viewport scope keeps elements within one viewport height
- * of the screen and summarises the rest of each container; `maxChars` caps the text.
+ * Reads one frame as an outline, open dialogs first so a short read still reaches them. The
+ * viewport scope keeps elements within one viewport height of the screen and summarises the rest
+ * of each container; `maxChars` caps the text.
  */
-export function snapshotFrame({ refs, scope, root, maxChars }: SnapshotOptions): FrameSnapshot {
+export function snapshotFrame({
+  refs,
+  scope,
+  root,
+  rootRef,
+  maxChars,
+}: SnapshotOptions): FrameSnapshot {
   const band =
     scope === 'viewport' && !root ? { top: -innerHeight, bottom: innerHeight * 2 } : undefined;
 
+  const dialogs = dialogElements().filter((dialog) => !hidden(dialog));
+  const moved = new Set(root ? [] : dialogs);
   const lines: Line[] = [];
   let chars = 0;
   let nodes = 0;
@@ -131,6 +142,8 @@ export function snapshotFrame({ refs, scope, root, maxChars }: SnapshotOptions):
     const kept: Node[] = [];
 
     for (const child of childNodes(node)) {
+      if (child instanceof Element && moved.has(child)) continue;
+
       const where = child instanceof Element ? placement(child, band) : 'in';
 
       if (where === 'above') above++;
@@ -208,8 +221,26 @@ export function snapshotFrame({ refs, scope, root, maxChars }: SnapshotOptions):
     walkChildren(node, depth, inside);
   };
 
-  if (root) walk(root, 0, false);
-  else if (document.body) walkChildren(document.body, 0, false);
+  if (root) {
+    walk(root, 0, false);
+
+    for (const dialog of dialogs) {
+      if (contains(dialog, root) || contains(root, dialog)) continue;
+
+      const role = roleOf(dialog) ?? 'dialog';
+      const name = nameOf(dialog, role);
+      const label = name ? `${role} ${JSON.stringify(name)}` : role;
+
+      lines.push({
+        depth: 0,
+        text: `… ${label} is open outside ${rootRef ?? 'this element'}. Snapshot without a ref to read it.`,
+      });
+    }
+  } else {
+    for (const dialog of moved) walk(dialog, 0, false);
+
+    if (document.body) walkChildren(document.body, 0, false);
+  }
 
   return { title: document.title, lines, truncated };
 }

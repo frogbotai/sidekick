@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Checks</title>
+    <style>
+      [role='checkbox'],
+      [role='switch'] {
+        display: inline-block;
+        padding: 0.25rem 0.5rem;
+        border: 1px solid #888;
+        cursor: pointer;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Checks</h1>
+    <label><input id="native" type="checkbox" /> Auto-renew</label>
+    <div id="aria" role="checkbox" aria-checked="false" tabindex="0">Privacy protection</div>
+    <button id="switch" type="button" role="switch" aria-checked="false">Domain lock</button>
+    <label><input id="resetting" type="checkbox" /> Transfer lock</label>
+    <div id="rerender"></div>
+    <fieldset>
+      <legend>Billing</legend>
+      <label><input type="radio" name="billing" value="monthly" checked /> Monthly</label>
+      <label><input type="radio" name="billing" value="yearly" /> Yearly</label>
+    </fieldset>
+    <script>
+      const aria = document.getElementById('aria');
+      const toggle = (element) =>
+        element.setAttribute(
+          'aria-checked',
+          element.getAttribute('aria-checked') === 'true' ? 'false' : 'true',
+        );
+
+      aria.addEventListener('click', () => toggle(aria));
+      document.getElementById('switch').addEventListener('click', (event) => toggle(event.target));
+
+      document
+        .getElementById('resetting')
+        .addEventListener('click', (event) => event.preventDefault());
+
+      const host = document.getElementById('rerender');
+      const render = (checked) => {
+        host.innerHTML = `<label><input type="checkbox" ${checked ? 'checked' : ''} /> Email alerts</label>`;
+        host
+          .querySelector('input')
+          .addEventListener('change', (event) => render(event.target.checked));
+      };
+
+      render(false);
+
+      window.checks = () => ({
+        native: document.getElementById('native').checked,
+        aria: aria.getAttribute('aria-checked') === 'true',
+        switch: document.getElementById('switch').getAttribute('aria-checked') === 'true',
+        resetting: document.getElementById('resetting').checked,
+        rerender: host.querySelector('input').checked,
+        billing: document.querySelector('[name=billing]:checked').value,
+      });
+    </script>
+  </body>
+</html>

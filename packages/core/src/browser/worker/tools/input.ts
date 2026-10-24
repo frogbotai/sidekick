@@ -8,6 +8,7 @@ import {
   type BrowserEnv,
   enter,
   finish,
+  focusedField,
   fromScreenshot,
   inspectTarget,
   recheck,
@@ -38,6 +39,61 @@ async function focusTarget(act: Act, element: string | undefined) {
   return info;
 }
 
+async function stateAfter(act: Act, element: string) {
+  try {
+    return await race(act.env.page.checkState(act.tabId, element), act.signal);
+  } catch (error) {
+    if (!(error instanceof ToolError && error.code === 'stale_ref')) throw error;
+
+    if (error.detail?.reason === 'navigated') throw error;
+
+    throw new ToolError(
+      'stale_ref',
+      `${element} was replaced after the click. Take a new snapshot; check is safe to repeat.`,
+      error.detail,
+    );
+  }
+}
+
+async function check(act: Act, element: string, checked: boolean) {
+  await inspectTarget(act, element);
+
+  const before = await race(act.env.page.checkState(act.tabId, element), act.signal);
+
+  if (before.checked === checked) {
+    return untrusted({ ...(await finish(act, true)), checked, changed: false });
+  }
+
+  if (before.disabled) {
+    throw new ToolError('invalid_target', `${element} is disabled. Look for what enables it.`);
+  }
+
+  if (!checked && /radio$/.test(before.role)) {
+    throw new ToolError(
+      'invalid_target',
+      'A selected radio can’t be cleared by clicking it. Check another option in its group instead.',
+    );
+  }
+
+  await recheck(act);
+  await act.env.sessions.ensure(act.tabId, act.signal);
+
+  const point = await scrollIntoView(act, element);
+  const settled = await act.env.settler.settle(act.tabId, act.signal, () => click(act, point, {}));
+
+  const after = await stateAfter(act, element);
+
+  if (after.checked !== checked) {
+    throw new ToolError(
+      'input_mismatch',
+      `The page didn’t keep ${element} ${checked ? 'checked' : 'unchecked'}. Take a snapshot and look for a message on the page; don’t toggle it again.`,
+      { checked: after.checked },
+    );
+  }
+
+  return untrusted({ ...(await finish(act, settled)), checked, changed: true });
+}
+
 function endpoint(act: Act, target: z.infer<typeof end>): () => Promise<Point> {
   if (typeof target !== 'string') {
     const point = fromScreenshot(act.env, act.tabId, target);
@@ -56,7 +112,8 @@ export function inputTools(env: BrowserEnv) {
   return [
     defineTool({
       id: 'click',
-      description: 'Click an element by ref, or a point in the last screenshot.',
+      description:
+        'Click an element by ref, or a point in the last screenshot. For checkboxes, radios and switches, use check.',
       input: z.object({
         ...pointer,
         button: z.enum(['left', 'right', 'middle']).optional(),
@@ -90,19 +147,42 @@ export function inputTools(env: BrowserEnv) {
     defineTool({
       id: 'fill',
       description:
-        'Replace a field’s text, by ref. Without a ref, types at the focused element (for canvas apps).',
+        'Replace a field’s text, by ref. Without a ref, types into the focused field (for canvas apps and spreadsheets), and fails when nothing editable has focus. For checkboxes, radios and switches, use check.',
       input: z.object({ tab_id: tabId, ref: ref.optional(), text: z.string() }),
       output: action,
       permission: 'input',
       lock: byTab,
       execute: async ({ tab_id, ref: element, text }, ctx) => {
         const act = await enter(env, ctx, tab_id, 'input');
+
+        if (element === undefined) await focusedField(act);
+
         const info = await focusTarget(act, element);
 
         if (info?.redacted) await report(act, { redacted: 'true' });
 
         return settleAfter(act, () => fill(act, element, text, info));
       },
+    }),
+    defineTool({
+      id: 'check',
+      description:
+        'Check or uncheck a checkbox, radio or switch, by ref. Clicks only when its state differs, so it is safe to repeat.',
+      input: z.object({
+        tab_id: tabId,
+        ref,
+        checked: z.boolean().describe('true to check it, false to uncheck it.'),
+      }),
+      output: action.extend({
+        checked: z.boolean().describe('The state the control is in now.'),
+        changed: z
+          .boolean()
+          .describe('false when it was already in that state, so nothing was clicked.'),
+      }),
+      permission: 'input',
+      lock: byTab,
+      execute: async ({ tab_id, ref: element, checked }, ctx) =>
+        check(await enter(env, ctx, tab_id, 'input'), element, checked),
     }),
     defineTool({
       id: 'select',

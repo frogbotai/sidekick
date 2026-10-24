@@ -109,3 +109,151 @@ test('scrolls the container under a ref, and reports the end', async ({
   expect(document.moved).toBe(200);
   expect(await page.evaluate(() => window.scrolls().page)).toBe(200);
 });
+
+test('fill gives ok when the page swaps the field while typing, and the new field holds the text', async ({
+  context,
+  origin,
+  sidekick,
+}) => {
+  const page = await context.newPage();
+
+  await page.goto(`${origin()}/recycle.html`);
+
+  const run = await sidekick.start(page);
+  const { snapshot } = await run.call<SnapshotOutput>('snapshot');
+
+  expect(await run.call('fill', { ref: refFor(snapshot, 'Domain'), text: 'frogbot.co' })).toEqual(
+    expect.objectContaining({ navigated: false }),
+  );
+
+  expect(await page.evaluate(() => window.swaps)).toBeGreaterThan(0);
+  expect(await page.evaluate(() => window.domainValue())).toBe('frogbot.co');
+});
+
+test('fill without a ref types into the field focused in a cross-origin frame, and fails with nothing editable focused', async ({
+  context,
+  origin,
+  sidekick,
+}) => {
+  const page = await context.newPage();
+
+  await page.goto(`${origin()}/frames.html`);
+
+  const field = page.frameLocator('#cross').getByLabel('Frame field');
+
+  await expect(field).toBeVisible();
+
+  const run = await sidekick.start(page);
+  const { snapshot } = await run.call<SnapshotOutput>('snapshot', { scope: 'page' });
+
+  expect(await run.fail('fill', { text: 'nowhere' })).toMatchObject({ code: 'not_editable' });
+
+  await run.call('click', { ref: refFor(snapshot, 'Frame field') });
+  await run.call('fill', { text: 'typed at focus' });
+
+  await expect(field).toHaveValue('typed at focus');
+
+  await run.call('click', { ref: refFor(snapshot, 'Top button') });
+
+  expect(await run.fail('fill', { text: 'nowhere' })).toMatchObject({
+    code: 'not_editable',
+    message: 'Nothing editable has focus. Click the field first, or fill by ref.',
+  });
+});
+
+test('check sets native, ARIA and switch controls, safe to repeat, and says when the page undoes it', async ({
+  context,
+  origin,
+  sidekick,
+}) => {
+  const page = await context.newPage();
+
+  await page.goto(`${origin()}/checks.html`);
+
+  const run = await sidekick.start(page);
+  const { snapshot } = await run.call<SnapshotOutput>('snapshot');
+  const ref = (label: string) => refFor(snapshot, label);
+
+  for (const label of ['Auto-renew', 'Privacy protection', 'Domain lock']) {
+    expect(await run.call('check', { ref: ref(label), checked: true })).toMatchObject({
+      checked: true,
+      changed: true,
+    });
+
+    expect(await run.call('check', { ref: ref(label), checked: true })).toMatchObject({
+      checked: true,
+      changed: false,
+    });
+  }
+
+  expect(await page.evaluate(() => window.checks())).toMatchObject({
+    native: true,
+    aria: true,
+    switch: true,
+  });
+
+  expect(await run.fail('check', { ref: ref('Transfer lock'), checked: true })).toMatchObject({
+    code: 'input_mismatch',
+    message: expect.stringContaining('don’t toggle it again'),
+  });
+
+  expect(await run.fail('check', { ref: ref('Email alerts'), checked: true })).toMatchObject({
+    code: 'stale_ref',
+    message: expect.stringContaining('was replaced after the click'),
+  });
+
+  const fresh = await run.call<SnapshotOutput>('snapshot');
+
+  expect(
+    await run.call('check', { ref: refFor(fresh.snapshot, 'Email alerts'), checked: true }),
+  ).toMatchObject({ changed: false });
+
+  expect(await run.fail('check', { ref: ref('Monthly'), checked: false })).toMatchObject({
+    code: 'invalid_target',
+  });
+
+  await run.call('check', { ref: ref('Yearly'), checked: true });
+
+  expect(await page.evaluate(() => window.checks())).toMatchObject({
+    resetting: false,
+    rerender: true,
+    billing: 'yearly',
+  });
+});
+
+test('a short snapshot reaches a dialog added at the end of the page, and fill by its refs works', async ({
+  context,
+  origin,
+  sidekick,
+}) => {
+  const page = await context.newPage();
+
+  await page.goto(`${origin()}/dialog.html`);
+
+  const run = await sidekick.start(page);
+  const first = await run.call<SnapshotOutput>('snapshot');
+
+  await run.call('click', { ref: refFor(first.snapshot, 'Edit nameservers') });
+
+  const { snapshot, truncated } = await run.call<SnapshotOutput>('snapshot', {
+    max_chars: 2_000,
+  });
+
+  expect(truncated).toBe(true);
+  expect(snapshot.startsWith('- dialog "Edit nameservers"')).toBe(true);
+
+  await run.call('fill', {
+    ref: refFor(snapshot, 'Nameserver 1'),
+    text: 'keyla.ns.cloudflare.com',
+  });
+
+  await run.call('fill', {
+    ref: refFor(snapshot, 'Nameserver 2'),
+    text: 'lochlan.ns.cloudflare.com',
+  });
+
+  expect(await page.evaluate(() => window.nameservers())).toEqual([
+    'keyla.ns.cloudflare.com',
+    'lochlan.ns.cloudflare.com',
+  ]);
+});

@@ -90,36 +90,12 @@ export async function press(act: Act, combo: string) {
   }
 }
 
-async function typeKeys(act: Act, text: string) {
-  for (const character of text) {
-    const chord = parseChord(character === '\n' ? 'Enter' : character, act.env.mac);
-    const typed = character === '\n' ? '\r' : character;
-
-    await key(act, 'keyDown', chord, { text: typed, unmodifiedText: typed });
-    await key(act, 'keyUp', chord);
-  }
-}
-
-function same(actual: string, expected: string) {
-  const squash = (value: string) => value.replace(/\s+/g, ' ').trim();
-
-  return squash(actual) === squash(expected);
-}
-
-async function replace(act: Act, ref: string, text: string, typed: boolean) {
-  await race(act.env.page.selectContents(act.tabId, ref), act.signal);
-
-  if (text === '') await press(act, 'Delete');
-  else if (typed) await typeKeys(act, text);
-  else await send(act, 'Input.insertText', { text });
-}
-
-/** Playwright's `fill`: select the contents, one `insertText` (or `Delete`), read back; key events on a mismatch. */
+/** OpenCode v2's `fill`: select the contents, then one `insertText` (or `Delete`), with no read-back. */
 export async function fill(
   act: Act,
   ref: string | undefined,
   text: string,
-  { redacted = false, max_length: max }: Partial<RefInfo> = {},
+  { max_length: max }: Partial<RefInfo> = {},
 ) {
   if (ref === undefined) {
     if (text !== '') await send(act, 'Input.insertText', { text });
@@ -135,21 +111,10 @@ export async function fill(
     );
   }
 
-  await replace(act, ref, text, false);
+  await race(act.env.page.selectContents(act.tabId, ref), act.signal);
 
-  if (same(await race(act.env.page.readValue(act.tabId, ref), act.signal), text)) return;
-
-  await replace(act, ref, text, true);
-
-  const actual = await race(act.env.page.readValue(act.tabId, ref), act.signal);
-
-  if (same(actual, text)) return;
-
-  throw new ToolError(
-    'input_mismatch',
-    `${ref} didn’t take the text. Click it and use press, or check it’s an editable field.`,
-    redacted ? undefined : { actual },
-  );
+  if (text === '') await press(act, 'Delete');
+  else await send(act, 'Input.insertText', { text });
 }
 
 export async function drag(act: Act, from: Point, to: () => Promise<Point>) {

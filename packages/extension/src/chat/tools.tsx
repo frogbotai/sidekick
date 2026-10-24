@@ -249,6 +249,23 @@ export const TOOL_LINES: Record<string, (call: ToolCall) => ToolLine> = {
       subtitle: text(metadata.target),
     };
   },
+  check: ({ input, output, metadata }) => {
+    const target = text(metadata.target);
+    const on = input.checked !== false;
+    const [running, done, failed] = on
+      ? ['Checking', 'Checked', 'Check']
+      : ['Unchecking', 'Unchecked', 'Uncheck'];
+
+    return {
+      icon: 'checkmark',
+      running: joined(running, target),
+      done:
+        output.changed === false
+          ? joined('Left', target ?? 'it', on ? 'checked' : 'unchecked')
+          : joined(done, target),
+      failed: joined(failed, target),
+    };
+  },
   select: ({ input, metadata }) => {
     const values = Array.isArray(input.values) ? input.values.filter((value) => text(value)) : [];
 

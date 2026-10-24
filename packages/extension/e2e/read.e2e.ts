@@ -175,6 +175,43 @@ test('a recycled or removed element gives stale_ref', async ({ context, origin, 
   });
 });
 
+test('a ref from before a reload fails navigated, and never acts on the new page (329 req. 2)', async ({
+  context,
+  origin,
+  sidekick,
+}) => {
+  const page = await context.newPage();
+
+  await page.goto(`${origin()}/frames.html`);
+
+  const run = await sidekick.start(page);
+  const before = await run.call<SnapshotOutput>('snapshot');
+  const top = refFor(before.snapshot, 'Top button');
+
+  await page.reload();
+  await expect(page.getByRole('button', { name: 'Top button' })).toBeVisible();
+
+  const navigated = {
+    code: 'stale_ref',
+    message: `${top} is from before the page changed. Take a new snapshot and use its refs.`,
+    detail: { reason: 'navigated' },
+  };
+
+  expect(await run.fail('click', { ref: top })).toMatchObject(navigated);
+
+  const after = await run.call<SnapshotOutput>('snapshot');
+
+  expect(refFor(after.snapshot, 'Top button')).not.toBe(top);
+  expect(await run.fail('click', { ref: top })).toMatchObject(navigated);
+
+  expect(
+    await run.fail('fill', { ref: refFor(before.snapshot, 'Top field'), text: 'x' }),
+  ).toMatchObject({ detail: { reason: 'navigated' } });
+
+  expect(await page.evaluate(() => window.log)).toEqual([]);
+  await expect(page.getByLabel('Top field')).toHaveValue('');
+});
+
 test('redacts secret fields and counts only the visible ones', async ({
   context,
   origin,

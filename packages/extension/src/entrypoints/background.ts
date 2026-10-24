@@ -21,6 +21,7 @@ import {
   restrictStorageToTrustedContexts,
   serve,
   type Server,
+  sessionRefStore,
   sidekickProtocol,
   tools,
 } from '@frogbotai/sidekick-core';
@@ -70,7 +71,7 @@ export default defineBackground(() => {
 
   const runtime = createBrowserRuntime({
     cdp: chromeCdp(),
-    page: chromePage({ tabs, inject: injectFrame }),
+    page: chromePage({ tabs, inject: injectFrame, refs: sessionRefStore() }),
     tabs,
     mac: /Mac OS X|Macintosh/.test(navigator.userAgent),
   });

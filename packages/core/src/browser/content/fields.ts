@@ -1,4 +1,6 @@
 import { ToolError } from '../../tool/tool';
+import { deepActiveElement, describe, frameIdOf, isFrame } from './dom';
+import { fingerprintOf, isChecked, isDisabled, nameOf, roleOf } from './roles';
 
 function notText(ref: string) {
   return new ToolError(
@@ -57,16 +59,67 @@ export function selectContents(element: Element, ref: string) {
   selection?.addRange(range);
 }
 
-export function readValue(element: Element, ref: string) {
-  if (isTextField(element)) return element.value;
+const NOT_TEXT = new Set([
+  'button',
+  'checkbox',
+  'color',
+  'file',
+  'hidden',
+  'image',
+  'radio',
+  'range',
+  'reset',
+  'submit',
+]);
 
-  if (element instanceof HTMLElement && element.isContentEditable) {
-    const host = editingHost(element);
+function isEditable(element: Element) {
+  if (element instanceof HTMLElement && element.isContentEditable) return true;
 
-    return host.innerText || host.textContent || '';
+  if (!isTextField(element) || element.disabled || element.readOnly) return false;
+
+  return !(element instanceof HTMLInputElement && NOT_TEXT.has(element.type));
+}
+
+/** What has focus, through shadow roots; a focused frame names the child frame to ask next. */
+export function focusedField() {
+  const element = deepActiveElement();
+
+  if (!element || element === document.body || element === document.documentElement) {
+    return { editable: false, role: '', name: '' };
   }
 
-  throw notText(ref);
+  if (isFrame(element)) {
+    const frameId = frameIdOf(element);
+
+    return {
+      editable: false,
+      role: 'iframe',
+      name: nameOf(element, 'iframe') || describe(element),
+      ...(frameId === undefined ? {} : { descend: { frameId } }),
+    };
+  }
+
+  const { role, name } = fingerprintOf(element);
+
+  return { editable: isEditable(element), role, name };
+}
+
+const CHECKABLE = new Set(['checkbox', 'radio', 'switch', 'menuitemcheckbox', 'menuitemradio']);
+
+/** A checkbox, radio or switch's state, read as the snapshot reads it; other roles are refused. */
+export function checkState(element: Element, ref: string) {
+  const role = roleOf(element) ?? '';
+
+  if (!CHECKABLE.has(role)) {
+    const kind = role ? `${/^[aeiou]/.test(role) ? 'an' : 'a'} ${role}` : 'not a control';
+
+    throw new ToolError(
+      'invalid_target',
+      `${ref} is ${kind}, not a checkbox, radio or switch. Use click instead.`,
+    );
+  }
+
+  return { role, checked: isChecked(element), disabled: isDisabled(element) };
 }
 
 /** Selects options by value or label, then fires `input` and `change` as a user's choice would. */

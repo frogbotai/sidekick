@@ -25,6 +25,7 @@ export const OUTLINE = new Set([
   'heading',
   'img',
   'dialog',
+  'alertdialog',
   'navigation',
   'main',
   'alert',
@@ -211,18 +212,27 @@ export function valueOf(element: Element): string | undefined {
   return undefined;
 }
 
+/** A native checkbox or radio's `checked`, or else `aria-checked="true"`. */
+export function isChecked(element: Element) {
+  if (element instanceof HTMLInputElement && /^(checkbox|radio)$/.test(element.type)) {
+    return element.checked;
+  }
+
+  return element.getAttribute('aria-checked') === 'true';
+}
+
+export function isDisabled(element: Element) {
+  const disabled = 'disabled' in element && element.disabled === true;
+
+  return disabled || element.getAttribute('aria-disabled') === 'true';
+}
+
 export function statesOf(element: Element) {
   const states: string[] = [];
 
-  if (element instanceof HTMLInputElement && /^(checkbox|radio)$/.test(element.type)) {
-    if (element.checked) states.push('checked');
-  } else if (element.getAttribute('aria-checked') === 'true') {
-    states.push('checked');
-  }
+  if (isChecked(element)) states.push('checked');
 
-  const disabled = 'disabled' in element && element.disabled === true;
-
-  if (disabled || element.getAttribute('aria-disabled') === 'true') states.push('disabled');
+  if (isDisabled(element)) states.push('disabled');
 
   const expanded = element.getAttribute('aria-expanded');
 

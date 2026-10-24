@@ -156,20 +156,19 @@ describe('input order (req. 13)', () => {
   });
 });
 
-describe('fill (req. 14)', () => {
-  it('selects the contents, then sends one insertText with nothing between them', async () => {
-    const { tool, ctx, log, cdp } = await setupBrowser({
-      page: { readValue: later(() => 'Hello') },
-    });
+describe('fill (req. 14, 329 D1 B)', () => {
+  it('selects the contents, then sends one insertText, and reads nothing back', async () => {
+    const { tool, ctx, log, cdp } = await setupBrowser();
 
     await drain(tool('fill').execute({ tab_id: 1, ref: 'f0e1', text: 'Hello' }, ctx));
 
     const select = log.indexOf('page.selectContents');
 
-    expect(log.slice(select, select + 3)).toEqual([
+    expect(log.slice(select)).toEqual([
       'page.selectContents',
       'cdp.Input.insertText',
-      'page.readValue',
+      'page.domQuiet',
+      'tabs.get',
     ]);
 
     expect(inputs(cdp.sent)).toEqual([
@@ -188,61 +187,6 @@ describe('fill (req. 14)', () => {
     ]);
   });
 
-  it('falls back to key events on a mismatch', async () => {
-    const reads = ['', 'hi'];
-    const { tool, ctx, cdp, log } = await setupBrowser({
-      page: { readValue: later(() => reads.shift() ?? '') },
-    });
-
-    await drain(tool('fill').execute({ tab_id: 1, ref: 'f0e1', text: 'hi' }, ctx));
-
-    expect(log.filter((entry) => entry === 'page.selectContents')).toHaveLength(2);
-
-    expect(
-      inputs(cdp.sent).map(
-        ({ method, params }) =>
-          `${method}:${String(params.type ?? params.text)}:${String(params.text ?? '')}`,
-      ),
-    ).toEqual([
-      'Input.insertText:hi:hi',
-      'Input.dispatchKeyEvent:keyDown:h',
-      'Input.dispatchKeyEvent:keyUp:',
-      'Input.dispatchKeyEvent:keyDown:i',
-      'Input.dispatchKeyEvent:keyUp:',
-    ]);
-  });
-
-  it('throws input_mismatch when key events don’t take either, without echoing a redacted value', async () => {
-    const plain = await setupBrowser({ page: { readValue: later(() => 'nope') } });
-    const shown = await failure(
-      plain.tool('fill').execute({ tab_id: 1, ref: 'f0e1', text: 'hi' }, plain.ctx),
-    );
-
-    expect(codeOf(shown)).toBe('input_mismatch');
-    expect(shown instanceof ToolError && shown.detail).toEqual({ actual: 'nope' });
-
-    const secret = await setupBrowser({
-      page: {
-        readValue: later(() => 'hunter2'),
-        inspect: later(() => ({
-          frameId: 0,
-          frameOrigin: 'https://example.com',
-          redacted: true,
-          role: 'textbox',
-          name: 'Password',
-        })),
-      },
-    });
-
-    const hidden = await failure(
-      secret.tool('fill').execute({ tab_id: 1, ref: 'f0e1', text: 'pw' }, secret.ctx),
-    );
-
-    expect(codeOf(hidden)).toBe('input_mismatch');
-    expect(hidden instanceof ToolError && hidden.detail).toBeUndefined();
-    expect(JSON.stringify(hidden instanceof Error && hidden.message)).not.toContain('hunter2');
-  });
-
   it('refuses text longer than the field’s maxlength before sending any input', async () => {
     const { tool, ctx, cdp } = await setupBrowser({
       page: {
@@ -254,7 +198,6 @@ describe('fill (req. 14)', () => {
           name: 'Code',
           max_length: 8,
         })),
-        readValue: later(() => 'sidekick'),
       },
     });
 
@@ -276,16 +219,64 @@ describe('fill (req. 14)', () => {
     expect(inputs(cdp.sent).map(({ params }) => params.text)).toEqual(['sidekick']);
   });
 
-  it('types at the focused element without a ref (271 D3)', async () => {
+  it('types into the focused field without a ref, and reports it (271 D3)', async () => {
     const { tool, ctx, log, cdp } = await setupBrowser();
 
     await drain(tool('fill').execute({ tab_id: 1, text: 'cell' }, ctx));
 
     expect(log).not.toContain('page.selectContents');
+    expect(log).toContain('page.focused');
+    expect(ctx.reports.at(-1)).toEqual({ target: 'textbox “Cell”' });
 
     expect(inputs(cdp.sent)).toEqual([
       { tabId: 1, method: 'Input.insertText', params: { text: 'cell' } },
     ]);
+  });
+
+  it('fails not_editable without a ref when the body has focus, sending nothing', async () => {
+    const { tool, ctx, cdp } = await setupBrowser({
+      page: {
+        focused: later(() => ({
+          frameId: 0,
+          frameOrigin: 'https://example.com',
+          editable: false,
+          role: '',
+          name: '',
+        })),
+      },
+    });
+
+    const error = await failure(tool('fill').execute({ tab_id: 1, text: 'frogbot.co' }, ctx));
+
+    expect(error).toMatchObject({
+      code: 'not_editable',
+      message: 'Nothing editable has focus. Click the field first, or fill by ref.',
+    });
+
+    expect(inputs(cdp.sent)).toEqual([]);
+  });
+
+  it('asserts the frame origin of a field focused in a cross-origin frame', async () => {
+    const { tool, ctx, cdp } = await setupBrowser({
+      page: {
+        focused: later(() => ({
+          frameId: 3,
+          frameOrigin: 'https://sheets.test',
+          editable: true,
+          role: 'textbox',
+          name: 'Cell A1',
+        })),
+      },
+    });
+
+    await drain(tool('fill').execute({ tab_id: 1, text: '42' }, ctx));
+
+    expect(ctx.asserts).toEqual([
+      { action: 'input', resource: 'https://example.com' },
+      { action: 'input', resource: 'https://example.com', frameOrigin: 'https://sheets.test' },
+    ]);
+
+    expect(inputs(cdp.sent).map(({ params }) => params.text)).toEqual(['42']);
   });
 });
 

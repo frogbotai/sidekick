@@ -3,11 +3,18 @@ import { callWorker } from '../../rpc/content';
 import type { Handlers } from '../../rpc/define';
 import { ToolError, type ToolErrorCode, type ToolErrorDetail } from '../../tool/tool';
 import { assignFrames, type Identify, listenForFrames } from './dom';
-import { focusElement, maxLengthOf, readValue, selectContents, selectOptions } from './fields';
+import {
+  checkState,
+  focusedField,
+  focusElement,
+  maxLengthOf,
+  selectContents,
+  selectOptions,
+} from './fields';
 import { frameSources, stripFrames } from './frames';
 import { createIndicator, type Indicator } from './indicator';
 import { domQuiet } from './quiet';
-import { createRefs, removed } from './refs';
+import { createRefs, navigated } from './refs';
 import { fingerprintOf, isRedacted } from './roles';
 import { frameBox, scrollBegin, scrollFallback, scrollFinish, scrollToElement } from './scroll';
 import { snapshotFrame } from './snapshot';
@@ -57,7 +64,7 @@ export function createContent({
   listenForFrames(worker.identify);
 
   const resolve = (ref: string, expected?: string) => {
-    if (expected !== undefined && expected !== doc) throw removed(ref);
+    if (expected !== undefined && expected !== doc) throw navigated(ref);
 
     return refs.resolve(ref);
   };
@@ -79,6 +86,7 @@ export function createContent({
     'page.snapshot': (input) =>
       guard(async () => {
         frameId = input.frameId;
+        refs.from(input.base);
 
         if (input.children) await assignFrames(input.children, { key: input.key, wait: true });
 
@@ -87,10 +95,11 @@ export function createContent({
           refs,
           scope: input.scope,
           root,
+          rootRef: input.ref,
           maxChars: input.max_chars,
         });
 
-        return { ...snapshot, doc };
+        return { ...snapshot, doc, next: refs.next() };
       }),
     'page.inspect': ({ ref, doc: expected }) =>
       guard(() => {
@@ -126,8 +135,14 @@ export function createContent({
 
         return null;
       }),
-    'page.readValue': ({ ref, doc: expected }) =>
-      guard(() => readValue(resolve(ref, expected), ref)),
+    'page.focused': ({ children, key }) =>
+      guard(async () => {
+        if (children) await assignFrames(children, { key });
+
+        return { ...focusedField(), frameOrigin: location.origin };
+      }),
+    'page.checkState': ({ ref, doc: expected }) =>
+      guard(() => checkState(resolve(ref, expected), ref)),
     'page.selectOptions': ({ ref, doc: expected, values }) =>
       guard(() => selectOptions(resolve(ref, expected), ref, values)),
     'page.scrollStart': ({ ref, doc: expected, point, direction, amount, children, key }) =>

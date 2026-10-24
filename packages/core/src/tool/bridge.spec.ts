@@ -639,7 +639,7 @@ describe('one call at a time per tab (331 D1)', () => {
   it('credits a navigation to the click that caused it, not the fill after it', async () => {
     const tabs = fakeTabs([], [START_TAB, OUTSIDE_TAB]);
     const next = 'https://example.com/next';
-    const { cdp } = boot(tabs, undefined, { readValue: later(() => 'hi') });
+    const { cdp } = boot(tabs, undefined, {});
 
     cdp.replies.set('Input.dispatchMouseEvent', (params) => {
       const tab = tabs.tabs.get(START_TAB.id);

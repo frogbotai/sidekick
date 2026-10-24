@@ -182,6 +182,7 @@ export const frameProtocol = defineProtocol({
         ref: z.optional(ref),
         doc,
         max_chars: z.int().check(z.positive()),
+        base: z.int().check(z.positive()),
         children,
         key,
       }),
@@ -191,6 +192,7 @@ export const frameProtocol = defineProtocol({
           doc: z.string(),
           lines: z.array(line),
           truncated: z.boolean(),
+          next: z.int().check(z.positive()),
         }),
       ),
     },
@@ -218,7 +220,22 @@ export const frameProtocol = defineProtocol({
     },
     'page.focus': { input: byRef, output: outcome(z.null()) },
     'page.selectContents': { input: byRef, output: outcome(z.null()) },
-    'page.readValue': { input: byRef, output: outcome(z.string()) },
+    'page.focused': {
+      input: z.object({ children, key }),
+      output: outcome(
+        z.object({
+          frameOrigin: z.string(),
+          editable: z.boolean(),
+          role: z.string(),
+          name: z.string(),
+          descend: z.optional(z.object({ frameId })),
+        }),
+      ),
+    },
+    'page.checkState': {
+      input: byRef,
+      output: outcome(z.object({ role: z.string(), checked: z.boolean(), disabled: z.boolean() })),
+    },
     'page.selectOptions': {
       input: z.object({ ref, doc, values: z.array(z.string()) }),
       output: outcome(z.array(z.string())),
