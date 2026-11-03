@@ -1,9 +1,12 @@
 import '@frogbotai/ui/styles.css';
 import '../sidepanel/panel.css';
 
-import { connectWorker, sidekickProtocol } from '@frogbotai/sidekick-core';
+import { connectWorker, sidekickProtocol, theme } from '@frogbotai/sidekick-core';
 
+import { followPageTheme } from '../../theme/pageTheme';
 import { type ConnectView, runConnectPage } from './connect';
+
+followPageTheme(await theme.get(), theme.watch);
 
 const status = document.getElementById('status');
 const settings = document.getElementById('settings');

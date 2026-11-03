@@ -21,6 +21,7 @@ import { createRoot } from 'react-dom/client';
 import { savedNavOpen } from '../../nav/PanelNav';
 import { startCatalog } from '../../providers/catalog';
 import { startSessions } from '../../session';
+import { followPageTheme } from '../../theme/pageTheme';
 import { App } from './App';
 
 const root = document.getElementById('root');
@@ -45,6 +46,8 @@ const [initialMode, navOpen] = await Promise.all([
   savedNavOpen(),
   provider.registerCustomProviders(),
 ]);
+
+followPageTheme(initialMode, theme.watch);
 
 void startCatalog();
 

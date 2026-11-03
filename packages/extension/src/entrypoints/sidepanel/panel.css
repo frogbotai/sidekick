@@ -1,7 +1,20 @@
+:root {
+  --ramp-grey-900: #050912;
+  --ramp-grey-800: #090e1b;
+  --ramp-grey-700: #141a2a;
+  --ramp-grey-600: #202738;
+}
+
 *,
 *::before,
 *::after {
   box-sizing: border-box;
+}
+
+html {
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-family: var(--font-body);
 }
 
 html,
@@ -15,7 +28,7 @@ body,
 .sidekick-panel {
   display: flex;
   height: 100%;
-  background: var(--fb-theme-base-0);
+  background: var(--color-bg);
 }
 
 .sidekick-panel__main {
@@ -77,7 +90,7 @@ body,
 }
 
 .sidekick-muted {
-  color: var(--fb-theme-base-750);
+  color: var(--color-text-secondary);
   font-size: var(--fb-text-sm);
   line-height: var(--fb-text-sm--line-height);
 }
@@ -86,7 +99,7 @@ body,
   height: auto;
   min-height: 100%;
   padding-top: 1rem;
-  background: var(--fb-theme-base-0);
+  background: var(--color-bg);
 }
 
 @media (min-width: 768px) {
@@ -151,7 +164,7 @@ body,
   margin: 0;
   padding: 0.5rem;
   border-radius: 0.375rem;
-  background: var(--fb-theme-base-100);
+  background: var(--color-bg-secondary);
   font-family: ui-monospace, monospace;
   font-size: var(--fb-text-sm);
   white-space: pre-wrap;

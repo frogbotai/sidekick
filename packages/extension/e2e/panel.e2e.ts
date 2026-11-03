@@ -1,5 +1,6 @@
 import type { Page } from '@playwright/test';
 
+import { DARK_BACKGROUND, unreadableText } from './contrast';
 import { expect, reply, scriptOpenAI, test } from './fixtures';
 
 const PLACEHOLDER = 'Ask anything, / for commands…';
@@ -56,33 +57,35 @@ test('loads with the Web Store ID', ({ extensionId }) => {
 
 test('opens the side panel styled like FrogBot', async ({ openPanel }) => {
   const panel = await openPanel();
+  const html = panel.locator('html');
+  const background = panel.locator('.sidekick-panel');
 
   await expect(panel.getByRole('button', { name: 'Connect a provider' })).toBeVisible();
   await expect(panel.getByRole('heading')).toHaveCount(0);
   await expect(panel.getByRole('tab')).toHaveCount(0);
-  await expect(panel.locator('html')).toHaveAttribute('data-fb-theme', 'system');
+  await expect(html).toHaveAttribute('data-theme', 'light');
+  await expect(background).toHaveCSS('background-color', 'rgb(255, 255, 255)');
+  await expect(html).toHaveCSS('background-color', 'rgb(255, 255, 255)');
+  await expect.poll(() => unreadableText(panel)).toEqual([]);
 
-  const base = await panel.evaluate(() =>
-    getComputedStyle(document.documentElement).getPropertyValue('--fb-theme-base-0').trim(),
-  );
-
-  expect(base).not.toBe('');
-
-  await expect(panel.locator('.sidekick-panel')).not.toHaveCSS(
-    'background-color',
-    'rgba(0, 0, 0, 0)',
-  );
+  await panel.emulateMedia({ colorScheme: 'dark' });
+  await expect(html).toHaveAttribute('data-theme', 'dark');
+  await expect(background).toHaveCSS('background-color', DARK_BACKGROUND);
+  await expect(html).toHaveCSS('background-color', DARK_BACKGROUND);
+  await expect.poll(() => unreadableText(panel)).toEqual([]);
 });
 
 test('follows the stored theme, live and before first render', async ({ openPanel }) => {
   const panel = await openPanel();
   const html = panel.locator('html');
 
-  await expect(html).toHaveAttribute('data-fb-theme', 'system');
+  await expect(html).toHaveAttribute('data-theme', 'light');
   await panel.evaluate(() => chrome.storage.local.set({ theme: 'dark' }));
-  await expect(html).toHaveAttribute('data-fb-theme', 'dark');
-  await panel.reload();
-  await expect(html).toHaveAttribute('data-fb-theme', 'dark');
+  await expect(html).toHaveAttribute('data-theme', 'dark');
+  await panel.reload({ waitUntil: 'commit' });
+  await panel.waitForFunction(() => document.body);
+  expect(await panel.evaluate(() => document.documentElement.dataset.theme)).toBe('dark');
+  await expect(panel.locator('.sidekick-panel')).toHaveCSS('background-color', DARK_BACKGROUND);
 });
 
 test('the nav drawer opens from its toggle, closes on Escape and the backdrop, and opens each view', async ({

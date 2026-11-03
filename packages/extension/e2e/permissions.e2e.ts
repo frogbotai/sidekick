@@ -102,9 +102,9 @@ test('asks before clicking off the chat’s site, remembers Always, and Revoke a
 
   await panel.setViewportSize({ width: 320, height: 640 });
 
-  const fits = await card(panel).evaluate((element) => element.scrollWidth <= element.clientWidth);
-
-  expect(fits).toBe(true);
+  await expect
+    .poll(() => card(panel).evaluate((element) => element.scrollWidth <= element.clientWidth))
+    .toBe(true);
 
   await card(panel).screenshot({ path: test.info().outputPath('permission-card.png') });
   await card(panel).getByRole('button', { name: 'Always allow' }).click();

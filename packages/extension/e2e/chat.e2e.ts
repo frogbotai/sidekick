@@ -3,6 +3,7 @@ import path from 'node:path';
 
 import type { Page } from '@playwright/test';
 
+import { DARK_BACKGROUND } from './contrast';
 import { callTool, callTools, expect, reply, scriptOpenAI, test } from './fixtures';
 
 const SOURCE = path.resolve(import.meta.dirname, '../src');
@@ -385,8 +386,10 @@ test('the options page changes the theme, and the panel follows', async ({
   await options.goto(`chrome-extension://${extensionId}/options.html`);
   await options.getByLabel('Dark').click();
 
-  await expect(options.locator('html')).toHaveAttribute('data-fb-theme', 'dark');
-  await expect(panel.locator('html')).toHaveAttribute('data-fb-theme', 'dark');
+  await expect(options.locator('html')).toHaveAttribute('data-theme', 'dark');
+  await expect(panel.locator('html')).toHaveAttribute('data-theme', 'dark');
+  await expect(options.locator('html')).toHaveCSS('background-color', DARK_BACKGROUND);
+  await expect(panel.locator('.sidekick-panel')).toHaveCSS('background-color', DARK_BACKGROUND);
 
   expect(await options.evaluate(() => chrome.storage.local.get('theme'))).toEqual({
     theme: 'dark',
