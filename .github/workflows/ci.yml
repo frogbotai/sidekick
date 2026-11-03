@@ -1,0 +1,48 @@
+name: ci
+
+# Sidekick builds against a FrogBot checkout beside it (`../frogbot`), so CI checks out
+# both repos side by side and installs FrogBot first.
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          path: sidekick
+      - uses: actions/checkout@v5
+        with:
+          repository: frogbotai/frogbot
+          path: frogbot
+      - uses: pnpm/action-setup@v4
+        with:
+          package_json_file: sidekick/package.json
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: |
+            sidekick/pnpm-lock.yaml
+            frogbot/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+        working-directory: frogbot
+      - run: pnpm install --frozen-lockfile
+        working-directory: sidekick
+      - run: pnpm prettier
+        working-directory: sidekick
+      - run: pnpm typecheck
+        working-directory: sidekick
+      - run: pnpm lint
+        working-directory: sidekick
