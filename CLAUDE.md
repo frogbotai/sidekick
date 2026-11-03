@@ -27,6 +27,10 @@ Every command builds against the FrogBot checkout at `~/code/frogbot/frogbot` (D
 - Never push, merge or open a PR. Never `git stash`: the stash is shared across worktrees.
 - Code style follows FrogBot's [CONTRIBUTING.md](https://github.com/frogbotai/frogbot/blob/main/CONTRIBUTING.md): no comments except JSDoc on public types and tool directives with a reason, no `as unknown as`, files under 500 lines.
 
+## Cloud sessions
+
+When `CLAUDE_CODE_REMOTE` is `true`, frogbot's [cloud rules](https://github.com/frogbotai/frogbot/blob/main/CLAUDE.md#cloud-sessions) replace the conflicting rules above. A Sidekick session also needs the frogbot repo: run `bash ../frogbot/scripts/cloud-setup.sh` from here first. It links the checkouts and the process repo, and installs both repos' dependencies. If Sidekick can't find FrogBot afterwards, set `SIDEKICK_FROGBOT` to the frogbot checkout's path on each command.
+
 ## Communication
 
 Keep replies short and plain; explain unfamiliar terms with an example.
