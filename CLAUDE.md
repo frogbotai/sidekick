@@ -31,6 +31,8 @@ Every command builds against the FrogBot checkout at `~/code/frogbot/frogbot` (D
 
 When `CLAUDE_CODE_REMOTE` is `true`, frogbot's [cloud rules](https://github.com/frogbotai/frogbot/blob/main/CLAUDE.md#cloud-sessions) replace the conflicting rules above. A Sidekick session also needs the frogbot repo: run `bash ../frogbot/scripts/cloud-setup.sh` from here first. It links the checkouts and the process repo, and installs both repos' dependencies. If Sidekick can't find FrogBot afterwards, set `SIDEKICK_FROGBOT` to the frogbot checkout's path on each command.
 
+Keep the Claude session link: commits end with the trailer `Claude-Session: https://claude.ai/code/session_…`, PR bodies end with the bare link on their own line, and issue comments end with `Session: https://claude.ai/code/session_…`. No `Co-authored-by:` or "Generated with" lines.
+
 A PR that changes what someone sees embeds before and after screenshots: see [Screenshots](https://github.com/frogbotai/frogbot/blob/main/.github/feature-process/cloud.md#screenshots).
 
 ## Communication
