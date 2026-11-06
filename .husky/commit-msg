@@ -1,1 +1,2 @@
+node scripts/commit-msg.mjs --strip "$1"
 node scripts/commit-msg.mjs "$1"
