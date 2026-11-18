@@ -1,4 +1,5 @@
 import { readFile } from 'node:fs/promises';
+import path from 'node:path';
 
 import type { BrowserContext } from '@playwright/test';
 import { ALL_FORMATS, BufferSource, Input } from 'mediabunny';
@@ -168,12 +169,12 @@ test('record_start, a navigation and record_stop download an MP4 with the frames
   const report = await run.call<RecordingReport>('record_stop');
 
   expect(report).toMatchObject({ codec: 'avc', frames_dropped: 0 });
-  expect(report.file).toMatch(/^sidekick-recording-[\d-]+\.mp4$/);
   expect(report.frames_written).toBeGreaterThanOrEqual(2);
 
   const download = await newestDownload(context);
 
   expect(download).toMatchObject({ mime: 'video/mp4', bytes: report.bytes });
+  expect(report.file).toBe(path.basename(download.path));
   expect(download.file.length).toBe(report.bytes);
 
   const video = await videoOf(download.file);
