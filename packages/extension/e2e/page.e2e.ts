@@ -110,7 +110,13 @@ test('eval refuses a DOM node, a function or a Map instead of returning {}', asy
 
   const run = await sidekick.start(page);
 
-  for (const script of ['document.body', '() => 1', 'new Map([[1, 2]])', '({ a: [window] })']) {
+  for (const script of [
+    'document.body',
+    '() => 1',
+    'new Map([[1, 2]])',
+    '({ a: [window] })',
+    'Symbol("x")',
+  ]) {
     expect(await run.fail('eval', { script })).toMatchObject({ code: 'script_error' });
   }
 

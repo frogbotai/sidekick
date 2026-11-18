@@ -46,7 +46,7 @@ const isObject = (value: unknown): value is object => typeof value === 'object' 
 const isEvaluated = (value: unknown): value is Evaluated => isObject(value);
 
 const SERIALIZE = `function () {
-  const refused = ['Map', 'Set', 'WeakMap', 'WeakSet', 'WeakRef', 'Promise', 'RegExp', 'Error', 'Window'];
+  const refused = ['Map', 'Set', 'WeakMap', 'WeakSet', 'WeakRef', 'Promise', 'RegExp', 'Error', 'Window', 'Symbol'];
   return JSON.stringify(this, function (key, value) {
     if (typeof value === 'function') throw new TypeError('sidekick:a function');
     if (typeof value === 'symbol') throw new TypeError('sidekick:a symbol');
