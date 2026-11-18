@@ -216,4 +216,72 @@ describe('emulate (sidekick-17 req. 20-26)', () => {
     expect(await failure(emulate({ viewport: PHONE }))).toBeDefined();
     expect(runtime.env.emulation.active(1)).toEqual({ color_scheme: 'dark' });
   });
+
+  it('leaves no overrides behind when the run stops while a call is sending (review finding 1)', async () => {
+    const { emulate, cdp, runtime, run, tool, ctx } = await emulating();
+
+    await emulate({ color_scheme: 'dark' });
+
+    let answer = () => {};
+
+    cdp.replies.set(
+      'Emulation.setDeviceMetricsOverride',
+      () => new Promise((resolve) => (answer = () => resolve({}))),
+    );
+
+    const definition = tool('emulate');
+    const second = definition
+      .execute(definition.input.parse({ tab_id: 1, viewport: PHONE }), ctx)
+      .catch((error: unknown) => error);
+
+    await vi.advanceTimersByTimeAsync(50);
+    runtime.env.runs.stop(run.id);
+    await vi.advanceTimersByTimeAsync(100);
+    answer();
+    await vi.advanceTimersByTimeAsync(100);
+    await second;
+
+    expect(runtime.env.emulation.active(1)).toEqual({});
+
+    await runtime.env.runs.start({ tabId: 1, label: 'Next task' });
+    cdp.detachByChrome(1, 'canceled_by_user');
+    cdp.sent.length = 0;
+    await drain(runtime.env.sessions.send(1, 'Page.enable', {}));
+
+    expect(sentMethods(emulationSent(cdp.sent))).toEqual([]);
+  });
+
+  it('rolls back a viewport that went out before a later command failed (review finding 2)', async () => {
+    const { emulate, cdp, runtime } = await emulating();
+
+    cdp.sendErrors.set('Emulation.setEmulatedMedia', [new Error('Invalid parameters')]);
+
+    expect(await failure(emulate({ viewport: PHONE, color_scheme: 'dark' }))).toBeDefined();
+
+    const methods = sentMethods(emulationSent(cdp.sent));
+
+    expect(methods.slice(methods.indexOf('Emulation.setDeviceMetricsOverride') + 2)).toEqual(
+      CLEARS,
+    );
+
+    expect(runtime.env.emulation.active(1)).toEqual({});
+  });
+
+  it('puts the earlier overrides back on the tab when a call fails', async () => {
+    const { emulate, cdp } = await emulating();
+
+    await emulate({ reduced_motion: 'reduce' });
+    cdp.sendErrors.set('Emulation.setEmulatedMedia', [new Error('Invalid parameters')]);
+    cdp.sent.length = 0;
+
+    expect(await failure(emulate({ viewport: PHONE, color_scheme: 'dark' }))).toBeDefined();
+
+    expect(emulationSent(cdp.sent).slice(-6)).toEqual([
+      ...CLEARS.map((method) => expect.objectContaining({ method })),
+      expect.objectContaining({
+        method: 'Emulation.setEmulatedMedia',
+        params: { features: [{ name: 'prefers-reduced-motion', value: 'reduce' }] },
+      }),
+    ]);
+  });
 });
