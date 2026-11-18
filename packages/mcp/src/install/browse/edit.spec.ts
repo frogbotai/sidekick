@@ -141,6 +141,17 @@ describe('toml keeps comments', () => {
     expect(editConfig(entry, true).result).toBe('removed');
     expect(read(entry.file)).toBe('# mine\n');
 
+    const spaced =
+      'model = "o3"\n\n[mcp_servers.sidekick]\ncommand = "npx"\nargs = [ "-y", "@frogbotai/sidekick-mcp" ]\n\n# my other server\n[mcp_servers.other]\ncommand = "x"\n';
+
+    const neighbour = toml(file('neighbour.toml', spaced));
+
+    expect(editConfig(neighbour, true).result).toBe('removed');
+
+    expect(read(neighbour.file)).toBe(
+      'model = "o3"\n\n# my other server\n[mcp_servers.other]\ncommand = "x"\n',
+    );
+
     const inline = toml(file('inline.toml', 'mcp_servers = { other = { command = "x" } }\n'));
 
     expect(editConfig(inline).result).toBe('refused');

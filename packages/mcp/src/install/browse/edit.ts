@@ -246,8 +246,13 @@ function tableRange(before: string, keys: readonly string[]) {
 
   const body = match.index + match[0].length;
   const next = /^[ \t]*\[/m.exec(before.slice(body));
+  const lines = before.slice(body, next ? body + next.index : before.length).split('\n');
 
-  return { start: match.index, end: next ? body + next.index : before.length };
+  while (lines.length > 1 && /^[ \t]*(?:#.*)?$/.test(lines[lines.length - 2] ?? '')) {
+    lines.splice(lines.length - 2, 1);
+  }
+
+  return { start: match.index, end: body + lines.join('\n').length };
 }
 
 function removeToml(before: string, block: string, keys: readonly string[]) {
