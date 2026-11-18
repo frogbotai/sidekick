@@ -1,5 +1,6 @@
 import type { ToolDefinition } from '../../tool/tool';
 import type { BrowserEnv } from './env';
+import { createRecordings } from './recordings';
 import { createRuns } from './runs';
 import { createSessions } from './sessions';
 import { createSettler } from './settle';
@@ -27,6 +28,7 @@ export function createBrowserRuntime({
   const sessions = createSessions({ cdp, tabs, page });
   const runs = createRuns(tabs);
   const settler = createSettler({ cdp, page, tabs, sessions });
+  const recordings = createRecordings({ page, tabs });
   const documents = new Map<number, number>();
   const env: BrowserEnv = {
     cdp,
@@ -35,6 +37,7 @@ export function createBrowserRuntime({
     sessions,
     settler,
     runs,
+    recordings,
     screens: new Map(),
     documents,
     mac,
@@ -52,6 +55,7 @@ export function createBrowserRuntime({
       stopCommits();
       sessions.dispose();
       runs.dispose();
+      recordings.dispose();
     },
   };
 }

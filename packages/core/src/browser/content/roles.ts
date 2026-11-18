@@ -1,4 +1,5 @@
-const REDACT_AUTOCOMPLETE = /(^|\s)(current-password|new-password|one-time-code|cc-[a-z-]+)(\s|$)/i;
+export const REDACT_AUTOCOMPLETE =
+  /(^|\s)(current-password|new-password|one-time-code|cc-[a-z-]+)(\s|$)/i;
 
 export const INTERACTIVE = new Set([
   'button',

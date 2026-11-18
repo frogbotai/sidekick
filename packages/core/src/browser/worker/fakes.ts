@@ -211,6 +211,7 @@ export function fakePage(log: Log, overrides: Partial<Page> = {}): Page {
     strip: later(() => []),
     indicator: later(() => undefined),
     stopAt: later(() => false),
+    record: later(() => undefined),
     ...overrides,
   };
 
