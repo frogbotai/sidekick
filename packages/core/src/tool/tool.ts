@@ -68,6 +68,8 @@ export const TOOL_ERROR_CODES = [
   'stale_screenshot',
   'no_baseline',
   'size_mismatch',
+  'recording_running',
+  'no_recording',
   'navigated',
   'not_visible',
   'obscured',

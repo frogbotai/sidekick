@@ -30,6 +30,17 @@ const SAMPLES: Record<
   },
   scroll: { input: { tab_id: 1, direction: 'down' }, resource: 'https://example.com' },
   scroll_to: { input: { tab_id: 1, ref: 'f0e1' }, resource: 'https://example.com' },
+  record_start: { input: { tab_id: 1 }, resource: 'https://example.com' },
+  record_status: {
+    input: { tab_id: 1 },
+    resource: 'https://example.com',
+    before: ({ tool, ctx }) => drain(tool('record_start').execute({ tab_id: 1 }, ctx)),
+  },
+  record_stop: {
+    input: { tab_id: 1 },
+    resource: 'https://example.com',
+    before: ({ tool, ctx }) => drain(tool('record_start').execute({ tab_id: 1 }, ctx)),
+  },
   click: { input: { tab_id: 1, ref: 'f0e1' }, resource: 'https://example.com' },
   hover: { input: { tab_id: 1, ref: 'f0e1' }, resource: 'https://example.com' },
   fill: { input: { tab_id: 1, ref: 'f0e1', text: 'hi' }, resource: 'https://example.com' },
@@ -63,7 +74,7 @@ function bad(id: string, input: z.ZodType = z.object({})): ToolDefinition {
 }
 
 describe('browser tools in the tools registry', () => {
-  it('registers all 16, and sends a bad id or schema to errors()', async () => {
+  it('registers all 20, and sends a bad id or schema to errors()', async () => {
     const { runtime } = await setupBrowser();
 
     disposers.push(
