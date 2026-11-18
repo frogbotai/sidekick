@@ -129,10 +129,9 @@ describe('webmcp call', () => {
     const { run, log } = await setup();
     const error = await failure(run({ action: 'call', tool: 'refund' }));
 
-    expect(error).toMatchObject({
-      code: 'invalid_target',
-      detail: { tools: ['add_to_cart', 'pay'] },
-    });
+    expect(error).toMatchObject({ code: 'invalid_target' });
+    expect(JSON.stringify(error)).not.toContain('add_to_cart');
+    expect(error instanceof ToolError ? error.detail : undefined).toBeUndefined();
 
     expect(log).not.toContain('page.webmcpCall');
   });
@@ -150,6 +149,24 @@ describe('webmcp call', () => {
     await drain(run({ action: 'call', tool: 'pay', origin: TOP }));
 
     expect(ctx.asserts).toEqual([{ action: 'input', resource: TOP }]);
+  });
+
+  it('takes the first match when every tool left with the name comes from one site', async () => {
+    const twice = [...TOOLS, { name: 'pay', description: 'Pays again', origin: PAY }];
+    const webmcpCall = vi.fn(later(() => ({ result: 'paid', truncated: false })));
+    const { run, ctx } = await setup({
+      webmcpList: later(() => ({ tools: twice, more: 0 })),
+      webmcpCall,
+    });
+
+    await drain(run({ action: 'call', tool: 'pay' }));
+
+    expect(ctx.asserts).toEqual([
+      { action: 'input', resource: TOP },
+      { action: 'input', resource: TOP, frameOrigin: PAY },
+    ]);
+
+    expect(webmcpCall).toHaveBeenCalledWith(1, expect.objectContaining({ origin: PAY }));
   });
 
   it('fails invalid_target without a tool name', async () => {
