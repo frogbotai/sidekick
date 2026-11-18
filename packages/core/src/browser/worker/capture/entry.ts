@@ -87,7 +87,10 @@ function redactJson(value: unknown, redactor: SecretRedactor): unknown {
 }
 
 function redactBody(body: CapturedBody | undefined, redactor: SecretRedactor) {
-  if (!body?.text || !body.mimeType.toLowerCase().includes('json')) return body;
+  if (!body?.text) return body;
+  if (!body.mimeType.toLowerCase().includes('json')) {
+    return { ...body, text: redactor.redactKnownBodySubstrings(body.text, MIN_KNOWN_BODY_LENGTH) };
+  }
 
   try {
     return { ...body, text: JSON.stringify(redactJson(JSON.parse(body.text), redactor)) };

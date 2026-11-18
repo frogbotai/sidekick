@@ -188,6 +188,37 @@ describe('URLs (sidekick-18 req. 6.3)', () => {
     expect(path?.value).toBe(`/callback?code=${REDACTED}`);
     expect(authority?.value).toBe('docs.example.com');
   });
+
+  it('hides a token in the query of a hash route', () => {
+    const redactor = new SecretRedactor();
+
+    expect(
+      redactor.protectUrl('https://app.test/#/reset?token=Zk9pQ2xRb3dUa2VuX3NlY3JldA&x=1'),
+    ).toBe(`https://app.test/#/reset?token=${REDACTED}&x=1`);
+
+    expect(redactor.redactText('Zk9pQ2xRb3dUa2VuX3NlY3JldA')).toBe(REDACTED);
+  });
+
+  it('hides the user and password in a URL', () => {
+    const redactor = new SecretRedactor();
+
+    expect(redactor.protectUrl('https://alice:hunter2pass@api.test/x')).toBe(
+      `https://${REDACTED}:${REDACTED}@api.test/x`,
+    );
+
+    expect(redactor.redactText('login hunter2pass')).toBe(`login ${REDACTED}`);
+  });
+
+  it('survives empty and malformed input', () => {
+    const redactor = new SecretRedactor();
+
+    expect(redactor.protectUrl('')).toBe('');
+    expect(redactor.protectUrl('https://a%ZZ:b%ZZ@x.test/%E0%A4%A')).not.toContain('b%ZZ');
+    expect(redactor.protectHeaders([{ name: '', value: '' }])).toEqual([{ name: '', value: '' }]);
+    expect(redactor.protectBody('', 'application/json')).toBeUndefined();
+    expect(redactor.protectBody('{"a":1}', undefined)).toBeUndefined();
+    expect(redactor.redactText('')).toBe('');
+  });
 });
 
 describe('bodies (sidekick-18 req. 6.4)', () => {
@@ -247,6 +278,16 @@ describe('bodies (sidekick-18 req. 6.4)', () => {
     expect(redactor.redactKnownSubstrings('echo correct-horse-battery', MIN_KNOWN_LENGTH)).toBe(
       `echo ${REDACTED}`,
     );
+  });
+
+  it('hides a PIN at any length', () => {
+    const redactor = new SecretRedactor();
+
+    expect(redactor.protectBody(JSON.stringify({ pin: 1234, keep: 'x' }), 'application/json')).toBe(
+      `{"pin":"${REDACTED}","keep":"x"}`,
+    );
+
+    expect(redactor.redactText('your pin is 1234')).toBe(`your pin is ${REDACTED}`);
   });
 
   it('hides reusable credentials from a JSON body', () => {

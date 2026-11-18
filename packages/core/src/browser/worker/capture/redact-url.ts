@@ -1,6 +1,6 @@
 /** Names of headers, fields and cookies whose values are credentials. */
 export const SECRET_NAME =
-  /auth(?:orization)?|cookie|credential|csrf|xsrf|token|secret|session|password|passwd|pwd|passcode|otp|(?:^|[-_.])code(?:$|[-_.])|(?:api|access|refresh)[-_.]?key|signature|(?:^|[-_.])sig(?:$|[-_.])/i;
+  /auth(?:orization)?|cookie|credential|csrf|xsrf|token|secret|session|password|passwd|pwd|passcode|otp|(?:^|[-_.])pin(?:$|[-_.])|(?:^|[-_.])code(?:$|[-_.])|(?:api|access|refresh)[-_.]?key|signature|(?:^|[-_.])sig(?:$|[-_.])/i;
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -24,7 +24,8 @@ export function looksLikeToken(segment: string): boolean {
   );
 }
 
-function decode(segment: string) {
+/** `decodeURIComponent`, or the text unchanged when it is malformed. */
+export function decode(segment: string) {
   try {
     return decodeURIComponent(segment);
   } catch {
@@ -58,11 +59,22 @@ export function protectSearchParams(
   return result;
 }
 
-/** Replaces secret-named `name=value` pairs in a URL fragment, leaving route and anchor text. */
+/**
+ * Replaces secret-named `name=value` pairs in a URL fragment, including the query of a hash route
+ * such as `#/reset?token=…`, leaving route and anchor text.
+ */
 export function protectFragment(
   fragment: string,
   protect: (name: string, value: string) => string,
-) {
+): string {
+  const query = fragment.indexOf('?');
+
+  if (query >= 0) {
+    const params = new URLSearchParams(fragment.slice(query + 1));
+
+    return `${protectFragment(fragment.slice(0, query), protect)}?${protectSearchParams(params, protect).toString()}`;
+  }
+
   return fragment
     .split('&')
     .map((part) => {

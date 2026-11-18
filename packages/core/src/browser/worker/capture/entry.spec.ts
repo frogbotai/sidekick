@@ -117,6 +117,25 @@ describe('a stored network entry (sidekick-18 req. 6, 7)', () => {
     expect(parts?.failure).toBe(`net::ERR_FAILED for token ${REDACTED}`);
   });
 
+  it('hides a known value again inside a form body', () => {
+    const token = 'Zk9pQ2xRb3dUa2VuX3NlY3JldA';
+    const [stored] = store([
+      {
+        id: 'form',
+        startedAt: 0,
+        request: {
+          method: 'POST',
+          url: 'https://a.test/save',
+          headers: [{ name: 'Authorization', value: `Bearer ${token}` }],
+          resourceType: 'Fetch',
+          body: body(`data=${token}`, 'application/x-www-form-urlencoded'),
+        },
+      },
+    ]);
+
+    expect(stored?.request.body?.text).toBe(`data=${REDACTED}`);
+  });
+
   it('keeps out a body it cannot parse, and says so', () => {
     const [stored] = store([
       {

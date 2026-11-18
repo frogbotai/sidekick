@@ -1,4 +1,5 @@
 import {
+  decode,
   protectFragment,
   protectPathSegments,
   protectSearchParams,
@@ -111,6 +112,8 @@ export class SecretRedactor {
     try {
       const url = new URL(base);
 
+      if (url.username) url.username = this.scrub(decode(url.username));
+      if (url.password) url.password = this.scrub(decode(url.password), 'password');
       url.pathname = path(url.pathname);
       url.search = protectSearchParams(url.searchParams, query).toString();
       result = url.toString();
