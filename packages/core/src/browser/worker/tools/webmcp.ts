@@ -87,6 +87,7 @@ export function webmcpTools(env: BrowserEnv) {
         truncated: z.boolean().optional(),
       }),
       permission: 'read',
+      acts: true,
       lock: byTab,
       execute: async ({ tab_id, action, tool: name, input, origin }, ctx) => {
         if (action === 'list') {

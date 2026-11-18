@@ -88,7 +88,7 @@ describe('the MCP server', () => {
     expect(tools.every((tool) => tool.inputSchema.type === 'object')).toBe(true);
 
     const hinted = tools.filter((tool) => tool.annotations).map((tool) => tool.name);
-    const reads = setup.runtime.tools.filter((tool) => tool.permission === 'read');
+    const reads = setup.runtime.tools.filter((tool) => tool.permission === 'read' && !tool.acts);
 
     expect(hinted).toEqual(reads.map((tool) => tool.id).sort());
 

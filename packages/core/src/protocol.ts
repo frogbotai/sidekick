@@ -127,6 +127,7 @@ export const sidekickProtocol = defineProtocol({
           id,
           description: z.string(),
           permission: z.enum(PERMISSION_ACTIONS),
+          acts: z.optional(z.boolean()),
           input: jsonSchema,
           output: jsonSchema,
         }),
