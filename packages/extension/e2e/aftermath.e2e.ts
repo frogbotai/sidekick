@@ -1,6 +1,6 @@
 import { type ActionOutput, expect, refFor, type SnapshotOutput, test } from './fixtures';
 
-test('reports a popup, a # change and a dialog, and answers dialogs', async ({
+test('reports a popup, a # change and dialogs from a click or a focus, and answers them', async ({
   context,
   origin,
   sidekick,
@@ -58,5 +58,17 @@ test('reports a popup, a # change and a dialog, and answers dialogs', async ({
   await run.call('dialog', { action: 'accept', promptText: 'Order 2' });
 
   expect(await page.evaluate(() => window.answers)).toEqual([true, 'Order 2']);
+
+  const pressing = Date.now();
+  const focused = await run.call<ActionOutput>('press', {
+    ref: refFor(snapshot, 'Coupon'),
+    key: 'a',
+  });
+
+  expect(Date.now() - pressing).toBeLessThan(5_000);
+  expect(focused.dialog).toMatchObject({ type: 'alert', message: 'Coupons are paused' });
+
+  await run.call('dialog', { action: 'dismiss' });
+
   expect(await run.call('dialog', { action: 'get' })).toMatchObject({ dialog: null });
 });

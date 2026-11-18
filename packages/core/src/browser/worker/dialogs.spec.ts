@@ -133,6 +133,38 @@ describe('an action that raises a dialog (req. 3, 4)', () => {
     expect(mouseTypes(cdp.sent)).toEqual(['mouseMoved', 'mousePressed']);
   });
 
+  it.each([
+    ['press', 'focus', { key: 'Enter' }],
+    ['click', 'scrollTo', {}],
+    ['fill', 'scrollTo', { text: 'hi' }],
+    ['check', 'scrollTo', { checked: true }],
+  ] as const)(
+    '%s ends at once when its %s step raises a dialog, before the input',
+    async (tool, step, extra) => {
+      let raise = () => undefined as void;
+      const setup = await setupBrowser({
+        page: {
+          [step]: () => {
+            raise();
+
+            return new Promise(() => undefined);
+          },
+        },
+      });
+
+      raise = () => setup.cdp.openDialog(1, { type: 'alert', message: 'Focused!' });
+
+      const call = callerOf(setup);
+      let result: unknown;
+
+      void call(tool, { tab_id: 1, ref: 'f0e1', ...extra }).then((value) => (result = value));
+
+      await vi.advanceTimersByTimeAsync(50);
+
+      expect(result).toMatchObject({ ok: { output: { dialog: { type: 'alert' } } } });
+    },
+  );
+
   it('check reports the state as it was, unchanged, when the click raises a dialog', async () => {
     const { call } = await withDialog();
 

@@ -11,6 +11,7 @@
       <a href="#details">Jump to details</a>
       <button id="delete" type="button">Delete order</button>
       <button id="rename" type="button">Rename order</button>
+      <label>Coupon <input id="coupon" /></label>
       <p id="details">Details</p>
     </main>
     <script>
@@ -19,6 +20,10 @@
       document.getElementById('delete').addEventListener('click', () => {
         window.answers.push(confirm('Delete this order?'));
       });
+
+      document
+        .getElementById('coupon')
+        .addEventListener('focus', () => alert('Coupons are paused'));
 
       document.getElementById('rename').addEventListener('click', () => {
         window.answers.push(prompt('New name?', 'Order 1'));

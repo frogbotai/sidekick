@@ -255,17 +255,23 @@ export function screenMap(clip: Point & Size, image: Size, document: number): Sc
   };
 }
 
-/** Resolves a pointer target, by ref or screenshot pixels, through req. 13's checks up to the hit-test. */
+/**
+ * Resolves a pointer target, by ref or screenshot pixels, through req. 13's checks. The scroll
+ * into view and hit-test come from the returned step, run inside `settleAfter`, so a dialog a
+ * scroll handler raises ends the call too.
+ */
 export async function aim(
   act: Act,
   input: { ref?: string; x?: number; y?: number },
-): Promise<Point> {
-  if (input.ref !== undefined) {
-    await inspectTarget(act, input.ref);
+): Promise<(during: Act) => Promise<Point>> {
+  const { ref } = input;
+
+  if (ref !== undefined) {
+    await inspectTarget(act, ref);
     await recheck(act);
     await act.env.sessions.ensure(act.tabId, act.signal);
 
-    return scrollIntoView(act, input.ref);
+    return (during) => scrollIntoView(during, ref);
   }
 
   if (input.x === undefined || input.y === undefined) {
@@ -278,7 +284,9 @@ export async function aim(
   await recheck(act);
   await act.env.sessions.ensure(act.tabId, act.signal);
 
-  return offStop(act, fromScreenshot(act.env, act.tabId, { x: input.x, y: input.y }));
+  const point = await offStop(act, fromScreenshot(act.env, act.tabId, { x: input.x, y: input.y }));
+
+  return () => Promise.resolve(point);
 }
 
 /** Refuses a screenshot point on Sidekick's Stop button; a frame that can't answer has no Stop. */

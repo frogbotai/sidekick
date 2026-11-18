@@ -31,8 +31,6 @@ async function focusTarget(act: Act, element: string | undefined) {
   await recheck(act);
   await act.env.sessions.ensure(act.tabId, act.signal);
 
-  if (element !== undefined) await scrollIntoView(act, element);
-
   return info;
 }
 
@@ -75,13 +73,14 @@ async function check(act: Act, element: string, checked: boolean) {
   await recheck(act);
   await act.env.sessions.ensure(act.tabId, act.signal);
 
-  const point = await scrollIntoView(act, element);
   const watched = watchTab(act);
 
   try {
-    const settled = await act.env.settler.settle(act.tabId, act.signal, (signal) =>
-      click({ ...act, signal }, point, {}),
-    );
+    const settled = await act.env.settler.settle(act.tabId, act.signal, async (signal) => {
+      const during = { ...act, signal };
+
+      await click(during, await scrollIntoView(during, element), {});
+    });
 
     if (act.env.dialogs.get(act.tabId)) {
       return untrusted({
@@ -140,7 +139,9 @@ export function inputTools(env: BrowserEnv) {
         const act = await enter(env, ctx, input.tab_id, 'input');
         const point = await aim(act, input);
 
-        return untrusted(await settleAfter(act, (during) => click(during, point, input)));
+        return untrusted(
+          await settleAfter(act, async (during) => click(during, await point(during), input)),
+        );
       },
     }),
     defineTool({
@@ -154,7 +155,9 @@ export function inputTools(env: BrowserEnv) {
         const act = await enter(env, ctx, input.tab_id, 'input');
         const point = await aim(act, input);
 
-        return untrusted(await settleAfter(act, (during) => hover(during, point)));
+        return untrusted(
+          await settleAfter(act, async (during) => hover(during, await point(during))),
+        );
       },
     }),
     defineTool({
@@ -174,7 +177,13 @@ export function inputTools(env: BrowserEnv) {
 
         if (info?.redacted) await report(act, { redacted: 'true' });
 
-        return untrusted(await settleAfter(act, (during) => fill(during, element, text, info)));
+        return untrusted(
+          await settleAfter(act, async (during) => {
+            if (element !== undefined) await scrollIntoView(during, element);
+
+            await fill(during, element, text, info);
+          }),
+        );
       },
     }),
     defineTool({
@@ -242,9 +251,16 @@ export function inputTools(env: BrowserEnv) {
 
         await focusTarget(act, element);
 
-        if (element !== undefined) await race(env.page.focus(tab_id, element), act.signal);
+        return untrusted(
+          await settleAfter(act, async (during) => {
+            if (element !== undefined) {
+              await scrollIntoView(during, element);
+              await race(env.page.focus(tab_id, element), during.signal);
+            }
 
-        return untrusted(await settleAfter(act, (during) => press(during, key)));
+            await press(during, key);
+          }),
+        );
       },
     }),
     defineTool({
@@ -259,7 +275,9 @@ export function inputTools(env: BrowserEnv) {
         const start = await aim(act, typeof from === 'string' ? { ref: from } : from);
         const target = await endpoint(act, to);
 
-        return untrusted(await settleAfter(act, (during) => drag(during, start, target)));
+        return untrusted(
+          await settleAfter(act, async (during) => drag(during, await start(during), target)),
+        );
       },
     }),
   ];
