@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { UNTRUSTED } from '../../tool/tool';
-import { fakeJpeg } from './fakes';
+import { fakeContext, fakeJpeg } from './fakes';
 import { failure, sentMethods, setupBrowser } from './harness';
 import { FALLBACK_GRACE_MS, QUIET_GRACE_MS, recordingFile } from './recording';
 
@@ -23,9 +23,10 @@ function frame({ cdp }: Setup, sessionId: number, data = FRAME) {
 }
 
 async function call<T = Record<string, unknown>>(
-  { tool, ctx }: Setup,
+  { tool, ctx: own }: Setup,
   id: string,
   input: Record<string, unknown> = {},
+  ctx = own,
 ) {
   const definition = tool(id);
   const result = await definition.execute(definition.input.parse({ tab_id: 1, ...input }), ctx);
@@ -194,6 +195,26 @@ describe('record_start, record_status and record_stop (sidekick-19)', () => {
     expect(await call(setup, 'record_status')).toMatchObject({
       ended: 'max_duration',
       duration_ms: 2_000,
+    });
+  });
+
+  it('keeps a run’s end reason when another run starts recording the same tab', async () => {
+    const setup = await setupBrowser();
+    const other = await setup.runtime.env.runs.start({ tabId: 2, label: 'Other' });
+
+    await call(setup, 'record_start', { max_duration_ms: 1_000 });
+    frame(setup, 1);
+    await vi.advanceTimersByTimeAsync(1_000);
+
+    await setup.runtime.env.runs.adopt(other, 1);
+
+    expect(await call(setup, 'record_start', {}, fakeContext(setup.log, other.id))).toMatchObject({
+      recording: true,
+    });
+
+    expect(await call(setup, 'record_status')).toMatchObject({
+      recording: false,
+      ended: 'max_duration',
     });
   });
 
