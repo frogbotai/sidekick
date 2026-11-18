@@ -30,6 +30,7 @@ const SAMPLES: Record<string, { input: Record<string, unknown>; resource: string
   drag: { input: { tab_id: 1, from: 'f0e1', to: 'f0e2' }, resource: 'https://example.com' },
   wait_for: { input: { tab_id: 1, text: 'Done' }, resource: 'https://example.com' },
   eval: { input: { tab_id: 1, script: 'document.title' }, resource: 'https://example.com' },
+  emulate: { input: { tab_id: 1, color_scheme: 'dark' }, resource: 'https://example.com' },
 };
 
 const disposers: (() => void)[] = [];
@@ -56,7 +57,7 @@ function bad(id: string, input: z.ZodType = z.object({})): ToolDefinition {
 }
 
 describe('browser tools in the tools registry', () => {
-  it('registers all 18, and sends a bad id or schema to errors()', async () => {
+  it('registers all 19, and sends a bad id or schema to errors()', async () => {
     const { runtime } = await setupBrowser();
 
     disposers.push(
@@ -111,7 +112,7 @@ describe('browser tools in the tools registry', () => {
 });
 
 describe('Plan mode (sidekick-17 acceptance 6)', () => {
-  it('denies type and eval and keeps wait_for', async () => {
+  it('denies type, eval and emulate and keeps wait_for', async () => {
     const { runtime } = await setupBrowser();
     const plan = BUILTIN_MODES.find(({ id }) => id === PLAN_MODE);
     const offered = runtime.tools
@@ -121,6 +122,7 @@ describe('Plan mode (sidekick-17 acceptance 6)', () => {
     expect(offered).toContain('wait_for');
     expect(offered).not.toContain('type');
     expect(offered).not.toContain('eval');
+    expect(offered).not.toContain('emulate');
   });
 });
 

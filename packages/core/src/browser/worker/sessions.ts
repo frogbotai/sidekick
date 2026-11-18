@@ -27,6 +27,10 @@ export interface Sessions {
     options?: SendOptions,
   ): Promise<unknown>;
   attached(tabId: number): boolean;
+  /** Keeps the tab's session from the idle detach while `on`, so state like emulation stays put. */
+  hold(tabId: number, on: boolean): void;
+  /** Runs after each attach, before its first command; the attach waits for it. */
+  onAttached(listener: (tabId: number) => Promise<void>): () => void;
   onStripped(listener: (event: Stripped) => void): () => void;
   dispose(): void;
 }
@@ -98,6 +102,8 @@ export function createSessions({
   >();
 
   const strippedListeners = new Set<(event: Stripped) => void>();
+  const attachedListeners = new Set<(tabId: number) => Promise<void>>();
+  const held = new Set<number>();
 
   const drop = (tabId: number) => {
     clearTimeout(sessions.get(tabId)?.timer);
@@ -112,7 +118,7 @@ export function createSessions({
     clearTimeout(session.timer);
 
     session.timer = setTimeout(() => {
-      if (session.busy > 0) {
+      if (session.busy > 0 || held.has(tabId)) {
         touch(tabId);
 
         return;
@@ -160,6 +166,14 @@ export function createSessions({
       ms: COMMAND_TIMEOUT_MS,
       what: 'Network.enable',
     });
+
+    await Promise.all(
+      [...attachedListeners].map((listener) =>
+        race(listener(tabId), NEVER, { ms: COMMAND_TIMEOUT_MS, what: 'Restoring the tab' }).catch(
+          () => undefined,
+        ),
+      ),
+    );
   };
 
   const ensure = async (tabId: number, signal = NEVER) => {
@@ -231,6 +245,15 @@ export function createSessions({
       }
     },
     attached: (tabId) => sessions.has(tabId),
+    hold: (tabId, on) => {
+      if (on) held.add(tabId);
+      else held.delete(tabId);
+    },
+    onAttached: (listener) => {
+      attachedListeners.add(listener);
+
+      return () => void attachedListeners.delete(listener);
+    },
     onStripped: (listener) => {
       strippedListeners.add(listener);
 
