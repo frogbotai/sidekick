@@ -249,7 +249,8 @@ export interface Recorder {
  * (sidekick-21, after browse's `demonstrate`). Only trusted events count, so a page can't add
  * steps, and targets inside closed shadow roots are found from the point or the focus. Each step
  * goes to `send` as it happens, so a navigation can't drop it. A field that was ever a password
- * or secret keeps no value, even after a Show button makes it text; personal fields keep their
+ * or secret keeps no value, even after a Show button makes it text: each press re-scans for
+ * secret fields before the page's own handlers run; personal fields keep their
  * autocomplete token in place of the value (D3 B).
  */
 export function createRecorder(send: (step: RecordedStep) => void): Recorder {
@@ -261,7 +262,13 @@ export function createRecorder(send: (step: RecordedStep) => void): Recorder {
     }
   });
 
+  const onPress = (event: Event) => {
+    if (event.isTrusted) rememberSecrets(document);
+  };
+
   const onClick = (event: Event) => {
+    onPress(event);
+
     const target = targetOf(event);
     const element = target && clickable(target);
 
@@ -276,6 +283,7 @@ export function createRecorder(send: (step: RecordedStep) => void): Recorder {
   };
 
   const listeners = [
+    ['pointerdown', onPress],
     ['click', onClick],
     ['input', onInput],
   ] as const;

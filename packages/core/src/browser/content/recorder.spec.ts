@@ -327,6 +327,32 @@ describe('masking (D3 B, req. 5)', () => {
     expect(steps()).toEqual([expect.objectContaining({ redacted: true })]);
   });
 
+  it('keeps a shadow password added later redacted when Show is pressed before typing', async () => {
+    document.body.innerHTML = '<login-box id="login"></login-box>';
+
+    const { steps } = await recording();
+    const root = byId('login').attachShadow({ mode: 'closed' });
+
+    root.innerHTML =
+      '<input id="pw" type="password" aria-label="Shadow pw"><button id="show">Show</button>';
+
+    const password = root.getElementById('pw');
+    const show = root.getElementById('show');
+
+    if (!(password instanceof HTMLInputElement) || !show) throw new Error('No field');
+
+    show.addEventListener('click', () => {
+      password.type = 'text';
+    });
+
+    click(show);
+    password.value = 'hunter2';
+    input(password);
+
+    expect(steps().at(-1)).toEqual(expect.objectContaining({ kind: 'fill', redacted: true }));
+    expect(JSON.stringify(steps())).not.toMatch(/hunter/);
+  });
+
   it('replaces personal values with their autocomplete token, and keeps a search', async () => {
     document.body.innerHTML = FORM;
 
