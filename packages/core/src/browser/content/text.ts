@@ -87,7 +87,9 @@ export function readText({ root, maxChars }: { root?: Element; maxChars: number 
   const live = root ?? mainElement();
   const copy = live.cloneNode(true);
 
-  if (!(copy instanceof Element)) return { title: document.title, text: '', truncated: false };
+  if (!(copy instanceof Element) || isOwn(live) || isRedacted(live)) {
+    return { title: document.title, text: '', truncated: false };
+  }
 
   prune(live, copy);
 

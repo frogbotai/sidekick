@@ -104,6 +104,18 @@ describe('page text (sidekick-28 req. 3–5)', () => {
     expect(page.text.endsWith('again.')).toBe(true);
   });
 
+  it('reads nothing from a ref that names a redacted field itself', async () => {
+    document.body.innerHTML = `
+      <main><p>Pay</p><label>CVC <textarea autocomplete="cc-csc">987</textarea></label></main>`;
+
+    const { handlers, text } = setup();
+    const ref = refOf(await text(), 'CVC');
+
+    const page = unwrap(await handlers['page.text']({ ref, max_chars: 30_000 }));
+
+    expect(page.text).toBe('');
+  });
+
   it('reads the ref’s element instead of main', async () => {
     document.body.innerHTML = `
       <main><p>Main text</p></main>
