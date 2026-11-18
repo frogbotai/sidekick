@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { defineTool } from '../../../tool/tool';
 import { race } from '../abort';
 import { type BrowserEnv, enter, runOf, send, untrusted } from '../env';
-import { DEFAULT_FRAME_RATE, DEFAULT_MAX_DURATION_MS } from '../recording';
+import { DEFAULT_FRAME_RATE, DEFAULT_MAX_DURATION_MS, MAX_DURATION_MS } from '../recording';
 import { byTab, tabId } from './schema';
 
 const quality = {
@@ -58,9 +58,9 @@ export function recordTools(env: BrowserEnv) {
           .number()
           .int()
           .min(1_000)
-          .max(4 * 60 * 60_000)
+          .max(MAX_DURATION_MS)
           .optional()
-          .describe('Stop on its own after this long; 15 minutes when left out.'),
+          .describe('Stop on its own after this long, at most an hour; 15 minutes when left out.'),
       }),
       output: z.object({
         recording: z.boolean(),

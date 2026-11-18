@@ -84,6 +84,7 @@ export function answerRecorder() {
       for (const video of videos.values()) void video.cancel().catch(() => undefined);
 
       videos.clear();
+      close();
     });
 
     port.onMessage.addListener((message: unknown) => {

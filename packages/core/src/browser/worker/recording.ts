@@ -10,6 +10,9 @@ export const DEFAULT_FRAME_RATE = 10;
 
 export const DEFAULT_MAX_DURATION_MS = 15 * 60_000;
 
+/** The video is held in memory until it's saved, so a recording lasts an hour at most. */
+export const MAX_DURATION_MS = 60 * 60_000;
+
 /** How long the screencast may stay silent at the start before screenshots stand in. */
 export const FALLBACK_GRACE_MS = 1_500;
 
