@@ -146,6 +146,17 @@ export function createEmulation({
     );
   };
 
+  const rollback = async (tabId: number, before: Entry | undefined) => {
+    if (before) entries.set(tabId, before);
+    else forget(tabId);
+
+    const send: Send = (method, params) => sessions.send(tabId, method, params);
+
+    await clear(send)
+      .then(() => before && apply(send, before.overrides))
+      .catch(() => undefined);
+  };
+
   const unsubscribers = [
     sessions.onAttached(async (tabId) => {
       const entry = entries.get(tabId);
@@ -166,7 +177,10 @@ export function createEmulation({
       if (isEmpty(merged)) return {};
 
       await sessions.ensure(tabId, signal);
-      entries.set(tabId, { runId, overrides: merged });
+
+      const entry = { runId, overrides: merged };
+
+      entries.set(tabId, entry);
       sessions.hold(tabId, true);
 
       try {
@@ -176,8 +190,7 @@ export function createEmulation({
           overrides,
         );
       } catch (error) {
-        if (before) entries.set(tabId, before);
-        else forget(tabId);
+        if (entries.get(tabId) === entry) await rollback(tabId, before);
 
         throw error;
       }
