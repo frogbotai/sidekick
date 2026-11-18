@@ -286,6 +286,21 @@ export function chromePage({ tabs, inject, refs = memoryRefStore() }: ChromePage
 
       return { title: first.title, ...stitch(outlines, start, max_chars) };
     },
+    text: (tabId, { ref, max_chars }) => {
+      if (ref === undefined) {
+        return call(tabId, 0, 'page.text', { max_chars }, { timeout: SNAPSHOT_TIMEOUT_MS });
+      }
+
+      const { frameId, input } = byRef(tabId, ref);
+
+      return call(
+        tabId,
+        frameId,
+        'page.text',
+        { ...input, max_chars },
+        { ref, timeout: SNAPSHOT_TIMEOUT_MS },
+      );
+    },
     inspect: async (tabId, ref) => {
       const { frameId, input } = byRef(tabId, ref);
       const info = await call(tabId, frameId, 'page.inspect', input, { ref });
