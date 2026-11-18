@@ -60,6 +60,30 @@ describe('page text (sidekick-28 req. 3–5)', () => {
     expect(page.text).not.toContain('Old main');
   });
 
+  it('picks the element with the most visible prose, not hidden boilerplate (req. 4)', async () => {
+    document.body.innerHTML = `
+      <div class="decoy"><p hidden>${'Hidden legal boilerplate. '.repeat(80)}</p><p>Teaser.</p></div>
+      <div class="story"><h1>Real story</h1><p>${'The visible article body. '.repeat(20)}</p></div>`;
+
+    const page = await read();
+
+    expect(page.text).toContain('Real story');
+    expect(page.text).not.toContain('Teaser.');
+  });
+
+  it('keeps a visibility:visible child of a visibility:hidden parent (req. 5)', async () => {
+    document.body.innerHTML = `
+      <main>
+        <h1>Title</h1>
+        <div style="visibility:hidden"><span>Gone</span><p style="visibility:visible">Shown again</p></div>
+      </main>`;
+
+    const page = await read();
+
+    expect(page.text).not.toContain('Gone');
+    expect(page.text).toContain('Shown again');
+  });
+
   it('never includes typed secrets, redacted fields or Sidekick’s own elements (req. 5)', async () => {
     document.body.innerHTML = `
       <article>

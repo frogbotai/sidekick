@@ -92,6 +92,31 @@ describe('screenshot region and zoom (sidekick-28 req. 8–13)', () => {
     ).toBe('stale_screenshot');
   });
 
+  it('refuses click x/y past the zoomed image instead of landing outside the zoomed area (req. 12)', async () => {
+    const { tool, ctx, cdp } = await setupBrowser();
+
+    await drain(tool('screenshot').execute({ tab_id: 1 }, ctx));
+
+    await drain(
+      tool('screenshot').execute(
+        { tab_id: 1, region: { x: 400, y: 300, width: 100, height: 50 }, scale: 4 },
+        ctx,
+      ),
+    );
+
+    for (const point of [
+      { x: 1_000, y: 100 },
+      { x: 100, y: 201 },
+      { x: -1, y: 100 },
+    ]) {
+      expect(codeOf(await failure(tool('click').execute({ tab_id: 1, ...point }, ctx)))).toBe(
+        'invalid_target',
+      );
+    }
+
+    expect(cdp.sent.some(({ params }) => params.type === 'mousePressed')).toBe(false);
+  });
+
   it('refuses a region before any screenshot with stale_screenshot', async () => {
     const { tool, ctx, cdp } = await setupBrowser();
 
