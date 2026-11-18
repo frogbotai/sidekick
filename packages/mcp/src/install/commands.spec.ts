@@ -184,7 +184,7 @@ describe('install', () => {
     expect(result.output).toContain('✗ Cursor: couldn’t read');
   });
 
-  it('asks in a terminal, writes nothing without one or on cancel, and takes the installed with -y', async () => {
+  it('asks in a terminal, and writes nothing without one, on cancel, or with -y and no caller', async () => {
     const machine = computer({}, ['opencode', 'codex']);
 
     const picked = await machine.run('install', [], true, ['codex']);
@@ -206,9 +206,8 @@ describe('install', () => {
 
     const yes = await machine.run('install', ['-y']);
 
-    expect(yes.output).toContain('✓ OpenCode: added');
-    expect(yes.output).toContain('✓ Codex: already set up');
-    expect(fs.existsSync(machine.location('cursor').entry.file)).toBe(false);
+    expect(yes.output).toContain('nothing was written');
+    expect(fs.existsSync(machine.location('opencode').entry.file)).toBe(false);
   });
 
   it('keeps the Settings command’s own entry, with its token', async () => {

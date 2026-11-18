@@ -32,7 +32,7 @@ describe('the plan', () => {
   const plan = (args: string[], tty: boolean, caller?: AgentName) =>
     agentPlan(locations, agentFlags(args), tty, caller);
 
-  it('names win, then the caller, then -y, then a picker in a terminal, else nothing', () => {
+  it('names win, then the caller, then a picker in a terminal without -y, else nothing', () => {
     expect(plan(['-a', 'claude', 'codex', '--yes'], true, 'cursor')).toEqual({
       picker: false,
       selected: ['claude-code', 'codex'],
@@ -41,7 +41,7 @@ describe('the plan', () => {
     expect(plan(['--agent', '*'], false).selected).toEqual(AGENT_NAMES);
     expect(plan([], true, 'claude-code')).toEqual({ picker: false, selected: ['claude-code'] });
     expect(plan(['-y'], true, 'codex')).toEqual({ picker: false, selected: ['codex'] });
-    expect(plan(['-y'], false)).toEqual({ picker: false, selected: ['opencode', 'cursor'] });
+    expect(plan(['-y'], true)).toEqual({ picker: false, selected: [] });
     expect(plan([], true)).toEqual({ picker: true, selected: ['opencode', 'cursor'] });
     expect(plan([], false)).toEqual({ picker: false, selected: [] });
   });
@@ -93,5 +93,16 @@ describe('agent locations', () => {
     } finally {
       fs.rmSync(home, { recursive: true, force: true });
     }
+  });
+
+  it('ignores an empty home variable instead of writing under the current folder', () => {
+    const found = agentLocations({
+      home: '/home/me',
+      env: { XDG_CONFIG_HOME: '', CODEX_HOME: '' },
+      platform: 'linux',
+      onPath: () => false,
+    });
+
+    for (const agent of found) expect(path.isAbsolute(agent.entry.file)).toBe(true);
   });
 });

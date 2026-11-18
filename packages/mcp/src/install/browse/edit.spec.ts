@@ -91,7 +91,7 @@ describe('json keeps comments and other servers', () => {
     expect(editConfig(empty).result).toBe('added');
     expect(parse(read(empty.file))).toEqual({ a: 1, mcpServers: { sidekick: value } });
     expect(editConfig(empty, true).result).toBe('removed');
-    expect(parse(read(empty.file))).toEqual({ a: 1, mcpServers: {} });
+    expect(read(empty.file)).toBe('{\n  "a": 1\n}\n');
 
     const missing = json(file('missing.json'));
 
@@ -124,21 +124,27 @@ describe('toml keeps comments', () => {
     expect(parseToml(read(bare.file))).toEqual({ model: 'o3', mcp_servers: { sidekick: value } });
   });
 
-  it('refuses a block it can’t find exactly once', () => {
-    const entry = toml(file('config.toml', ''));
+  it('removes its table written with other spacing, and refuses an inline table', () => {
+    const entry = toml(file('config.toml', '# mine\n'));
 
     editConfig(entry);
 
-    const reformatted = read(entry.file).replace(
-      'args = ["-y","@frogbotai/sidekick-mcp"]',
-      'args = [ "-y", "@frogbotai/sidekick-mcp" ]',
+    fs.writeFileSync(
+      entry.file,
+      read(entry.file).replace(
+        'args = ["-y","@frogbotai/sidekick-mcp"]',
+        'args = [ "-y", "@frogbotai/sidekick-mcp" ]',
+      ),
     );
 
-    fs.writeFileSync(entry.file, reformatted);
-
     expect(readEntry(entry)).toBe('owned');
-    expect(editConfig(entry, true).result).toBe('conflict');
-    expect(read(entry.file)).toBe(reformatted);
+    expect(editConfig(entry, true).result).toBe('removed');
+    expect(read(entry.file)).toBe('# mine\n');
+
+    const inline = toml(file('inline.toml', 'mcp_servers = { other = { command = "x" } }\n'));
+
+    expect(editConfig(inline).result).toBe('refused');
+    expect(read(inline.file)).toBe('mcp_servers = { other = { command = "x" } }\n');
   });
 });
 
@@ -178,6 +184,36 @@ describe('owned entries', () => {
 });
 
 describe('writes', () => {
+  it('restores the bytes when install created the container, and keeps one that was there', () => {
+    const before = '{\n  // mine\n  "theme": "dark"\n}\n';
+
+    expect(roundTrip(json(file('mcp.json', before)), before)).toContain('"mcpServers"');
+
+    const empty = '{\n  "mcpServers": {}\n}\n';
+
+    expect(roundTrip(json(file('empty.json', empty)), empty)).toContain('"sidekick"');
+  });
+
+  it('writes through a symlink to the linked file', () => {
+    const target = file('dotfiles.json', '{}\n');
+    const link = path.join(path.dirname(target), 'mcp.json');
+
+    fs.symlinkSync(target, link);
+
+    expect(editConfig(json(link)).result).toBe('added');
+    expect(fs.lstatSync(link).isSymbolicLink()).toBe(true);
+    expect(parse(read(target)).mcpServers.sidekick).toEqual(value);
+    expect(editConfig(json(link), true).result).toBe('removed');
+    expect(read(target)).toBe('{}\n');
+  });
+
+  it('treats an empty json file as an empty config', () => {
+    const entry = json(file('mcp.json', ''));
+
+    expect(editConfig(entry).result).toBe('added');
+    expect(JSON.parse(read(entry.file))).toEqual({ mcpServers: { sidekick: value } });
+  });
+
   it('backs up once before the first write, and keeps the mode', () => {
     const before = '{ "mcpServers": {} }\n';
     const entry = json(file('mcp.json', before));

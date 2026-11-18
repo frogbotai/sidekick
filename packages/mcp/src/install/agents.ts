@@ -93,7 +93,7 @@ const OPENCODE_FILES = ['opencode.json', 'opencode.jsonc'];
 export function agentLocations({ home, env, onPath: found }: Environment): AgentLocation[] {
   const at = (...parts: string[]) => path.join(home, ...parts);
   const exists = (file: string) => fs.existsSync(file);
-  const config = env.XDG_CONFIG_HOME ?? at('.config');
+  const config = env.XDG_CONFIG_HOME || at('.config');
   const opencodeDir = path.join(config, 'opencode');
   const opencodeFiles = OPENCODE_FILES.map((name) => path.join(opencodeDir, name));
   const opencode = opencodeFiles.find(exists) ?? opencodeFiles[0] ?? opencodeDir;
@@ -101,7 +101,7 @@ export function agentLocations({ home, env, onPath: found }: Environment): Agent
     ? path.join(env.CLAUDE_CONFIG_DIR, '.claude.json')
     : at('.claude.json');
 
-  const codex = env.CODEX_HOME ?? at('.codex');
+  const codex = env.CODEX_HOME || at('.codex');
   const [command, ...args] = COMMAND;
 
   const rows: Omit<AgentLocation, 'label'>[] = [

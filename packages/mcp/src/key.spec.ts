@@ -29,6 +29,10 @@ describe('the pairing key', () => {
       '/x/sidekick/pairing.json',
     );
 
+    expect(keyFile('linux', { XDG_CONFIG_HOME: '' }, '/home/me')).toBe(
+      '/home/me/.config/sidekick/pairing.json',
+    );
+
     expect(keyFile('win32', { APPDATA: 'C:\\A' }, 'C:\\me')).toBe('C:\\A\\sidekick\\pairing.json');
   });
 

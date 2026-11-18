@@ -39,6 +39,12 @@ function edit(agent: AgentLocation, remove: boolean): EditResult | Error {
   }
 }
 
+function unreadable(result: EditResult['result'], file: string) {
+  return result === 'invalid'
+    ? `couldn’t read ${file}, left unchanged`
+    : `couldn’t edit ${file} safely, left unchanged`;
+}
+
 async function choose(args: readonly string[], agents: AgentLocation[], io: CommandIO) {
   const plan = agentPlan(agents, agentFlags(args), io.tty, callingAgent(io.environment.env));
 
@@ -64,7 +70,10 @@ async function install(args: readonly string[], io: CommandIO) {
   }
 
   if (!selected.length) {
-    io.log('No agent was named, and none is running this command, so nothing was written.');
+    io.log(
+      'No agent was named or picked, and none is running this command, so nothing was written.',
+    );
+
     io.log(`Name the agents: ${INSTALL} -a ${AGENT_NAMES.join(' ')}`);
 
     return 0;
@@ -94,7 +103,7 @@ async function install(args: readonly string[], io: CommandIO) {
       io.log(`! ${label}: ${entry.file} already has its own "${SERVER}" entry, left as is`);
     } else {
       failed = true;
-      io.log(`✗ ${label}: couldn’t read ${entry.file}, left unchanged`);
+      io.log(`✗ ${label}: ${unreadable(outcome.result, entry.file)}`);
     }
   }
 
@@ -130,9 +139,9 @@ async function uninstall(args: readonly string[], io: CommandIO) {
       if (outcome.backup) io.log(`  Backup of the original: ${outcome.backup}`);
     } else if (outcome.result === 'conflict') {
       io.log(`! ${label}: its "${SERVER}" entry isn’t one install wrote, left as is`);
-    } else if (outcome.result === 'invalid') {
+    } else if (outcome.result === 'invalid' || outcome.result === 'refused') {
       failed = true;
-      io.log(`✗ ${label}: couldn’t read ${entry.file}, left unchanged`);
+      io.log(`✗ ${label}: ${unreadable(outcome.result, entry.file)}`);
     }
   }
 

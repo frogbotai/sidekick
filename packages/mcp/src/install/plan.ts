@@ -53,8 +53,8 @@ export function agentFlags(args: readonly string[]): AgentFlags {
 }
 
 /**
- * Named agents win; an agent running the command gets only itself; `-y` takes the installed ones;
- * a terminal gets a picker. With no terminal and no caller nothing says which agent asked, so none.
+ * Named agents win; an agent running the command gets only itself; a terminal gets a picker. With
+ * `-y`, or no terminal, and no caller, nothing says which agent asked, so none.
  */
 export function agentPlan(
   locations: readonly AgentLocation[],
@@ -68,9 +68,7 @@ export function agentPlan(
 
   if (caller) return { picker: false, selected: [caller] };
 
-  if (flags.yes) return { picker: false, selected: installed };
-
-  if (!tty) return { picker: false, selected: [] };
+  if (flags.yes || !tty) return { picker: false, selected: [] };
 
   return { picker: true, selected: installed };
 }

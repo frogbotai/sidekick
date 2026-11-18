@@ -17,13 +17,13 @@ export function keyFile(
 ) {
   if (platform === 'win32') {
     return path.win32.join(
-      env.APPDATA ?? path.win32.join(home, 'AppData', 'Roaming'),
+      env.APPDATA || path.win32.join(home, 'AppData', 'Roaming'),
       'sidekick',
       'pairing.json',
     );
   }
 
-  return path.join(env.XDG_CONFIG_HOME ?? path.join(home, '.config'), 'sidekick', 'pairing.json');
+  return path.join(env.XDG_CONFIG_HOME || path.join(home, '.config'), 'sidekick', 'pairing.json');
 }
 
 function parse(text: string): PairingKey | undefined {

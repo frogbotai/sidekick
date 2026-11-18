@@ -32,7 +32,7 @@ export type EntryState = 'absent' | 'owned' | 'other' | 'invalid';
 
 /** What an install or uninstall did to one file. */
 export interface EditResult {
-  result: 'added' | 'removed' | 'unchanged' | 'conflict' | 'invalid';
+  result: 'added' | 'removed' | 'unchanged' | 'conflict' | 'invalid' | 'refused';
   /** The backup made before this write, when this write made one. */
   backup?: string;
 }
@@ -193,10 +193,33 @@ function cutJson(before: string, keys: readonly string[]) {
   return `${before.slice(0, previousEnd)}${before.slice(previousEnd + comma[0].length, lineStart - 1)}${before.slice(end)}`;
 }
 
-function removeJson(before: string, keys: readonly string[]) {
+function removeJson(before: string, keys: readonly string[], dropParent: boolean) {
   const cut = cutJson(before, keys) ?? applyEdits(before, modify(before, [...keys], undefined, {}));
+  const collapsed = collapseEmpty(cut, keys);
+  const tree = parseTree(collapsed);
+  const parent = tree && findNodeAtLocation(tree, keys.slice(0, -1));
 
-  return collapseEmpty(cut, keys);
+  if (!dropParent || keys.length < 2 || parent?.type !== 'object' || parent.children?.length) {
+    return collapsed;
+  }
+
+  const parentKeys = keys.slice(0, -1);
+  const dropped = cutJson(collapsed, parentKeys);
+
+  return dropped === undefined ? collapsed : collapseEmpty(dropped, parentKeys);
+}
+
+function backupLacksParent(entry: ConfigEntry) {
+  try {
+    const parsed = parseConfig(
+      fs.readFileSync(`${entry.file}${BACKUP_SUFFIX}`, 'utf8'),
+      entry.format,
+    );
+
+    return parsed.ok && lookup(parsed.config, entry.path.slice(0, -1)).value === undefined;
+  } catch {
+    return false;
+  }
 }
 
 function tomlBlock(entry: ConfigEntry) {
@@ -215,14 +238,31 @@ function insertToml(before: string, block: string) {
   return `${before}${before.endsWith('\n') ? '\n' : '\n\n'}${block}`;
 }
 
-function removeToml(before: string, block: string) {
-  const start = before.indexOf(block);
+function tableRange(before: string, keys: readonly string[]) {
+  const header = keys.map((key) => key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('\\.');
+  const match = new RegExp(`^\\[${header}\\][ \t]*(?:#[^\\n]*)?(?:\\n|$)`, 'm').exec(before);
 
-  if (start === -1 || before.indexOf(block, start + 1) !== -1) return undefined;
+  if (!match) return undefined;
 
+  const body = match.index + match[0].length;
+  const next = /^[ \t]*\[/m.exec(before.slice(body));
+
+  return { start: match.index, end: next ? body + next.index : before.length };
+}
+
+function removeToml(before: string, block: string, keys: readonly string[]) {
+  const exact = before.indexOf(block);
+  const range =
+    exact !== -1 && before.indexOf(block, exact + 1) === -1
+      ? { start: exact, end: exact + block.length }
+      : tableRange(before, keys);
+
+  if (!range) return undefined;
+
+  const { start, end } = range;
   const from = start >= 2 && before.slice(start - 2, start) === '\n\n' ? start - 1 : start;
 
-  return `${before.slice(0, from)}${before.slice(start + block.length)}`;
+  return `${before.slice(0, from)}${before.slice(end)}`;
 }
 
 function expectedAfter(entry: ConfigEntry, config: Record<string, unknown>, remove: boolean) {
@@ -294,13 +334,15 @@ function writeAtomic(file: string, before: string | undefined, after: string) {
  * Adds the entry, or with `remove` takes it out again, keeping comments, formatting and every
  * other server. It never changes an entry it didn't write, and leaves a file it can't parse alone.
  */
-export function editConfig(entry: ConfigEntry, remove = false): EditResult {
-  const exists = fs.existsSync(entry.file);
+export function editConfig(target: ConfigEntry, remove = false): EditResult {
+  const exists = fs.existsSync(target.file);
 
   if (!exists && remove) return { result: 'unchanged' };
 
+  const entry = exists ? { ...target, file: fs.realpathSync(target.file) } : target;
   const before = exists ? fs.readFileSync(entry.file, 'utf8') : undefined;
-  const text = before ?? (entry.format === 'toml' ? '' : '{}');
+  const blank = entry.format === 'json' && !before?.trim();
+  const text = blank ? '{}' : (before ?? '');
   const state = inspect(entry, text);
 
   if (state === 'invalid') return { result: 'invalid' };
@@ -314,11 +356,11 @@ export function editConfig(entry: ConfigEntry, remove = false): EditResult {
   if (entry.format === 'toml') {
     const block = tomlBlock(entry);
 
-    after = remove ? removeToml(text, block) : insertToml(text, block);
+    after = remove ? removeToml(text, block, entry.path) : insertToml(text, block);
   } else {
     after = remove
-      ? removeJson(text, entry.path)
-      : `${insertJson(text, entry.path, entry.value)}${before === undefined ? '\n' : ''}`;
+      ? removeJson(text, entry.path, backupLacksParent(entry))
+      : `${insertJson(text, entry.path, entry.value)}${blank ? '\n' : ''}`;
   }
 
   const parsedBefore = parseConfig(text, entry.format);
@@ -333,7 +375,7 @@ export function editConfig(entry: ConfigEntry, remove = false): EditResult {
       withoutEmptyParent(expectedAfter(entry, parsedBefore.config, remove), entry.path),
     )
   ) {
-    return { result: 'conflict' };
+    return { result: 'refused' };
   }
 
   const backup = exists ? backupOnce(entry.file) : undefined;
