@@ -262,7 +262,7 @@ test('keeps a 5,000-row page under max_chars', async ({ context, origin, sidekic
 
   expect(whole.truncated).toBe(true);
   expect(whole.snapshot.length).toBeLessThanOrEqual(5_200);
-  expect(whole.snapshot).toContain('Row 1"');
+  expect(whole.snapshot).toContain('Row 0"');
 });
 
 test('screenshots a background tab in the group, scaled', async ({
