@@ -210,14 +210,16 @@ describe('handing the tab back (sidekick-17 req. 24)', () => {
         };
       });
 
-    const set = emulation.set({ tabId: 1, runId: id, overrides: { color_scheme: 'dark' } });
+    const set = emulation
+      .set({ tabId: 1, runId: id, overrides: { color_scheme: 'dark' } })
+      .catch((error: unknown) => error);
 
     await vi.advanceTimersByTimeAsync(50);
     await worker.handlers['run.end']({ sessionID: 'ses-1', close: false });
     attached();
     await vi.advanceTimersByTimeAsync(100);
 
-    await expect(set).rejects.toMatchObject({ code: 'stopped' });
+    expect(await set).toMatchObject({ code: 'stopped' });
     expect(emulation.active(1)).toEqual({});
 
     await vi.advanceTimersByTimeAsync(20_100);
