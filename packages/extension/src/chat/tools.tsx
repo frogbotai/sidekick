@@ -69,6 +69,22 @@ function joined(...words: (string | undefined)[]) {
   return words.filter(Boolean).join(' ');
 }
 
+function waitedFor(input: Record<string, unknown>, target: string | undefined) {
+  const quote = (value: unknown) => `“${short(text(value) ?? '')}”`;
+
+  if (text(input.text)) return quote(input.text);
+
+  if (text(input.text_gone)) return `${quote(input.text_gone)} to go away`;
+
+  if (text(input.url)) return `the URL to contain ${quote(input.url)}`;
+
+  if (text(input.ref)) {
+    return `${target ?? 'an element'} to ${input.state === 'hidden' ? 'hide' : 'show'}`;
+  }
+
+  return 'the page to load';
+}
+
 function linkTo(url: string | undefined): readonly LinkListItem[] | undefined {
   return web(url) ? [{ url: url as string }] : undefined;
 }
@@ -249,6 +265,17 @@ export const TOOL_LINES: Record<string, (call: ToolCall) => ToolLine> = {
       subtitle: text(metadata.target),
     };
   },
+  type: ({ input, metadata }) => {
+    const typed = metadata.redacted === 'true' ? '••••••' : `“${short(text(input.text) ?? '')}”`;
+
+    return {
+      icon: 'keyboard',
+      running: 'Typing',
+      done: `Typed ${typed}${input.submit === true ? ' and pressed Enter' : ''}`,
+      failed: 'Type',
+      subtitle: text(metadata.target),
+    };
+  },
   check: ({ input, output, metadata }) => {
     const target = text(metadata.target);
     const on = input.checked !== false;
@@ -294,6 +321,23 @@ export const TOOL_LINES: Record<string, (call: ToolCall) => ToolLine> = {
 
     return { icon: 'cursor', running: 'Dragging', done: `Dragged${ends}`, failed: `Drag${ends}` };
   },
+  wait_for: ({ input, metadata }) => {
+    const what = waitedFor(input, text(metadata.target));
+
+    return {
+      icon: 'hourglass',
+      running: `Waiting for ${what}`,
+      done: `Waited for ${what}`,
+      failed: `Wait for ${what}`,
+    };
+  },
+  eval: ({ metadata }) => ({
+    icon: 'code',
+    running: 'Running a script',
+    done: 'Ran a script',
+    failed: 'Run a script',
+    subtitle: text(metadata.target),
+  }),
   web_search: ({ input, output }) => {
     const query = `“${short(text(input.query) ?? '')}”`;
     const results = Array.isArray(output.results) ? output.results.map(record) : [];

@@ -319,10 +319,10 @@ export function chromePage({ tabs, inject, refs = memoryRefStore() }: ChromePage
         obscured_by: target.obscured_by ?? obscured,
       };
     },
-    focus: async (tabId, ref) => {
+    focus: async (tabId, ref, end) => {
       const { frameId, input } = byRef(tabId, ref);
 
-      await call(tabId, frameId, 'page.focus', input, { ref });
+      await call(tabId, frameId, 'page.focus', { ...input, end }, { ref });
     },
     selectContents: async (tabId, ref) => {
       const { frameId, input } = byRef(tabId, ref);
@@ -429,5 +429,32 @@ export function chromePage({ tabs, inject, refs = memoryRefStore() }: ChromePage
       await call(tabId, 0, 'page.indicator', state);
     },
     stopAt: (tabId, point) => call(tabId, 0, 'page.stopAt', { point }),
+    hasText: async (tabId, text) => {
+      const frames = await tabs.frames(tabId).catch(() => [{ frameId: 0 }]);
+
+      const found = await Promise.all(
+        frames.map(({ frameId }) =>
+          call(tabId, frameId, 'page.hasText', { text }, { inject: frameId === 0 }).catch(
+            (error: unknown) => {
+              if (frameId === 0) throw error;
+
+              return false;
+            },
+          ),
+        ),
+      );
+
+      return found.includes(true);
+    },
+    isVisible: (tabId, ref) => {
+      const { frameId, input } = byRef(tabId, ref);
+
+      return call(tabId, frameId, 'page.isVisible', input, { ref });
+    },
+    tag: async (tabId, ref, token) => {
+      const { frameId, input } = byRef(tabId, ref);
+
+      await call(tabId, frameId, 'page.tag', { ...input, token }, { ref });
+    },
   };
 }

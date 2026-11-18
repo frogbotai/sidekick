@@ -1,12 +1,13 @@
-import { contentProtocol, type frameProtocol } from '../../protocol';
+import { contentProtocol, EVAL_TAG, type frameProtocol } from '../../protocol';
 import { callWorker } from '../../rpc/content';
 import type { Handlers } from '../../rpc/define';
 import { ToolError, type ToolErrorCode, type ToolErrorDetail } from '../../tool/tool';
-import { assignFrames, type Identify, listenForFrames } from './dom';
+import { assignFrames, type Identify, isShown, listenForFrames, renderedText } from './dom';
 import {
   checkState,
   focusedField,
   focusElement,
+  focusField,
   maxLengthOf,
   selectContents,
   selectOptions,
@@ -123,9 +124,10 @@ export function createContent({
 
         return frameBox(child, reveal, point);
       }),
-    'page.focus': ({ ref, doc: expected }) =>
+    'page.focus': ({ ref, doc: expected, end }) =>
       guard(() => {
-        focusElement(resolve(ref, expected));
+        if (end) focusField(resolve(ref, expected), ref);
+        else focusElement(resolve(ref, expected));
 
         return null;
       }),
@@ -169,6 +171,18 @@ export function createContent({
         return null;
       }),
     'page.stopAt': ({ point }) => guard(() => top && indicator?.covers(point) === true),
+    'page.hasText': ({ text }) =>
+      guard(() => renderedText(document.body?.innerText ?? '').includes(renderedText(text))),
+    'page.isVisible': ({ ref, doc: expected }) => guard(() => isShown(resolve(ref, expected))),
+    'page.tag': ({ ref, doc: expected, token }) =>
+      guard(() => {
+        const element = resolve(ref, expected);
+
+        if (token === null) element.removeAttribute(EVAL_TAG);
+        else element.setAttribute(EVAL_TAG, token);
+
+        return null;
+      }),
   };
 
   return { handlers, indicator: () => indicator };
