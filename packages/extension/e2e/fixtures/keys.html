@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Keys</title>
+  </head>
+  <body>
+    <h1>Keys</h1>
+    <label>Search <input id="search" /></label>
+    <label>Notes <input id="notes" value="Hi " /></label>
+    <script>
+      window.keys = [];
+
+      for (const id of ['search', 'notes']) {
+        document.getElementById(id).addEventListener('keydown', (event) => {
+          window.keys.push(`${id}:${event.key}`);
+        });
+      }
+    </script>
+  </body>
+</html>

@@ -32,10 +32,35 @@ export function maxLengthOf(element: Element) {
   return limited && element.maxLength >= 0 ? element.maxLength : undefined;
 }
 
-export function focusElement(element: Element) {
-  if (element instanceof HTMLElement || element instanceof SVGElement) {
-    element.focus({ preventScroll: true });
+function caretToEnd(element: Element) {
+  if (isTextField(element)) {
+    const end = element.value.length;
+
+    if (element.selectionStart !== null) element.setSelectionRange(end, end);
+
+    return;
   }
+
+  if (!(element instanceof HTMLElement) || !element.isContentEditable) return;
+
+  const selection = element.ownerDocument.getSelection();
+  const range = element.ownerDocument.createRange();
+
+  range.selectNodeContents(editingHost(element));
+  range.collapse(false);
+  selection?.removeAllRanges();
+  selection?.addRange(range);
+}
+
+/** Focuses `element`; with `end`, a field that didn't have focus gets its caret after its text. */
+export function focusElement(element: Element, end = false) {
+  if (!(element instanceof HTMLElement || element instanceof SVGElement)) return;
+
+  const had = deepActiveElement() === element;
+
+  element.focus({ preventScroll: true });
+
+  if (end && !had) caretToEnd(element);
 }
 
 /** Playwright's `fill` preparation: select the field's whole contents, so one `insertText` replaces it. */

@@ -24,6 +24,7 @@ export interface Sessions {
     method: string,
     params?: Record<string, unknown>,
     signal?: AbortSignal,
+    timeout?: number,
   ): Promise<unknown>;
   attached(tabId: number): boolean;
   onStripped(listener: (event: Stripped) => void): () => void;
@@ -169,7 +170,8 @@ export function createSessions({
     method: string,
     params: Record<string, unknown> | undefined,
     signal: AbortSignal,
-  ) => race(cdp.send(tabId, method, params), signal, { ms: COMMAND_TIMEOUT_MS, what: method });
+    ms: number,
+  ) => race(cdp.send(tabId, method, params), signal, { ms, what: method });
 
   const unsubscribe = cdp.onDetach((tabId) => drop(tabId));
 
@@ -180,11 +182,11 @@ export function createSessions({
       await Promise.all(leftover.map((tabId) => cdp.detach(tabId).catch(() => undefined)));
     },
     ensure,
-    send: async (tabId, method, params, signal = NEVER) => {
+    send: async (tabId, method, params, signal = NEVER, timeout = COMMAND_TIMEOUT_MS) => {
       await ensure(tabId, signal);
 
       try {
-        const result = await sendOnce(tabId, method, params, signal);
+        const result = await sendOnce(tabId, method, params, signal, timeout);
 
         touch(tabId);
 
@@ -198,7 +200,7 @@ export function createSessions({
         drop(tabId);
         await ensure(tabId, signal);
 
-        return sendOnce(tabId, method, params, signal);
+        return sendOnce(tabId, method, params, signal, timeout);
       }
     },
     attached: (tabId) => sessions.has(tabId),

@@ -76,6 +76,7 @@ export const TOOL_ERROR_CODES = [
   'input_mismatch',
   'not_editable',
   'timeout',
+  'script_error',
   'stopped',
   'not_connected',
   'reconnect',
