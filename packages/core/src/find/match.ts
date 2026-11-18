@@ -9,7 +9,9 @@ export const FIND_ELEMENT_MAX_LENGTH = 160;
 
 const ELEMENT = /^\s*- (.*?)\s*\[(f\d+e\d+)\]\s*$/;
 
-const REF = /\bf\d+e\d+\b/;
+const REFS = /\bf\d+e\d+\b/g;
+
+const NONE = /^\s*none\b/i;
 
 const LEAD = /^[\s\]—–:,.-]+/;
 
@@ -32,7 +34,7 @@ export function outlineElements(outline: string) {
 
 /**
  * The matcher's `<ref> — <reason>` lines as `role "name" [ref] — reason`, keeping only refs the
- * outline has, once each, and at most `FIND_MAX_MATCHES`.
+ * outline has, once each, and at most `FIND_MAX_MATCHES`. A line that starts with `none` adds nothing.
  */
 export function parseMatches(reply: string, outline: string) {
   const elements = outlineElements(outline);
@@ -40,30 +42,34 @@ export function parseMatches(reply: string, outline: string) {
   const matches: string[] = [];
 
   for (const line of reply.split('\n')) {
-    const found = REF.exec(line);
-    const ref = found?.[0];
+    if (NONE.test(line)) continue;
 
-    if (!ref || seen.has(ref)) continue;
+    const refs = [...line.matchAll(REFS)];
+    const last = refs.at(-1);
 
-    const element = elements.get(ref);
-
-    if (element === undefined) continue;
-
-    seen.add(ref);
+    if (!last) continue;
 
     const reason = clip(
       line
-        .slice((found.index ?? 0) + ref.length)
+        .slice(last.index + last[0].length)
         .replace(LEAD, '')
         .trim(),
       FIND_REASON_MAX_LENGTH,
     );
 
-    const head = `${clip(element, FIND_ELEMENT_MAX_LENGTH)} [${ref}]`;
+    for (const [ref] of refs) {
+      const element = elements.get(ref);
 
-    matches.push(reason ? `${head} — ${reason}` : head);
+      if (element === undefined || seen.has(ref)) continue;
 
-    if (matches.length === FIND_MAX_MATCHES) break;
+      seen.add(ref);
+
+      const head = `${clip(element, FIND_ELEMENT_MAX_LENGTH)} [${ref}]`;
+
+      matches.push(reason ? `${head} — ${reason}` : head);
+
+      if (matches.length === FIND_MAX_MATCHES) return matches;
+    }
   }
 
   return matches;

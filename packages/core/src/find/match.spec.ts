@@ -37,8 +37,16 @@ describe('parseMatches', () => {
     ]);
   });
 
-  it('returns nothing for none', () => {
+  it('returns nothing for none, even when it names a near miss', () => {
     expect(parseMatches('none', OUTLINE)).toEqual([]);
+    expect(parseMatches('None. The closest is f0e2, but it is Go.', OUTLINE)).toEqual([]);
+  });
+
+  it('keeps every ref on a line', () => {
+    expect(parseMatches('f0e3, f0e2', OUTLINE)).toEqual([
+      'button "Submit" [f0e3]',
+      'button "Go" [f0e2]',
+    ]);
   });
 
   it('caps reasons and the number of matches', () => {
