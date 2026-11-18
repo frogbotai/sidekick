@@ -75,7 +75,8 @@ function originOf(url: string) {
 /**
  * Classifies a probed page plus its frame URLs, or `null` when it isn't a challenge or block page.
  * Ported from browse (`rust/crates/browse-page/src/challenge.rs`), MIT License, Copyright (c) 2025
- * opencode; the notice is in THIRD_PARTY_NOTICES.md.
+ * opencode; the notice is in
+ * `packages/extension/public/THIRD_PARTY_NOTICES.md`, which ships in the extension.
  */
 export function classify(probe: Probe & { frameUrls: string[] }): Detection | null {
   const title = probe.title.trim().toLowerCase();
@@ -107,10 +108,12 @@ export function classify(probe: Probe & { frameUrls: string[] }): Detection | nu
     /^https:\/\/challenges\.cloudflare\.com\/.*(turnstile|challenge-platform)/,
   );
 
-  if (interstitial || (turnstile && short)) {
-    const widget =
-      visible('.cf-turnstile') ||
-      /verify you are human by completing|click to verify|confirm you are human/.test(text);
+  const asks = /verify you are human by completing|click to verify|confirm you are human/.test(
+    text,
+  );
+
+  if (interstitial || (turnstile && short && asks)) {
+    const widget = visible('.cf-turnstile') || asks;
 
     return found('cloudflare', widget ? 'interactive' : 'non-interactive');
   }

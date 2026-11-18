@@ -134,6 +134,16 @@ describe('classify (req. 2, 3, 12)', () => {
     ],
     ['an empty page', {}],
     [
+      'a sign-in page with an invisible Turnstile widget',
+      {
+        title: 'Sign in',
+        text: 'Sign in\nEmail\nPassword\nForgot password?',
+        frameUrls: [
+          'https://challenges.cloudflare.com/cdn-cgi/challenge-platform/h/b/turnstile/if/ov2',
+        ],
+      },
+    ],
+    [
       'a long page with a reCAPTCHA on its signup form',
       { text: article, frameUrls: ['https://www.google.com/recaptcha/api2/anchor?k=x'] },
     ],
