@@ -274,6 +274,21 @@ describe('batch', () => {
     });
   });
 
+  it('ends with the step’s error when the user declines it, as the step alone does, so the turn stops', async () => {
+    const { asked, permission, call } = setup();
+
+    const pending = call([
+      { tool: 'type', input: { site: 'shop.example' } },
+      { tool: 'echo', input: { name: 'a' } },
+    ]);
+
+    await flush();
+    await permission.reply({ id: asked[0]?.id ?? '', reply: 'reject' });
+
+    await expect(pending).resolves.toMatchObject({ error: { code: 'declined' } });
+    expect(log).toEqual([]);
+  });
+
   it('runs two steps on one tab without deadlock, each taking the tab’s turn', async () => {
     const { call } = setup();
 
