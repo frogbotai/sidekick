@@ -4,7 +4,7 @@ import { EVAL_TAG } from '../../protocol';
 import { ToolError } from '../../tool/tool';
 import { later } from './fakes';
 import { drain, failure, sentMethods, setupBrowser } from './harness';
-import { MAX_RESULT_CHARS, SCRIPT_TIMEOUT_MS } from './script';
+import { DIALOG_SETTLE_MS, MAX_RESULT_CHARS, SCRIPT_TIMEOUT_MS } from './script';
 
 beforeEach(() => {
   vi.useFakeTimers();
@@ -167,7 +167,7 @@ describe('eval without a ref (sidekick-17 req. 15-17)', () => {
 
     const running = failure(tool('eval').execute({ tab_id: 1, script: 'confirm("x")' }, ctx));
 
-    await vi.advanceTimersByTimeAsync(10);
+    await vi.advanceTimersByTimeAsync(DIALOG_SETTLE_MS);
 
     const error = await running;
 
@@ -184,6 +184,125 @@ describe('eval without a ref (sidekick-17 req. 15-17)', () => {
     );
 
     expect(cdp.listeners()).toBe(0);
+  });
+
+  it('stops the script after its first dialog and keeps dismissing dialogs until it ends', async () => {
+    const { tool, ctx, cdp } = await setupBrowser();
+    const dialog = (message: string) =>
+      cdp.emit({
+        tabId: 1,
+        method: 'Page.javascriptDialogOpening',
+        params: { type: 'alert', message },
+      });
+
+    cdp.replies.set('Runtime.evaluate', () => {
+      dialog('one');
+
+      return new Promise(() => undefined);
+    });
+
+    const running = failure(
+      tool('eval').execute({ tab_id: 1, script: "alert('one'); alert('two')" }, ctx),
+    );
+
+    await vi.advanceTimersByTimeAsync(10);
+
+    expect(sentMethods(cdp.sent)).toContain('Runtime.terminateExecution');
+
+    dialog('two');
+    await vi.advanceTimersByTimeAsync(DIALOG_SETTLE_MS);
+
+    expect(await running).toMatchObject({ code: 'script_error', message: /saying “one”/ });
+
+    expect(
+      sentMethods(cdp.sent).filter((method) => method === 'Page.handleJavaScriptDialog'),
+    ).toHaveLength(2);
+
+    expect(cdp.listeners()).toBe(0);
+  });
+
+  it('awaits a promise the script returns', async () => {
+    const { tool, ctx, cdp } = await setupBrowser();
+
+    cdp.replies.set('Runtime.evaluate', () => ({
+      result: { type: 'object', subtype: 'promise', objectId: 'promise-1' },
+    }));
+
+    cdp.replies.set('Runtime.awaitPromise', () => ({ result: { type: 'number', value: 5 } }));
+
+    const { output } = await drain(
+      tool('eval').execute({ tab_id: 1, script: 'Promise.resolve(5)' }, ctx),
+    );
+
+    expect(output).toEqual({ value: '5', truncated: false });
+
+    expect(cdp.sent.find(({ method }) => method === 'Runtime.awaitPromise')?.params).toEqual({
+      promiseObjectId: 'promise-1',
+      returnByValue: false,
+    });
+
+    expect(cdp.sent).toContainEqual(
+      expect.objectContaining({
+        method: 'Runtime.releaseObject',
+        params: { objectId: 'promise-1' },
+      }),
+    );
+  });
+
+  it('fails with the reason when a returned promise rejects', async () => {
+    const { tool, ctx, cdp } = await setupBrowser();
+
+    cdp.replies.set('Runtime.evaluate', () => ({
+      result: { type: 'object', subtype: 'promise', objectId: 'promise-1' },
+    }));
+
+    cdp.replies.set('Runtime.awaitPromise', () => ({
+      result: { type: 'object', subtype: 'error' },
+      exceptionDetails: {
+        text: 'Uncaught (in promise)',
+        lineNumber: 0,
+        exception: { type: 'object', description: 'Error: offline\n    at <anonymous>:1:1' },
+      },
+    }));
+
+    const error = await failure(tool('eval').execute({ tab_id: 1, script: 'load()' }, ctx));
+
+    expect(error).toMatchObject({ code: 'script_error', message: 'Error: offline (line 1)' });
+  });
+
+  it('keeps a returned promise within the same 30 s and stops it after', async () => {
+    const { tool, ctx, cdp } = await setupBrowser();
+
+    cdp.replies.set('Runtime.evaluate', () => ({
+      result: { type: 'object', subtype: 'promise', objectId: 'promise-1' },
+    }));
+
+    cdp.replies.set('Runtime.awaitPromise', () => new Promise(() => undefined));
+
+    const running = failure(
+      tool('eval').execute({ tab_id: 1, script: 'new Promise(() => {})' }, ctx),
+    );
+
+    await vi.advanceTimersByTimeAsync(SCRIPT_TIMEOUT_MS);
+
+    expect(await running).toMatchObject({ code: 'timeout', message: /30 s/ });
+    expect(sentMethods(cdp.sent)).toContain('Runtime.terminateExecution');
+  });
+
+  it('stops a result whose toJSON never returns, instead of leaving it running', async () => {
+    const { tool, ctx, cdp } = await setupBrowser();
+
+    cdp.replies.set('Runtime.evaluate', () => ({ result: { type: 'object', objectId: 'res-1' } }));
+    cdp.replies.set('Runtime.callFunctionOn', () => new Promise(() => undefined));
+
+    const running = failure(
+      tool('eval').execute({ tab_id: 1, script: '({ toJSON() { for (;;) {} } })' }, ctx),
+    );
+
+    await vi.advanceTimersByTimeAsync(SCRIPT_TIMEOUT_MS);
+
+    expect(await running).toMatchObject({ code: 'timeout', message: /30 s/ });
+    expect(sentMethods(cdp.sent)).toContain('Runtime.terminateExecution');
   });
 
   it('asks for input permission (D1: B)', async () => {

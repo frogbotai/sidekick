@@ -84,3 +84,25 @@ describe('page.focus with end (sidekick-17 req. 3)', () => {
     expect(input?.selectionStart).toBe(1);
   });
 });
+
+describe('page.focus for type (sidekick-17 req. 1)', () => {
+  it.each([
+    ['<button>Delete account</button>', 'Delete account', /isn’t a text field/],
+    ['<input aria-label="Locked" disabled>', 'Locked', /isn’t a text field/],
+    ['<input type="checkbox" aria-label="Agree">', 'Agree', /Use check/],
+  ])('refuses what fill refuses: %s', async (html, label, message) => {
+    document.body.innerHTML = `<input aria-label="Search">${html}`;
+
+    const { handlers, text } = setup();
+    const ref = refOf(await text(), label);
+    const search = document.querySelector('input');
+
+    search?.focus();
+
+    expect(
+      await failure(Promise.resolve(handlers['page.focus']({ ref, end: true })).then(unwrap)),
+    ).toMatchObject({ code: 'invalid_target', message });
+
+    expect(document.activeElement).toBe(search);
+  });
+});

@@ -23,7 +23,7 @@ const SAMPLES: Record<string, { input: Record<string, unknown>; resource: string
   click: { input: { tab_id: 1, ref: 'f0e1' }, resource: 'https://example.com' },
   hover: { input: { tab_id: 1, ref: 'f0e1' }, resource: 'https://example.com' },
   fill: { input: { tab_id: 1, ref: 'f0e1', text: 'hi' }, resource: 'https://example.com' },
-  type: { input: { tab_id: 1, ref: 'f0e1', text: 'hi' }, resource: 'https://example.com' },
+  type: { input: { tab_id: 1, text: 'hi' }, resource: 'https://example.com' },
   check: { input: { tab_id: 1, ref: 'f0e1', checked: false }, resource: 'https://example.com' },
   select: { input: { tab_id: 1, ref: 'f0e1', values: ['a'] }, resource: 'https://example.com' },
   press: { input: { tab_id: 1, key: 'Enter' }, resource: 'https://example.com' },

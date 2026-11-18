@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { later } from './fakes';
 import { drain, failure, setupBrowser } from './harness';
 import { FOCUS_CHECK_EVERY } from './input';
-import type { Focused } from './types';
+import type { Focused, Page } from './types';
 
 beforeEach(() => {
   vi.useFakeTimers();
@@ -21,6 +21,20 @@ const FIELD: Focused = {
   name: 'Search',
 };
 
+const TARGET = {
+  frameId: 0,
+  frameOrigin: 'https://example.com',
+  redacted: false,
+  role: 'textbox',
+  name: 'Search',
+};
+
+function setupField(page: Partial<Page> = {}) {
+  return setupBrowser({
+    page: { inspect: later(() => TARGET), focused: later(() => FIELD), ...page },
+  });
+}
+
 function typed(sent: { method: string; params: Record<string, unknown> }[]) {
   return sent.flatMap(({ method, params }) => {
     if (method === 'Input.insertText') return [`insert:${String(params.text)}`];
@@ -33,7 +47,7 @@ function typed(sent: { method: string; params: Record<string, unknown> }[]) {
 
 describe('type (sidekick-17 req. 1-7)', () => {
   it('presses each ASCII character and inserts anything else one grapheme at a time', async () => {
-    const { tool, ctx, cdp } = await setupBrowser();
+    const { tool, ctx, cdp } = await setupField();
 
     const { output } = await drain(
       tool('type').execute({ tab_id: 1, ref: 'f0e1', text: 'aB é👍🏽\n' }, ctx),
@@ -62,7 +76,7 @@ describe('type (sidekick-17 req. 1-7)', () => {
 
   it('focuses the ref with the caret at the end and never selects or clears the field', async () => {
     const focus = vi.fn((_tabId: number, _ref: string, _end?: boolean) => undefined);
-    const { tool, ctx, log } = await setupBrowser({ page: { focus: later(focus) } });
+    const { tool, ctx, log } = await setupField({ focus: later(focus) });
 
     await drain(tool('type').execute({ tab_id: 1, ref: 'f0e1', text: 'x' }, ctx));
 
@@ -92,16 +106,9 @@ describe('type (sidekick-17 req. 1-7)', () => {
   });
 
   it('reports a password field as redacted', async () => {
-    const { tool, ctx } = await setupBrowser({
-      page: {
-        inspect: later(() => ({
-          frameId: 0,
-          frameOrigin: 'https://example.com',
-          redacted: true,
-          role: 'textbox',
-          name: 'Password',
-        })),
-      },
+    const { tool, ctx } = await setupField({
+      inspect: later(() => ({ ...TARGET, redacted: true, name: 'Password' })),
+      focused: later(() => ({ ...FIELD, name: 'Password' })),
     });
 
     await drain(tool('type').execute({ tab_id: 1, ref: 'f0e1', text: 'secret' }, ctx));
@@ -145,5 +152,42 @@ describe('type (sidekick-17 req. 1-7)', () => {
     const { tool } = await setupBrowser();
 
     expect(tool('type').permission).toBe('input');
+  });
+});
+
+describe('type by ref refuses what fill refuses (sidekick-17 req. 1)', () => {
+  it('sends no keys when focus doesn’t land on an editable ref', async () => {
+    const button = {
+      frameId: 0,
+      frameOrigin: 'https://example.com',
+      role: 'button',
+      name: 'Delete account',
+    };
+
+    const { tool, ctx, cdp } = await setupBrowser({
+      page: {
+        inspect: later(() => ({ ...button, redacted: false })),
+        focused: later(() => ({ ...button, editable: false })),
+      },
+    });
+
+    const error = await failure(tool('type').execute({ tab_id: 1, ref: 'f0e1', text: ' ' }, ctx));
+
+    expect(error).toMatchObject({ code: 'invalid_target', message: /didn’t land on f0e1/ });
+    expect(typed(cdp.sent)).toEqual([]);
+  });
+
+  it('sends no keys when focus stays on another field, as with a disabled ref', async () => {
+    const { tool, ctx, cdp } = await setupBrowser({
+      page: {
+        inspect: later(() => ({ ...FIELD, name: 'Locked', redacted: false })),
+        focused: later(() => FIELD),
+      },
+    });
+
+    const error = await failure(tool('type').execute({ tab_id: 1, ref: 'f0e2', text: 'abc' }, ctx));
+
+    expect(error).toMatchObject({ code: 'invalid_target' });
+    expect(typed(cdp.sent)).toEqual([]);
   });
 });
