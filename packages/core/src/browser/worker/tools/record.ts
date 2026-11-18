@@ -11,7 +11,7 @@ const quality = {
   frames_written: z.number(),
   frames_coalesced: z.number(),
   frames_dropped: z.number(),
-  fps: z.number().describe('Frames captured per second.'),
+  fps: z.number().describe('Video frames per second achieved, at most frame_rate.'),
   screenshot_fallback: z.boolean(),
 };
 
@@ -98,7 +98,11 @@ export function recordTools(env: BrowserEnv) {
       description:
         'Say whether a tab is recording, for how long and how many frames it caught; or, if the recording stopped itself, why and the saved file.',
       input: z.object({ tab_id: tabId }),
-      output: report.partial().extend({ recording: z.boolean(), ended: ENDED.optional() }),
+      output: report.partial().extend({
+        recording: z.boolean(),
+        ended: ENDED.optional(),
+        error: z.string().optional().describe('Why a recording that stopped itself saved nothing.'),
+      }),
       permission: 'read',
       execute: async ({ tab_id }, ctx) => {
         const { run, signal } = await checked(ctx, tab_id);

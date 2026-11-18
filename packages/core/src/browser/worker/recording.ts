@@ -1,6 +1,7 @@
 import { z } from 'zod';
 
 import { ToolError } from '../../tool/tool';
+import { messageOf, stopped } from './abort';
 import { createPacer, type Pacer, type Quality } from './pacing';
 import type { Runs } from './runs';
 import type { Sessions } from './sessions';
@@ -36,6 +37,7 @@ export interface RecordingReport extends Quality, SavedVideo {
 export type RecordingStatus =
   | ({ recording: true; duration_ms: number; frame_rate: number } & Quality)
   | ({ recording: false; ended: EndReason } & RecordingReport)
+  | { recording: false; ended: EndReason; error: string }
   | { recording: false };
 
 export interface Recordings {
@@ -251,6 +253,12 @@ export function createRecordings({
 
       await encoder.open(id, { frameRate });
 
+      if (!runs.get(runId)) {
+        await encoder.cancel(id).catch(() => undefined);
+
+        throw stopped();
+      }
+
       const recording: Active = {
         id,
         runId,
@@ -305,7 +313,11 @@ export function createRecordings({
 
       if (!last) return { recording: false };
 
-      return { recording: false, ended: last.reason, ...(await last.report) };
+      try {
+        return { recording: false, ended: last.reason, ...(await last.report) };
+      } catch (error) {
+        return { recording: false, ended: last.reason, error: messageOf(error) };
+      }
     },
     stop: async (runId, tabId) => {
       const recording = mine(active.get(tabId), runId);
@@ -322,7 +334,12 @@ export function createRecordings({
 
       ended.delete(tabId);
 
-      return last.report;
+      return last.report.catch((error: unknown) => {
+        throw new ToolError(
+          'no_recording',
+          `The recording of tab ${tabId} stopped (${last.reason}) and saved nothing: ${messageOf(error)}`,
+        );
+      });
     },
     dispose: () => {
       for (const unsubscribe of unsubscribers) unsubscribe();

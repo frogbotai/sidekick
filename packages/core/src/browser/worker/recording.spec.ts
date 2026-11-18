@@ -126,6 +126,50 @@ describe('record_start, record_status and record_stop (sidekick-19)', () => {
     expect(await call(setup, 'record_status')).toEqual({ recording: false });
   });
 
+  it('says the tab closed when it closes before any frame came, and that nothing was saved', async () => {
+    const setup = await setupBrowser();
+
+    await call(setup, 'record_start');
+    await vi.advanceTimersByTimeAsync(500);
+    setup.cdp.detachByChrome(1, 'target_closed');
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(await call(setup, 'record_status')).toMatchObject({
+      recording: false,
+      ended: 'tab_closed',
+      error: 'No frames to save',
+    });
+
+    expect(await failure(call(setup, 'record_stop'))).toMatchObject({ code: 'no_recording' });
+    expect(setup.encoder.cancelled).toHaveLength(1);
+  });
+
+  it('starts nothing when the task stops while the encoder opens', async () => {
+    const setup = await setupBrowser();
+    const { encoder } = setup;
+    const open = encoder.open;
+    let release = () => {};
+
+    encoder.open = (...args) =>
+      new Promise<void>((resolve) => {
+        release = () => void open(...args).then(resolve);
+      });
+
+    const started = failure(call(setup, 'record_start'));
+
+    await vi.advanceTimersByTimeAsync(0);
+    setup.runtime.env.runs.stop(setup.run.id);
+    release();
+
+    expect(await started).toMatchObject({ code: 'stopped' });
+
+    await vi.advanceTimersByTimeAsync(5_000);
+
+    expect(sentMethods(setup.cdp.sent)).not.toContain('Page.startScreencast');
+    expect(sentMethods(setup.cdp.sent)).not.toContain('Page.captureScreenshot');
+    expect(encoder.cancelled).toHaveLength(1);
+  });
+
   it('says the debugger detached when the person cancels it, without reattaching', async () => {
     const setup = await setupBrowser();
 

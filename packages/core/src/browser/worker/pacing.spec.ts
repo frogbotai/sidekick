@@ -108,6 +108,19 @@ describe('createPacer', () => {
     expect(pacer.quality(100)).toMatchObject({ frames_written: 0, frames_dropped: 1 });
   });
 
+  it('reports the video’s frame rate, not the screencast’s', async () => {
+    const { pacer } = setup();
+
+    for (let index = 0; index < 60; index += 1) {
+      pacer.push({ data: String(index), at: (index * 1000) / 60 });
+    }
+
+    await pacer.finish(1_000, none);
+
+    expect(pacer.quality(1_000).frames_written).toBeLessThanOrEqual(11);
+    expect(pacer.quality(1_000).fps).toBeLessThanOrEqual(10);
+  });
+
   it('reports the achieved frame rate and screenshot fallback', () => {
     const { pacer } = setup();
 
