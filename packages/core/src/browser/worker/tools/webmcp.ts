@@ -29,20 +29,19 @@ function pick(tools: PageTool[], name: string, origin: string | undefined) {
   const matches = origin === undefined ? named : named.filter((tool) => tool.origin === origin);
   const [match] = matches;
 
-  if (match && matches.length === 1) return match;
-
   if (!match) {
     throw new ToolError(
       'invalid_target',
       `The page doesn’t offer a tool “${name}”${origin ? ` from ${origin}` : ''}. Use action list.`,
-      { tools: tools.map((tool) => tool.name).slice(0, 50) },
     );
   }
+
+  if (matches.every((tool) => tool.origin === match.origin)) return match;
 
   throw new ToolError(
     'invalid_target',
     `Frames from more than one site offer “${name}”. Give origin to pick one.`,
-    { origins: matches.map((tool) => tool.origin) },
+    { origins: [...new Set(matches.map((tool) => tool.origin))] },
   );
 }
 

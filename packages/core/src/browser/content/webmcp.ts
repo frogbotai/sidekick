@@ -3,7 +3,15 @@ import type { PageTool, PageToolResult, WebmcpCall } from '../worker/types';
 
 export const MAX_TOOLS = 100;
 
+export const MAX_NAME = 128;
+
+export const MAX_TITLE = 200;
+
 export const MAX_DESCRIPTION = 1_000;
+
+export const MAX_HINTS = 20;
+
+export const MAX_HINT_KEY = 64;
 
 export const MAX_SCHEMA = 32_000;
 
@@ -44,27 +52,56 @@ function modelContext(): ModelContext | undefined {
   return found.find(isModelContext);
 }
 
-async function registered(fromOrigins: string[]): Promise<RegisteredTool[]> {
+interface Listed {
+  tool: RegisteredTool;
+  name: string;
+  title: unknown;
+  description: unknown;
+  inputSchema: unknown;
+  annotations: unknown;
+  origin: string;
+}
+
+function snapshot(tool: RegisteredTool): Listed | undefined {
+  const { name, title, description, inputSchema, annotations, origin } = tool;
+
+  if (typeof name !== 'string' || typeof origin !== 'string') return undefined;
+
+  return { tool, name, title, description, inputSchema, annotations, origin };
+}
+
+async function registered(fromOrigins: string[]): Promise<Listed[]> {
   const context = modelContext();
 
   if (!context) return [];
 
-  const listed = await context
-    .getTools(fromOrigins.length > 0 ? { fromOrigins } : {})
+  const listed: unknown = await Promise.resolve()
+    .then(() => context.getTools(fromOrigins.length > 0 ? { fromOrigins } : {}))
     .catch(() => (fromOrigins.length > 0 ? context.getTools() : []))
     .catch(() => []);
 
-  return Array.isArray(listed) ? listed.filter((tool) => typeof tool.name === 'string') : [];
+  if (!Array.isArray(listed)) return [];
+
+  return listed.flatMap((tool: RegisteredTool) => {
+    try {
+      return snapshot(tool) ?? [];
+    } catch {
+      return [];
+    }
+  });
 }
 
-function hints(annotations: unknown) {
-  if (typeof annotations !== 'object' || annotations === null) return undefined;
+function hints(annotations: unknown): { value?: Record<string, boolean>; cut: boolean } {
+  if (typeof annotations !== 'object' || annotations === null) return { cut: false };
 
   const entries = Object.entries(annotations).filter(
     (entry): entry is [string, boolean] => typeof entry[1] === 'boolean',
   );
 
-  return entries.length > 0 ? Object.fromEntries(entries) : undefined;
+  const kept = entries.filter(([key]) => key.length <= MAX_HINT_KEY).slice(0, MAX_HINTS);
+  const cut = kept.length < entries.length;
+
+  return kept.length > 0 ? { value: Object.fromEntries(kept), cut } : { cut };
 }
 
 function schemaOf(schema: unknown): { value?: unknown; cut: boolean } {
@@ -87,19 +124,25 @@ function schemaOf(schema: unknown): { value?: unknown; cut: boolean } {
   }
 }
 
-function toPageTool(tool: RegisteredTool): PageTool {
+function toPageTool(tool: Listed): PageTool {
   const description = String(tool.description);
+  const title = typeof tool.title === 'string' ? tool.title : '';
   const schema = schemaOf(tool.inputSchema);
   const annotations = hints(tool.annotations);
-  const cut = description.length > MAX_DESCRIPTION || schema.cut;
+  const cut =
+    tool.name.length > MAX_NAME ||
+    title.length > MAX_TITLE ||
+    description.length > MAX_DESCRIPTION ||
+    schema.cut ||
+    annotations.cut;
 
   return {
-    name: tool.name,
-    ...(typeof tool.title === 'string' && tool.title ? { title: tool.title } : {}),
+    name: tool.name.slice(0, MAX_NAME),
+    ...(title ? { title: title.slice(0, MAX_TITLE) } : {}),
     description: description.slice(0, MAX_DESCRIPTION),
     ...(schema.value === undefined ? {} : { input_schema: schema.value }),
-    ...(annotations ? { annotations } : {}),
-    origin: String(tool.origin),
+    ...(annotations.value ? { annotations: annotations.value } : {}),
+    origin: tool.origin,
     ...(cut ? { truncated: true } : {}),
   };
 }
@@ -161,11 +204,13 @@ export async function callTool({
   try {
     const context = modelContext();
     const tools = await Promise.race([registered(fromOrigins), aborted]);
-    const tool = tools.find((entry) => entry.name === name && entry.origin === origin);
+    const found = tools.find(
+      (entry) => entry.name.slice(0, MAX_NAME) === name && entry.origin === origin,
+    );
 
-    if (!context || !tool) throw gone(name);
+    if (!context || !found) throw gone(name);
 
-    const finished = context.executeTool(tool, input, { signal: controller.signal });
+    const finished = context.executeTool(found.tool, input, { signal: controller.signal });
 
     return resultOf(await Promise.race([finished, aborted]));
   } catch (error) {
