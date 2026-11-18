@@ -194,6 +194,49 @@ describe('breakit-45: a read returns what arrived since the last read (spec req.
   });
 });
 
+describe('a read that doesn’t fit the reply keeps the rest', () => {
+  it('cuts a long body and keeps it readable', async () => {
+    const setup = await setupBrowser();
+
+    setup.cdp.replies.set('Network.getResponseBody', () => ({
+      body: JSON.stringify({ data: 'x'.repeat(40_000) }),
+    }));
+
+    await call(setup, 'network_capture', { action: 'start', bodies: true });
+    fetchOk(setup, 'big', 'https://example.com/api/big');
+    await vi.advanceTimersByTimeAsync(0);
+
+    const read = await output(setup, 'network_capture', { action: 'read' });
+    const [entry] = read.entries;
+
+    expect(String(entry?.response_body)).toHaveLength(20_000);
+    expect(entry?.response_body_cut).toBe(40_011 - 20_000);
+  });
+
+  it('a stop that can’t return everything leaves the older entries for a read', async () => {
+    const setup = await setupBrowser();
+
+    await call(setup, 'console_capture', { action: 'start' });
+    pageContext(setup);
+
+    for (let index = 0; index < 15; index++) log(setup, `${index}`.padEnd(3_000, '.'));
+
+    const stopped = await output(setup, 'console_capture', { action: 'stop' });
+    const rest = await output(setup, 'console_capture', { action: 'read' });
+    const texts = [...rest.entries, ...stopped.entries].map(
+      ({ text }) => String(text).split('.')[0],
+    );
+
+    expect(stopped).toMatchObject({ capturing: false, truncated: true });
+    expect(rest).toMatchObject({ capturing: false, truncated: false });
+    expect(texts).toEqual(Array.from({ length: 15 }, (_, index) => `${index}`));
+
+    expect(await failure(call(setup, 'console_capture', { action: 'read' }))).toMatchObject({
+      code: 'invalid_target',
+    });
+  });
+});
+
 describe('breakit-45: main frame only (spec req. 9; console_capture description)', () => {
   it('leaves out browser log entries that come from a worker', async () => {
     const setup = await setupBrowser();

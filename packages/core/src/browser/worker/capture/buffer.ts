@@ -14,6 +14,9 @@ export interface Taken<T> {
 export interface CaptureBuffer<T> {
   push(entry: T): void;
   take(match?: (entry: T) => boolean): Taken<T>;
+  /** Puts entries a read took but didn't return back in front, for the next read. */
+  restore(entries: T[]): void;
+  size(): number;
 }
 
 export function createBuffer<T>(limit = CAPTURE_LIMIT): CaptureBuffer<T> {
@@ -37,5 +40,16 @@ export function createBuffer<T>(limit = CAPTURE_LIMIT): CaptureBuffer<T> {
 
       return taken;
     },
+    restore: (older) => {
+      entries = [...older, ...entries];
+
+      const over = entries.length - limit;
+
+      if (over > 0) {
+        entries = entries.slice(over);
+        dropped += over;
+      }
+    },
+    size: () => entries.length,
   };
 }

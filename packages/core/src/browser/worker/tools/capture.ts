@@ -1,10 +1,10 @@
 import { z } from 'zod';
 
-import { defineTool, ToolError } from '../../../tool/tool';
+import { defineTool, type ToolContext, ToolError } from '../../../tool/tool';
 import type { CaptureKind, CaptureRead, EndReason } from '../capture';
 import { type ConsoleEntry, type ConsoleLevel, LEVELS } from '../capture/console';
 import type { CapturedBody, NetworkEntry } from '../capture/entry';
-import { type BrowserEnv, enter, untrusted } from '../env';
+import { type BrowserEnv, enter, runOf, untrusted } from '../env';
 import { MAX_CHARS } from './read';
 import { byTab, tabId } from './schema';
 
@@ -31,8 +31,13 @@ const networkEntry = z.object({
   response_headers: z.array(header).optional(),
   request_body: z.string().optional(),
   request_body_omitted: z.string().optional(),
+  request_body_cut: z.number().optional(),
   response_body: z.string().optional(),
   response_body_omitted: z.string().optional(),
+  response_body_cut: z
+    .number()
+    .optional()
+    .describe('Characters left out of the end of a long body.'),
 });
 
 const consoleEntry = z.object({
@@ -54,7 +59,9 @@ const state = {
     .describe(
       'Why the capture ended on its own; start a new one to keep watching. On start: why the previous one ended, with what it left unread.',
     ),
-  truncated: z.boolean().describe('Older entries were left out to fit the reply.'),
+  truncated: z
+    .boolean()
+    .describe('Older entries didn’t fit the reply; they stay for the next read.'),
 };
 
 interface Section<E> {
@@ -70,40 +77,39 @@ function clock(ms: number) {
 }
 
 function fit<E>(entries: E[]) {
-  const kept: E[] = [];
   let used = 0;
 
   for (let index = entries.length - 1; index >= 0; index--) {
-    const entry = entries[index];
+    used += JSON.stringify(entries[index]).length + 1;
 
-    if (entry === undefined) continue;
-
-    const size = JSON.stringify(entry).length + 1;
-
-    if (used + size > MAX_CHARS) break;
-
-    used += size;
-    kept.unshift(entry);
+    if (used > MAX_CHARS) return entries.length - 1 - index;
   }
 
-  return { entries: kept, truncated: kept.length < entries.length };
+  return entries.length;
 }
 
 function section<T, E>(read: CaptureRead<T>, entries: E[]): Section<E> {
-  const cut = fit(entries);
-
   return {
     capturing: read.capturing,
     dropped: read.dropped,
     ...(read.ended ? { ended: read.ended } : {}),
-    entries: cut.entries,
-    truncated: cut.truncated,
+    entries,
+    truncated: read.left > 0,
   };
 }
 
+const MAX_BODY_CHARS = 20_000;
+
 function body(key: 'request_body' | 'response_body', captured: CapturedBody | undefined) {
   if (!captured) return {};
-  if (captured.text !== undefined) return { [key]: captured.text };
+
+  const { text } = captured;
+
+  if (text !== undefined && text.length > MAX_BODY_CHARS) {
+    return { [key]: text.slice(0, MAX_BODY_CHARS), [`${key}_cut`]: text.length - MAX_BODY_CHARS };
+  }
+
+  if (text !== undefined) return { [key]: text };
 
   return { [`${key}_omitted`]: captured.omitted ?? 'unparsed' };
 }
@@ -148,6 +154,16 @@ function notStarted(kind: CaptureKind) {
 
 const STARTED = { capturing: true, dropped: 0, entries: [], truncated: false };
 
+async function admit(env: BrowserEnv, ctx: ToolContext, tabId: number, kind: CaptureKind) {
+  try {
+    await enter(env, ctx, tabId, 'read');
+  } catch (error) {
+    const closed = error instanceof ToolError && error.code === 'invalid_target';
+
+    if (!closed || env.captures.owner(tabId, kind) !== runOf(env, ctx).run.id) throw error;
+  }
+}
+
 export function captureTools(env: BrowserEnv) {
   return [
     defineTool({
@@ -160,7 +176,9 @@ export function captureTools(env: BrowserEnv) {
         bodies: z
           .boolean()
           .optional()
-          .describe('start: also keep JSON and form bodies, up to 1 MB each. Off when left out.'),
+          .describe(
+            'start: also keep JSON and form bodies, up to 1 MB each; a read shows the first 20,000 characters of each. Off when left out.',
+          ),
         url_contains: z
           .string()
           .optional()
@@ -178,28 +196,29 @@ export function captureTools(env: BrowserEnv) {
       permission: 'read',
       lock: byTab,
       execute: async ({ tab_id, action: step, bodies, url_contains, headers }, ctx) => {
-        const act = await enter(env, ctx, tab_id, 'read');
+        const view = (entry: NetworkEntry) => networkView(entry, headers ?? false);
+        const room = (entries: NetworkEntry[]) => fit(entries.map(view));
 
         if (step === 'start') {
+          const act = await enter(env, ctx, tab_id, 'read');
           const { started, previous } = await env.captures.start(
             tab_id,
             'network',
-            { bodies },
+            { bodies, owner: act.run.id, fit: room },
             act.signal,
           );
 
           if (!previous) return untrusted({ ...STARTED, started, pending: 0 });
 
           return untrusted({
-            ...section(
-              previous,
-              previous.entries.map((entry) => networkView(entry, false)),
-            ),
+            ...section(previous, previous.entries.map(view)),
             capturing: true,
             started,
             pending: 0,
           });
         }
+
+        await admit(env, ctx, tab_id, 'network');
 
         const match = url_contains
           ? (entry: NetworkEntry) => entry.request.url.includes(url_contains)
@@ -207,18 +226,12 @@ export function captureTools(env: BrowserEnv) {
 
         const read =
           step === 'read'
-            ? env.captures.read(tab_id, 'network', match)
-            : await env.captures.stop(tab_id, 'network');
+            ? env.captures.read(tab_id, 'network', { match, fit: room })
+            : await env.captures.stop(tab_id, 'network', { fit: room });
 
         if (!read) throw notStarted('network');
 
-        return untrusted({
-          ...section(
-            read,
-            read.entries.map((entry) => networkView(entry, headers ?? false)),
-          ),
-          pending: read.pending,
-        });
+        return untrusted({ ...section(read, read.entries.map(view)), pending: read.pending });
       },
     }),
     defineTool({
@@ -239,10 +252,16 @@ export function captureTools(env: BrowserEnv) {
       permission: 'read',
       lock: byTab,
       execute: async ({ tab_id, action: step, level }, ctx) => {
-        const act = await enter(env, ctx, tab_id, 'read');
+        const room = (entries: ConsoleEntry[]) => fit(entries.map(consoleView));
 
         if (step === 'start') {
-          const { started, previous } = await env.captures.start(tab_id, 'console', {}, act.signal);
+          const act = await enter(env, ctx, tab_id, 'read');
+          const { started, previous } = await env.captures.start(
+            tab_id,
+            'console',
+            { owner: act.run.id, fit: room },
+            act.signal,
+          );
 
           if (!previous) return untrusted({ ...STARTED, started });
 
@@ -253,6 +272,8 @@ export function captureTools(env: BrowserEnv) {
           });
         }
 
+        await admit(env, ctx, tab_id, 'console');
+
         const floor = LEVELS.indexOf(level ?? 'debug');
         const match = level
           ? (entry: ConsoleEntry) => LEVELS.indexOf(entry.level satisfies ConsoleLevel) >= floor
@@ -260,8 +281,8 @@ export function captureTools(env: BrowserEnv) {
 
         const read =
           step === 'read'
-            ? env.captures.read(tab_id, 'console', match)
-            : await env.captures.stop(tab_id, 'console');
+            ? env.captures.read(tab_id, 'console', { match, fit: room })
+            : await env.captures.stop(tab_id, 'console', { fit: room });
 
         if (!read) throw notStarted('console');
 

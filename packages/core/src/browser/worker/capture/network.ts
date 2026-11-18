@@ -26,6 +26,8 @@ const NO_BODY_STATUS = new Set([204, 205, 304]);
 
 const MAX_EARLY = 500;
 
+const ENCODER = new TextEncoder();
+
 const NEVER = new AbortController().signal;
 
 interface Response {
@@ -58,6 +60,8 @@ interface Extra {
 /** Requests and responses from one tab's main frame, redacted before they are stored. */
 export interface NetworkCapture {
   take(match?: (entry: NetworkEntry) => boolean): Taken<NetworkEntry>;
+  restore(entries: NetworkEntry[]): void;
+  size(): number;
   /** Requests started but not yet stored: in flight, or waiting for their bodies. */
   pending(): number;
   /** Stops listening and stores what is in flight as it is. */
@@ -212,11 +216,10 @@ export function captureNetwork({
   };
 
   const keep = (raw: string, mimeType: string): CapturedBody => {
-    const omitted = claim(raw.length);
+    const size = raw.length > MAX_BODY_BYTES ? raw.length : ENCODER.encode(raw).length;
+    const omitted = claim(size);
 
-    return omitted
-      ? { size: raw.length, mimeType, omitted }
-      : { size: raw.length, mimeType, text: raw };
+    return omitted ? { size, mimeType, omitted } : { size, mimeType, text: raw };
   };
 
   const fetch = async (method: string, requestId: string) =>
@@ -420,6 +423,8 @@ export function captureNetwork({
 
   return {
     take: (match) => buffer.take(match),
+    restore: (entries) => buffer.restore(entries),
+    size: () => buffer.size(),
     pending: () => hops.size + finishing.size,
     stop: () => {
       if (stopped) return;

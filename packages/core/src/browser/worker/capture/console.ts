@@ -24,6 +24,8 @@ export interface ConsoleEntry {
 /** Console messages from one tab's main-frame page world, redacted before they are stored. */
 export interface ConsoleCapture {
   take(match?: (entry: ConsoleEntry) => boolean): Taken<ConsoleEntry>;
+  restore(entries: ConsoleEntry[]): void;
+  size(): number;
   stop(): void;
 }
 
@@ -52,23 +54,37 @@ const SCHEME_TOKEN = /\b(Bearer|Basic|Token)\s+[\w.~+/=-]{8,}/gi;
 
 const JWT = /\beyJ[\w-]{5,}\.[\w-]{5,}\.[\w-]*/g;
 
-const NAMED_VALUE = /(["']?)([\w.-]+)\1(\s*[:=]\s*)(?!\/\/)(["']?)([^\s"'&,;}[\]]+)\4/g;
+const NAMED_VALUE =
+  /(\\?["']|)([\w.-]+)\1(\s*[:=]\s*)(?!\/\/)("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|\\"(?:[^"\\]|\\[^"])*\\"|[^\s&"'\\]+)/g;
+
+function delimiter(value: string) {
+  if (value.startsWith('\\"')) return '\\"';
+
+  return value.startsWith('"') || value.startsWith("'") ? value.charAt(0) : '';
+}
+
+function hideNamed(text: string): string {
+  return text.replace(
+    NAMED_VALUE,
+    (whole, quote: string, name: string, gap: string, value: string) => {
+      const open = delimiter(value);
+      const found = value.slice(open.length, value.length - open.length);
+      const secret = SECRET_NAME.test(name);
+
+      if (found === REDACTED || (!secret && !open)) return whole;
+
+      return `${quote}${name}${quote}${gap}${open}${secret ? REDACTED : hideNamed(found)}${open}`;
+    },
+  );
+}
 
 /**
  * Hides credentials console text shows by shape, whether or not a request taught the redactor them:
- * auth scheme tokens, JWTs, and values after a secret-like name (`password=…`, `"token": "…"`).
+ * auth scheme tokens, JWTs, and values after a secret-like name (`password=…`, `"token": "…"`),
+ * also inside JSON held in a quoted value.
  */
 export function scrubText(value: string) {
-  return value
-    .replace(SCHEME_TOKEN, `$1 ${REDACTED}`)
-    .replace(JWT, REDACTED)
-    .replace(
-      NAMED_VALUE,
-      (whole, quote: string, name: string, gap: string, open: string, found: string) =>
-        SECRET_NAME.test(name) && found !== REDACTED
-          ? `${quote}${name}${quote}${gap}${open}${REDACTED}${open}`
-          : whole,
-    );
+  return hideNamed(value.replace(SCHEME_TOKEN, `$1 ${REDACTED}`).replace(JWT, REDACTED));
 }
 
 function record(value: unknown): Record<string, unknown> {
@@ -142,15 +158,12 @@ export function captureConsole({
   let stopped = false;
 
   const store = (entry: ConsoleEntry) => {
+    const url = entry.url && redactor.protectUrl(entry.url);
     const scrubbed = scrubText(redactor.redactText(entry.text));
     const cut =
       scrubbed.length > MAX_MESSAGE_CHARS ? `${scrubbed.slice(0, MAX_MESSAGE_CHARS)}…` : scrubbed;
 
-    buffer.push({
-      ...entry,
-      text: cut,
-      ...(entry.url ? { url: redactor.protectUrl(entry.url) } : {}),
-    });
+    buffer.push({ ...entry, text: cut, ...(url ? { url } : {}) });
   };
 
   const inPage = (id: unknown) => typeof id === 'number' && contexts.has(id);
@@ -211,6 +224,9 @@ export function captureConsole({
 
       case 'Log.entryAdded': {
         const entry = record(params.entry);
+
+        if (entry.workerId !== undefined) return;
+
         const url = text(entry.url);
 
         return store({
@@ -229,6 +245,8 @@ export function captureConsole({
 
   return {
     take: (match) => buffer.take(match),
+    restore: (entries) => buffer.restore(entries),
+    size: () => buffer.size(),
     stop: () => {
       stopped = true;
       unsubscribe();

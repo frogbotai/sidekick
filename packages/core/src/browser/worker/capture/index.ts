@@ -24,7 +24,18 @@ interface Entries {
 export interface CaptureRead<T> extends Taken<T> {
   capturing: boolean;
   pending: number;
+  /** Older entries `fit` left out, kept for the next read. */
+  left: number;
   ended?: EndReason;
+}
+
+/**
+ * How a read picks its entries. `match` turns entries down for a later read; `fit` says how many of
+ * the newest ones the reply has room for, and the older rest stay for the next read.
+ */
+export interface ReadOptions<T> {
+  match?: (entry: T) => boolean;
+  fit?: (entries: T[]) => number;
 }
 
 export interface CaptureStart<T> {
@@ -39,31 +50,41 @@ export interface Captures {
   start<K extends CaptureKind>(
     tabId: number,
     kind: K,
-    options: { bodies?: boolean },
+    options: { bodies?: boolean; owner: string; fit?: (entries: Entries[K][]) => number },
     signal: AbortSignal,
   ): Promise<CaptureStart<Entries[K]>>;
   /**
-   * `undefined` when the tab has no capture of this kind to read. Entries `match` turns down stay
-   * for a later read; an ended capture is forgotten once a read takes everything.
+   * `undefined` when the tab has no capture of this kind to read. A capture that has ended or been
+   * stopped is forgotten once a read takes everything.
    */
   read<K extends CaptureKind>(
     tabId: number,
     kind: K,
-    match?: (entry: Entries[K]) => boolean,
+    options?: ReadOptions<Entries[K]>,
   ): CaptureRead<Entries[K]> | undefined;
-  stop<K extends CaptureKind>(tabId: number, kind: K): Promise<CaptureRead<Entries[K]> | undefined>;
+  stop<K extends CaptureKind>(
+    tabId: number,
+    kind: K,
+    options?: ReadOptions<Entries[K]>,
+  ): Promise<CaptureRead<Entries[K]> | undefined>;
+  /** The run that started the tab's capture of this kind, so a closed tab's capture can still be read. */
+  owner(tabId: number, kind: CaptureKind): string | undefined;
   dispose(): void;
 }
 
 interface Source<T> {
   take(match?: (entry: T) => boolean): Taken<T>;
+  restore(entries: T[]): void;
+  size(): number;
   pending(): number;
   scrub(entry: T): T;
 }
 
 interface Running<T> extends Source<T> {
+  owner: string;
   stop(): Promise<void>;
   ended?: EndReason;
+  stopped?: boolean;
 }
 
 const DETACH_REASONS: Record<string, EndReason> = {
@@ -120,14 +141,13 @@ export function createCaptures({ cdp, sessions }: { cdp: Cdp; sessions: Sessions
     }
   };
 
-  const hold = <T>(tabId: number, source: Source<T>, stop: () => Promise<void>) => {
+  const hold = <T>(tabId: number, owner: string, source: Source<T>, stop: () => Promise<void>) => {
     const release = sessions.hold(tabId);
     let stopping: Promise<void> | undefined;
 
     const capture: Running<T> = {
-      take: (match) => source.take(match),
-      pending: () => source.pending(),
-      scrub: (entry) => source.scrub(entry),
+      ...source,
+      owner,
       stop: () => {
         clearTimeout(timer);
         stopping ??= stop().finally(release);
@@ -146,19 +166,26 @@ export function createCaptures({ cdp, sessions }: { cdp: Cdp; sessions: Sessions
     return capture;
   };
 
-  const startNetwork = async (tabId: number, bodies: boolean, signal: AbortSignal) => {
+  const startNetwork = async (
+    tabId: number,
+    owner: string,
+    bodies: boolean,
+    signal: AbortSignal,
+  ) => {
     const frameId = await mainFrame(tabId, signal);
     const redactor = redactorFor(tabId);
     const capture = captureNetwork({ cdp, tabId, frameId, redactor, bodies });
     const source: Source<NetworkEntry> = {
       take: (match) => capture.take(match),
+      restore: (entries) => capture.restore(entries),
+      size: () => capture.size(),
       pending: () => capture.pending(),
       scrub: (entry) => redactKnown(entry, redactor),
     };
 
     running.network.set(
       tabId,
-      hold(tabId, source, () => Promise.resolve(capture.stop())),
+      hold(tabId, owner, source, () => Promise.resolve(capture.stop())),
     );
   };
 
@@ -169,17 +196,19 @@ export function createCaptures({ cdp, sessions }: { cdp: Cdp; sessions: Sessions
       ),
     ).then(() => undefined);
 
-  const startConsole = async (tabId: number, signal: AbortSignal) => {
+  const startConsole = async (tabId: number, owner: string, signal: AbortSignal) => {
     const frameId = await mainFrame(tabId, signal);
     const redactor = redactorFor(tabId);
     const capture = captureConsole({ cdp, tabId, frameId, redactor });
     const source: Source<ConsoleEntry> = {
       take: (match) => capture.take(match),
+      restore: (entries) => capture.restore(entries),
+      size: () => capture.size(),
       pending: () => 0,
       scrub: (entry) => ({ ...entry, text: redactor.redactText(entry.text) }),
     };
 
-    const entry = hold(tabId, source, () => {
+    const entry = hold(tabId, owner, source, () => {
       capture.stop();
 
       return disable(tabId);
@@ -192,33 +221,38 @@ export function createCaptures({ cdp, sessions }: { cdp: Cdp; sessions: Sessions
       await sessions.send(tabId, 'Log.enable', {}, signal);
     } catch (error) {
       await entry.stop();
-      forget(tabId, 'console');
+      running.console.delete(tabId);
 
       throw error;
     }
   };
 
-  const take = <K extends CaptureKind>(
-    tabId: number,
-    kind: K,
-    match?: (entry: Entries[K]) => boolean,
-  ) => {
-    const capture = running[kind].get(tabId);
+  const take = <T>(
+    capture: Running<T>,
+    { match, fit }: ReadOptions<T> = {},
+    into: Source<T> = capture,
+  ): CaptureRead<T> => {
+    const taken = capture.take(match);
+    const scrubbed = taken.entries.map((item) => capture.scrub(item));
+    const room = fit ? Math.min(scrubbed.length, Math.max(fit(scrubbed), 1)) : scrubbed.length;
+    const left = scrubbed.length - room;
 
-    if (!capture) return undefined;
-
-    const { entries, dropped } = capture.take(match);
+    into.restore(taken.entries.slice(0, left));
 
     return {
-      capture,
-      read: {
-        entries: entries.map((item) => capture.scrub(item)),
-        dropped,
-        capturing: !capture.ended,
-        pending: capture.pending(),
-        ...(capture.ended ? { ended: capture.ended } : {}),
-      },
+      entries: scrubbed.slice(left),
+      dropped: taken.dropped,
+      capturing: !capture.ended && !capture.stopped,
+      pending: capture.pending(),
+      left,
+      ...(capture.ended ? { ended: capture.ended } : {}),
     };
+  };
+
+  const settle = (tabId: number, kind: CaptureKind) => {
+    const capture = running[kind].get(tabId);
+
+    if (capture && (capture.ended || capture.stopped) && capture.size() === 0) forget(tabId, kind);
   };
 
   const unsubscribe = cdp.onDetach((tabId, reason) =>
@@ -226,42 +260,53 @@ export function createCaptures({ cdp, sessions }: { cdp: Cdp; sessions: Sessions
   );
 
   return {
-    start: async (tabId, kind, { bodies = false }, signal) => {
+    start: async (tabId, kind, { bodies = false, owner, fit }, signal) => {
       const current = running[kind].get(tabId);
 
-      if (current && !current.ended) return { started: false };
-
-      const previous = current && take(tabId, kind)?.read;
-
-      if (current) forget(tabId, kind);
+      if (current && !current.ended && !current.stopped) return { started: false };
 
       await sessions.ensure(tabId, signal);
 
-      if (kind === 'network') await startNetwork(tabId, bodies, signal);
-      else await startConsole(tabId, signal);
+      try {
+        if (kind === 'network') await startNetwork(tabId, owner, bodies, signal);
+        else await startConsole(tabId, owner, signal);
+      } catch (error) {
+        if (current) running[kind].set(tabId, current);
+
+        throw error;
+      }
+
+      const next = running[kind].get(tabId);
+      const previous = current && next && take(current, { fit }, next);
 
       return { started: true, ...(previous ? { previous } : {}) };
     },
-    read: (tabId, kind, match) => {
-      const taken = take(tabId, kind, match);
+    read: (tabId, kind, options) => {
+      const capture = running[kind].get(tabId);
 
-      if (taken?.capture.ended && !match) forget(tabId, kind);
+      if (!capture) return undefined;
 
-      return taken?.read;
+      const read = take(capture, options);
+
+      settle(tabId, kind);
+
+      return read;
     },
-    stop: async (tabId, kind) => {
+    stop: async (tabId, kind, options) => {
       const capture = running[kind].get(tabId);
 
       if (!capture) return undefined;
 
       await capture.stop();
+      capture.stopped = true;
 
-      const taken = take(tabId, kind);
+      const read = take(capture, options);
 
-      forget(tabId, kind);
+      settle(tabId, kind);
 
-      return taken && { ...taken.read, capturing: false };
+      return read;
     },
+    owner: (tabId, kind) => running[kind].get(tabId)?.owner,
     dispose: () => {
       unsubscribe();
 
