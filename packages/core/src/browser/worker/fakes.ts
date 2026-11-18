@@ -5,6 +5,7 @@ import type {
   Cdp,
   CdpEvent,
   Commit,
+  Encoder,
   Images,
   Page,
   Rgba,
@@ -413,4 +414,45 @@ export function fakeContext(log: Log, runId: string): FakeContext {
       }),
     },
   };
+}
+
+export interface FakeEncoder extends Encoder {
+  /** Frames per open recording, in the order they came. */
+  frames: Map<string, { data: string; timestamp: number; duration: number }[]>;
+  closed: { id: string; file: string }[];
+  cancelled: string[];
+}
+
+/** Keeps every frame in memory; `close` reports a 1 KB H.264 file at the first frame's size. */
+export function fakeEncoder(log: Log): FakeEncoder {
+  const fake: FakeEncoder = {
+    frames: new Map(),
+    closed: [],
+    cancelled: [],
+    open: later((id: string) => void fake.frames.set(id, [])),
+    frame: later((id: string, frame: { data: string; timestamp: number; duration: number }) => {
+      const frames = fake.frames.get(id);
+
+      if (!frames) throw new Error(`No recording ${id}`);
+
+      frames.push(frame);
+    }),
+    close: later((id: string, file: string) => {
+      const [first] = fake.frames.get(id) ?? [];
+
+      if (!first) throw new Error('No frames to save');
+
+      fake.closed.push({ id, file });
+
+      const size = jpegSize(first.data) ?? { width: 0, height: 0 };
+
+      return { file, codec: 'avc', bytes: 1024, ...size };
+    }),
+    cancel: later((id: string) => {
+      fake.cancelled.push(id);
+      fake.frames.delete(id);
+    }),
+  };
+
+  return logged(log, 'encoder', fake);
 }

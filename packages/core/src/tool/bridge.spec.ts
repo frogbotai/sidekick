@@ -6,6 +6,7 @@ import { BUILTIN_AGENTS } from '../agent/builtin';
 import {
   type FakeCdp,
   fakeCdp,
+  fakeEncoder,
   fakeImages,
   fakePage,
   fakeTabs,
@@ -144,6 +145,7 @@ function boot(
     page: fakePage(log, page),
     tabs,
     images: fakeImages(log),
+    encoder: fakeEncoder(log),
     mac: false,
   });
 

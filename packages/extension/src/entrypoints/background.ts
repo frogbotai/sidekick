@@ -29,6 +29,7 @@ import {
 import { listenForConnect } from '@frogbotai/sidekick-core/frogbot';
 import { defineBackground } from 'wxt/utils/define-background';
 
+import { chromeEncoder } from '../recorder/encoder';
 import { answerTestRequests } from '../testTools';
 
 const FRAME_SCRIPT = 'frame.js';
@@ -75,6 +76,7 @@ export default defineBackground(() => {
     page: chromePage({ tabs, inject: injectFrame, refs: sessionRefStore() }),
     tabs,
     images: chromeImages(),
+    encoder: chromeEncoder(),
     mac: /Mac OS X|Macintosh/.test(navigator.userAgent),
   });
 

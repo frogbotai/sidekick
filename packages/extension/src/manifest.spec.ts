@@ -19,6 +19,8 @@ const PERMISSIONS = [
   'debugger',
   'webNavigation',
   'favicon',
+  'downloads',
+  'offscreen',
 ];
 
 let outBase: string;
@@ -139,10 +141,6 @@ describe('built manifest', () => {
 
   it.each(['web_accessible_resources', 'content_security_policy'])('has no %s', (field) => {
     expect(manifest).not.toHaveProperty(field);
-  });
-
-  it('has no offscreen permission', () => {
-    expect(manifest.permissions).not.toContain('offscreen');
   });
 
   it('adds only nativeMessaging in a development build, for saving runs (328)', () => {
