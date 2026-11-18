@@ -20,6 +20,11 @@ const metrics = z.object({
 
 const shot = z.object({ data: z.string() });
 
+interface Shot {
+  scale: number;
+  keepMap: boolean;
+}
+
 function sized(size: Size, scale: number): Size {
   return {
     width: Math.max(1, Math.round(size.width * scale)),
@@ -27,7 +32,7 @@ function sized(size: Size, scale: number): Size {
   };
 }
 
-async function visibleTab(act: Act, scale: number, document: number): Promise<Capture> {
+async function visibleTab(act: Act, { scale, keepMap }: Shot, document: number): Promise<Capture> {
   const viewport = await race(act.env.page.viewport(act.tabId), act.signal);
 
   const capture = await race(
@@ -37,7 +42,9 @@ async function visibleTab(act: Act, scale: number, document: number): Promise<Ca
 
   const image = jpegSize(capture.data) ?? capture;
 
-  act.env.screens.set(act.tabId, screenMap({ x: 0, y: 0, ...viewport }, image, document));
+  if (keepMap) {
+    act.env.screens.set(act.tabId, screenMap({ x: 0, y: 0, ...viewport }, image, document));
+  }
 
   return { ...capture, width: image.width, height: image.height };
 }
@@ -59,11 +66,12 @@ async function attached(act: Act) {
 /**
  * `Page.captureScreenshot` in CSS pixels × `scale` (`clip.scale` divides out the device pixel
  * ratio); focus emulation for background tabs; `captureVisibleTab` when attach is blocked on the
- * active tab. The report and the screen map use the JPEG's real size.
+ * active tab. The report and the screen map use the JPEG's real size. `keepMap: false` leaves the
+ * screen map alone, for a capture the agent never sees, so its x/y keep pointing at the last one.
  */
 export async function screenshot(
   act: Act,
-  { scale, ref }: { scale: number; ref?: string },
+  { scale, ref, keepMap = true }: { scale: number; ref?: string; keepMap?: boolean },
 ): Promise<Capture> {
   const document = documentOf(act.env, act.tabId);
   let clip: Rect | undefined;
@@ -73,7 +81,7 @@ export async function screenshot(
     clip = (await race(act.env.page.scrollTo(act.tabId, ref), act.signal)).rect;
   }
 
-  if (!(await attached(act))) return visibleTab(act, scale, document);
+  if (!(await attached(act))) return visibleTab(act, { scale, keepMap }, document);
 
   const { cssVisualViewport: view, visualViewport: device } = metrics.parse(
     await send(act, 'Page.getLayoutMetrics'),
@@ -100,7 +108,7 @@ export async function screenshot(
   const { data } = shot.parse(result);
   const image = jpegSize(data) ?? sized(area, scale);
 
-  act.env.screens.set(act.tabId, screenMap(area, image, document));
+  if (keepMap) act.env.screens.set(act.tabId, screenMap(area, image, document));
 
   return { data, mime: 'image/jpeg', ...image };
 }

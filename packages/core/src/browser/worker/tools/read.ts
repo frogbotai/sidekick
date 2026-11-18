@@ -167,7 +167,7 @@ export function readTools(env: BrowserEnv) {
     defineTool({
       id: 'screenshot_diff',
       description:
-        'Capture the tab again the way a named baseline screenshot was taken (same scale and element) and compare the two. Returns how many pixels changed and an image with unchanged pixels gray and changed ones red. The images must be the same size: keep the viewport and zoom unchanged between them.',
+        'Capture the tab again the way a named baseline screenshot was taken (same scale and element) and compare the two. Returns how many pixels changed and an image with unchanged pixels gray and changed ones red. The images must be the same size: keep the viewport and zoom unchanged between them. click, hover and drag x and y still refer to the last screenshot, not this image.',
       input: z.object({
         tab_id: tabId,
         baseline: baselineName.describe('The name given to screenshot.'),
@@ -193,7 +193,7 @@ export function readTools(env: BrowserEnv) {
         const act = await enter(env, ctx, tab_id, 'read');
         const baseline = baselineOf(act.run, name, tab_id);
         const capture = await clean(act, () =>
-          screenshot(act, { scale: baseline.scale, ref: baseline.ref }),
+          screenshot(act, { scale: baseline.scale, ref: baseline.ref, keepMap: false }),
         );
 
         const [before, after] = await race(
@@ -212,7 +212,7 @@ export function readTools(env: BrowserEnv) {
             width: diff.image.width,
             height: diff.image.height,
             changed_pixels: diff.changed,
-            changed_share: Math.round((diff.changed / total) * 10_000) / 10_000,
+            changed_share: Number((diff.changed / total).toPrecision(3)),
           },
           [{ type: 'file', uri: `data:image/png;base64,${png}`, mime: 'image/png', name: 'diff' }],
         );

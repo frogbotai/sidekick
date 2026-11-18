@@ -3,7 +3,7 @@ import { z } from 'zod';
 
 import { tools } from '../../registry';
 import { createToolCaller } from '../../tool/bridge';
-import { defineTool, type ToolDefinition, UNTRUSTED } from '../../tool/tool';
+import { defineTool, type ToolDefinition, ToolError, UNTRUSTED } from '../../tool/tool';
 import { MAX_BASELINES } from './baselines';
 import { later, solid } from './fakes';
 import { drain, failure, setupBrowser } from './harness';
@@ -359,7 +359,7 @@ describe('screenshot_diff against a named baseline (sidekick-19 req. 7, 8, 10)',
 
     const result = await diffed(setup);
 
-    expect(result.output).toMatchObject({ changed_pixels: 100, changed_share: 0.0002 });
+    expect(result.output).toMatchObject({ changed_pixels: 100, changed_share: 0.000208 });
     expect([...(setup.images.encoded[0]?.data.slice(0, 4) ?? [])]).toEqual([255, 0, 0, 255]);
   });
 
@@ -421,6 +421,56 @@ describe('screenshot_diff against a named baseline (sidekick-19 req. 7, 8, 10)',
       changed_pixels: 0,
     });
   });
+
+  it('reports a nonzero share when one pixel changed', async () => {
+    const setup = await setupBrowser();
+
+    setup.images.paint = (index, size) => {
+      const image = solid(size, [255, 255, 255, 255]);
+
+      if (index === 1) image.data.set([0, 0, 0, 255], 0);
+
+      return image;
+    };
+
+    await baseline(setup);
+
+    expect((await diffed(setup)).output).toMatchObject({
+      changed_pixels: 1,
+      changed_share: 0.00000208,
+    });
+  });
+
+  it.each([
+    ['refused for its size', true],
+    ['made', false],
+  ])(
+    'keeps stale_screenshot after a navigation and a diff %s (271 D2)',
+    async (outcome, resize) => {
+      const setup = await setupBrowser();
+
+      await baseline(setup, { scale: 0.5 });
+      setup.tabs.commit({ tabId: 1 });
+
+      if (resize) {
+        setup.cdp.replies.set('Page.getLayoutMetrics', () => ({
+          cssVisualViewport: { pageX: 0, pageY: 0, clientWidth: 700, clientHeight: 600 },
+          visualViewport: { clientWidth: 700 },
+        }));
+      }
+
+      const diff = await diffed(setup).then(
+        () => 'made',
+        (error: unknown) => (error instanceof ToolError ? error.code : String(error)),
+      );
+
+      expect(diff).toBe(outcome === 'made' ? 'made' : 'size_mismatch');
+
+      const click = setup.tool('click').execute({ tab_id: 1, x: 100, y: 50 }, setup.ctx);
+
+      expect(await failure(click)).toMatchObject({ code: 'stale_screenshot' });
+    },
+  );
 
   it('refuses a threshold outside 0 to 1 at the schema', async () => {
     const { tool } = await setupBrowser();
