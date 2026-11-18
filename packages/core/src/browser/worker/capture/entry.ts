@@ -2,12 +2,15 @@ import { type Header, isRecord, MIN_KNOWN_LENGTH, type SecretRedactor } from './
 
 const MIN_KNOWN_BODY_LENGTH = 16;
 
+/** Why a body was kept out: over a size limit, not JSON or a form, unparseable, or gone before it was read. */
+export type BodyOmitted = 'size' | 'type' | 'unparsed' | 'unavailable';
+
 /** A request or response body. `text` is absent when it was kept out, and `omitted` says why. */
 export interface CapturedBody {
   size: number;
   mimeType: string;
   text?: string;
-  omitted?: 'size' | 'type' | 'unparsed';
+  omitted?: BodyOmitted;
 }
 
 /** One request and its response or failure. */
