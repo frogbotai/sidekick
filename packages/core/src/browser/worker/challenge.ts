@@ -109,7 +109,7 @@ export function classify(probe: Probe & { frameUrls: string[] }): Detection | nu
   );
 
   const asks =
-    /verify you are human by completing|click to verify|confirm you are human|security check/.test(
+    /verify you are human by completing|click to verify|confirm you are human|security check\b/.test(
       text,
     );
 
@@ -194,9 +194,9 @@ export function classify(probe: Probe & { frameUrls: string[] }): Detection | nu
 
   const unnoticed = text.replace(/protected by (?:re|h)captcha/g, '');
   const wall =
-    /verify you are (?:a )?human|are you a robot|not a robot|unusual traffic|security check|complete the captcha|captcha/.test(
+    /verify you are (?:a )?human|are you a robot|not a robot|unusual traffic|security check\b|complete the captcha|captcha/.test(
       unnoticed,
-    ) || /captcha|security check/.test(title);
+    ) || /captcha|security check\b/.test(title);
 
   if (hcaptcha && wall) return found('hcaptcha', 'interactive');
 
