@@ -194,11 +194,15 @@ describe('emulate (sidekick-17 req. 20-26)', () => {
   });
 
   it('forgets a closed tab’s overrides without sending anything', async () => {
-    const { emulate, cdp, runtime, run } = await emulating();
+    const { emulate, cdp, runtime, run, tabs } = await emulating();
 
     await emulate({ color_scheme: 'dark' });
+    tabs.tabs.delete(1);
     cdp.detachByChrome(1, 'target_closed');
+    await vi.advanceTimersByTimeAsync(100);
     cdp.sent.length = 0;
+
+    expect(runtime.env.emulation.active(1)).toEqual({});
 
     runtime.env.runs.stop(run.id);
     await vi.advanceTimersByTimeAsync(100);
@@ -283,5 +287,64 @@ describe('emulate (sidekick-17 req. 20-26)', () => {
         params: { features: [{ name: 'prefers-reduced-motion', value: 'reduce' }] },
       }),
     ]);
+  });
+
+  it('re-applies the overrides after a target_closed detach on a tab that is still open (PR #48 review finding 1)', async () => {
+    const { emulate, cdp, runtime, tabs } = await emulating();
+
+    await emulate({ viewport: PHONE, color_scheme: 'dark' });
+    cdp.detachByChrome(1, 'target_closed');
+    await vi.advanceTimersByTimeAsync(100);
+    cdp.sent.length = 0;
+
+    expect(tabs.tabs.has(1)).toBe(true);
+
+    await drain(runtime.env.sessions.send(1, 'Page.enable', {}));
+
+    expect(sentMethods(cdp.sent)).toEqual([
+      'Network.enable',
+      'Emulation.setDeviceMetricsOverride',
+      'Emulation.setEmulatedMedia',
+      'Page.enable',
+    ]);
+
+    expect(runtime.env.emulation.active(1)).toEqual({ viewport: PHONE, color_scheme: 'dark' });
+  });
+
+  it('re-applies the rest and stops listing an override that failed to re-apply (PR #48 review finding 2)', async () => {
+    const { emulate, cdp, runtime } = await emulating();
+
+    await emulate({
+      color_scheme: 'dark',
+      user_agent: 'Phone/1.0',
+      geolocation: { latitude: 1, longitude: 2 },
+    });
+
+    cdp.detachByChrome(1, 'canceled_by_user');
+    cdp.sendErrors.set('Emulation.setUserAgentOverride', [new Error('Internal error')]);
+    cdp.sent.length = 0;
+
+    await drain(runtime.env.sessions.send(1, 'Page.enable', {}));
+
+    expect(sentMethods(cdp.sent)).toContain('Emulation.setGeolocationOverride');
+
+    expect(runtime.env.emulation.active(1)).toEqual({
+      color_scheme: 'dark',
+      geolocation: { latitude: 1, longitude: 2 },
+    });
+  });
+
+  it('drops the entry and its hold when nothing re-applies after a re-attach', async () => {
+    const { emulate, cdp, runtime } = await emulating();
+
+    await emulate({ user_agent: 'Phone/1.0' });
+    cdp.detachByChrome(1, 'canceled_by_user');
+    cdp.sendErrors.set('Emulation.setUserAgentOverride', [new Error('Internal error')]);
+
+    await drain(runtime.env.sessions.send(1, 'Page.enable', {}));
+    await vi.advanceTimersByTimeAsync(20_100);
+
+    expect(runtime.env.emulation.active(1)).toEqual({});
+    expect(cdp.detached).toEqual([1]);
   });
 });

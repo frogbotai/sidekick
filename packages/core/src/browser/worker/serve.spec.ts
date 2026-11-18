@@ -191,4 +191,37 @@ describe('handing the tab back (sidekick-17 req. 24)', () => {
     expect(runtime.env.emulation.active(1)).toEqual({});
     expect(runtime.env.runs.get(id)).toBeDefined();
   });
+
+  it('leaves nothing on the tab when run.end lands while an emulate call is attaching (PR #48 review finding 3)', async () => {
+    const { runtime, worker, cdp } = setup();
+    const { id } = await worker.sessionRun({ sessionID: 'ses-1', windowId: 1 });
+    const { emulation } = runtime.env;
+
+    await vi.advanceTimersByTimeAsync(100);
+
+    let attached = () => {};
+
+    cdp.attach = (tabId: number) =>
+      new Promise<void>((resolve) => {
+        attached = () => {
+          cdp.attaching.push(tabId);
+          cdp.sessions.add(tabId);
+          resolve();
+        };
+      });
+
+    const set = emulation.set({ tabId: 1, runId: id, overrides: { color_scheme: 'dark' } });
+
+    await vi.advanceTimersByTimeAsync(50);
+    await worker.handlers['run.end']({ sessionID: 'ses-1', close: false });
+    attached();
+    await vi.advanceTimersByTimeAsync(100);
+
+    await expect(set).rejects.toMatchObject({ code: 'stopped' });
+    expect(emulation.active(1)).toEqual({});
+
+    await vi.advanceTimersByTimeAsync(20_100);
+
+    expect(cdp.detached).toEqual([1]);
+  });
 });
