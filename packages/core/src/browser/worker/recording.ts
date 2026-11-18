@@ -70,7 +70,6 @@ interface Active {
 }
 
 interface Ended {
-  runId: string;
   origin: string;
   reason: EndReason;
   report: Promise<RecordingReport>;
@@ -119,7 +118,9 @@ export function createRecordings({
   runs: Runs;
 }): Recordings {
   const active = new Map<number, Active>();
-  const ended = new Map<number, Ended>();
+  const ended = new Map<string, Ended>();
+
+  const key = (runId: string, tabId: number) => `${runId}:${tabId}`;
 
   const since = (recording: Active) => Date.now() - recording.started;
 
@@ -201,8 +202,7 @@ export function createRecordings({
 
     report.catch(() => undefined);
 
-    ended.set(recording.tabId, {
-      runId: recording.runId,
+    ended.set(key(recording.runId, recording.tabId), {
       origin: recording.origin,
       reason,
       report,
@@ -240,8 +240,11 @@ export function createRecordings({
     }),
   ];
 
-  const mine = <T extends { runId: string }>(entry: T | undefined, runId: string) =>
-    entry?.runId === runId ? entry : undefined;
+  const mine = (runId: string, tabId: number) => {
+    const recording = active.get(tabId);
+
+    return recording?.runId === runId ? recording : undefined;
+  };
 
   return {
     start: async ({ runId, tabId, origin, frameRate, maxDurationMs }) => {
@@ -275,7 +278,7 @@ export function createRecordings({
       };
 
       active.set(tabId, recording);
-      ended.delete(tabId);
+      ended.delete(key(runId, tabId));
 
       try {
         await sessions.send(tabId, 'Page.startScreencast', {
@@ -293,10 +296,9 @@ export function createRecordings({
 
       if (active.get(tabId) === recording) schedule(recording, FALLBACK_GRACE_MS);
     },
-    originOf: (runId, tabId) =>
-      (mine(active.get(tabId), runId) ?? mine(ended.get(tabId), runId))?.origin,
+    originOf: (runId, tabId) => (mine(runId, tabId) ?? ended.get(key(runId, tabId)))?.origin,
     status: async (runId, tabId) => {
-      const recording = mine(active.get(tabId), runId);
+      const recording = mine(runId, tabId);
 
       if (recording) {
         const at = since(recording);
@@ -309,7 +311,7 @@ export function createRecordings({
         };
       }
 
-      const last = mine(ended.get(tabId), runId);
+      const last = ended.get(key(runId, tabId));
 
       if (!last) return { recording: false };
 
@@ -320,7 +322,7 @@ export function createRecordings({
       }
     },
     stop: async (runId, tabId) => {
-      const recording = mine(active.get(tabId), runId);
+      const recording = mine(runId, tabId);
 
       if (recording) {
         active.delete(tabId);
@@ -328,11 +330,11 @@ export function createRecordings({
         return finish(recording, true);
       }
 
-      const last = mine(ended.get(tabId), runId);
+      const last = ended.get(key(runId, tabId));
 
       if (!last) throw noRecording(tabId);
 
-      ended.delete(tabId);
+      ended.delete(key(runId, tabId));
 
       return last.report.catch((error: unknown) => {
         throw new ToolError(

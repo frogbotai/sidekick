@@ -10,7 +10,7 @@ import {
   type RecorderRequest,
 } from './messages';
 
-/** How long a finished recording's download may take before its blob URL is revoked anyway. */
+/** How long a finished recording's download may take before it's cancelled and reported as failed. */
 export const DOWNLOAD_TIMEOUT_MS = 60_000;
 
 type Request = RecorderRequest extends infer R
@@ -28,27 +28,41 @@ async function hasDocument() {
   return contexts.length > 0;
 }
 
+function basename(path: string) {
+  return path.split(/[\\/]/).pop() ?? path;
+}
+
 function downloaded(downloadId: number) {
-  return new Promise<void>((resolve) => {
-    const done = () => {
+  return new Promise<string>((resolve, reject) => {
+    const cleanup = () => {
       clearTimeout(timer);
       chrome.downloads.onChanged.removeListener(onChanged);
-      resolve();
+    };
+
+    const check = async () => {
+      const [item] = await chrome.downloads.search({ id: downloadId });
+
+      if (!item || item.state === 'in_progress') return;
+
+      cleanup();
+
+      if (item.state === 'complete') resolve(basename(item.filename));
+      else reject(new Error(`Chrome didn't save the video: ${item.error ?? 'interrupted'}`));
     };
 
     const onChanged = (delta: chrome.downloads.DownloadDelta) => {
-      const state = delta.state?.current;
-
-      if (delta.id === downloadId && (state === 'complete' || state === 'interrupted')) done();
+      if (delta.id === downloadId && delta.state) void check().catch(() => undefined);
     };
 
-    const timer = setTimeout(done, DOWNLOAD_TIMEOUT_MS);
+    const timer = setTimeout(() => {
+      cleanup();
+      void chrome.downloads.cancel(downloadId).catch(() => undefined);
+
+      reject(new Error(`Chrome didn't finish saving the video in ${DOWNLOAD_TIMEOUT_MS / 1000} s`));
+    }, DOWNLOAD_TIMEOUT_MS);
 
     chrome.downloads.onChanged.addListener(onChanged);
-
-    void chrome.downloads.search({ id: downloadId }).then(([item]) => {
-      if (item && item.state !== 'in_progress') done();
-    });
+    void check().catch(() => undefined);
   });
 }
 
@@ -148,7 +162,7 @@ export function chromeEncoder(): Encoder {
         conflictAction: 'uniquify',
       });
 
-      await downloaded(downloadId);
+      return await downloaded(downloadId);
     } finally {
       await request({ type: 'revoke', url: finished.url }).catch(() => undefined);
       release(user);
@@ -176,10 +190,8 @@ export function chromeEncoder(): Encoder {
 
         if (!isFinished(finished)) throw new Error('The recorder sent no file');
 
-        await save(finished, file);
-
         return {
-          file,
+          file: await save(finished, file),
           codec: finished.codec,
           bytes: finished.bytes,
           width: finished.width,
