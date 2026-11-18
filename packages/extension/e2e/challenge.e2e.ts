@@ -51,3 +51,37 @@ test('reports a Turnstile check and a block page, and nothing on an ordinary pag
     challenge: { vendor: 'generic', kind: 'block', recommendation: 'stop' },
   });
 });
+
+test('reports nothing on a sign-in page with an invisible reCAPTCHA (sidekick-14)', async ({
+  context,
+  origin,
+  sidekick,
+}) => {
+  await context.route('https://www.google.com/recaptcha/**', (route) =>
+    route.fulfill({ contentType: 'text/html', body: '<!doctype html><div>protected</div>' }),
+  );
+
+  await context.route('**/signin.html', (route) =>
+    route.fulfill({
+      contentType: 'text/html',
+      body: `<!doctype html><title>Sign in</title><h1>Sign in</h1>
+        <label>Email <input type="email"></label><label>Password <input type="password"></label>
+        <button>Sign in</button>
+        <p>This site is protected by reCAPTCHA and the Google Privacy Policy and Terms of Service apply.</p>
+        <iframe title="reCAPTCHA" width="256" height="60" src="https://www.google.com/recaptcha/api2/anchor?ar=1&k=x&size=invisible"></iframe>`,
+    }),
+  );
+
+  const page = await context.newPage();
+
+  await page.goto(`${origin()}/tabs.html`);
+
+  const run = await sidekick.start(page);
+  const signIn = `${origin()}/signin.html`;
+
+  expect(await run.call('navigate', { url: signIn })).toEqual({
+    url: signIn,
+    navigated: true,
+    settled: true,
+  });
+});

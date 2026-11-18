@@ -118,6 +118,30 @@ describe('classify (req. 2, 3, 12)', () => {
       'generic',
       'interactive',
     ],
+    [
+      'a Turnstile wall asking for a security check',
+      {
+        title: 'shop.example',
+        text: 'shop.example\nPlease complete the security check to access the site.',
+        frameUrls: [
+          'https://challenges.cloudflare.com/cdn-cgi/challenge-platform/h/b/turnstile/if/ov2',
+        ],
+      },
+      'cloudflare',
+      'interactive',
+    ],
+    [
+      'a Turnstile wall saying it is verifying you are human',
+      {
+        title: 'shop.example',
+        text: 'Verifying you are human. This may take a few seconds.',
+        frameUrls: [
+          'https://challenges.cloudflare.com/cdn-cgi/challenge-platform/h/b/turnstile/if/ov2',
+        ],
+      },
+      'cloudflare',
+      'interactive',
+    ],
   ])('%s', (_name, input, vendor, kind) => {
     expect(classify(page(input))).toEqual({ vendor, kind });
   });
@@ -141,6 +165,42 @@ describe('classify (req. 2, 3, 12)', () => {
         frameUrls: [
           'https://challenges.cloudflare.com/cdn-cgi/challenge-platform/h/b/turnstile/if/ov2',
         ],
+      },
+    ],
+    [
+      'a short sign-in page with an invisible reCAPTCHA and its notice',
+      {
+        title: 'Sign in',
+        text: 'Sign in\nEmail\nPassword\nForgot password?\nThis site is protected by reCAPTCHA and the Google Privacy Policy and Terms of Service apply.',
+        frameUrls: [
+          'https://www.google.com/recaptcha/api2/anchor?ar=1&k=x&co=y&hl=en&v=z&size=invisible',
+        ],
+      },
+    ],
+    [
+      'a short sign-in page with an invisible hCaptcha and its notice',
+      {
+        title: 'Log in',
+        text: 'Log in\nEmail\nPassword\nThis site is protected by hCaptcha and its Privacy Policy and Terms of Service apply.',
+        frameUrls: [
+          'https://newassets.hcaptcha.com/captcha/v1/abc/static/hcaptcha.html#frame=checkbox-invisible',
+        ],
+      },
+    ],
+    [
+      'a sign-in page with a visible reCAPTCHA and its notice',
+      {
+        title: 'Sign in',
+        text: 'Sign in\nEmail\nPassword\nThis site is protected by reCAPTCHA and the Google Privacy Policy and Terms of Service apply.',
+        frameUrls: ['https://www.google.com/recaptcha/api2/anchor?ar=1&k=x&size=normal'],
+      },
+    ],
+    [
+      'the “Verify your email” page with an embedded reCAPTCHA',
+      {
+        title: 'Verify your email',
+        text: 'We sent a code to you@example.com. Enter it below.',
+        frameUrls: ['https://www.google.com/recaptcha/api2/anchor?ar=1&k=x&size=normal'],
       },
     ],
     [
