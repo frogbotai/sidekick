@@ -94,7 +94,7 @@ const CASES: [string, Done, string, string][] = [
     'screenshot_diff',
     { input: { baseline: 'before' }, output: { changed_pixels: 1200 } },
     'Comparing screenshots',
-    '1200 pixels changed since “before”',
+    '1,200 pixels changed since “before”',
   ],
   [
     'screenshot_diff',
