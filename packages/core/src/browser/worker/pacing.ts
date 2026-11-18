@@ -11,7 +11,7 @@ export interface Quality {
   frames_written: number;
   frames_coalesced: number;
   frames_dropped: number;
-  /** Video frames per second achieved: distinct grid slots filled, at most the frame rate. */
+  /** Video frames per second achieved: grid slots filled and not dropped, at most the frame rate. */
   fps: number;
   /** Screenshots stood in while the screencast sent nothing. */
   screenshot_fallback: boolean;
@@ -105,7 +105,9 @@ export function createPacer({
       frames_dropped: counts.dropped,
       fps: Math.min(
         frameRate,
-        Math.round(((counts.captured - counts.coalesced) / Math.max(at / 1000, 0.001)) * 10) / 10,
+        Math.round(
+          ((counts.captured - counts.coalesced - counts.dropped) / Math.max(at / 1000, 0.001)) * 10,
+        ) / 10,
       ),
       screenshot_fallback: counts.fallback > 0,
     }),

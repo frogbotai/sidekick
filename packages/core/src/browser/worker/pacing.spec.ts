@@ -105,7 +105,7 @@ describe('createPacer', () => {
     pacer.push({ data: 'a', at: 0 });
     await pacer.finish(100, none);
 
-    expect(pacer.quality(100)).toMatchObject({ frames_written: 0, frames_dropped: 1 });
+    expect(pacer.quality(100)).toMatchObject({ frames_written: 0, frames_dropped: 1, fps: 0 });
   });
 
   it('reports the video’s frame rate, not the screencast’s', async () => {
