@@ -42,7 +42,7 @@ function sheetOf(css: string) {
 }
 
 export interface Indicator {
-  set(state: { visible?: boolean; cursor?: Point }): void;
+  set(state: { visible?: boolean; cursor?: Point; hidden?: boolean }): void;
   visible(): boolean;
   /** Whether a viewport point is on the Stop button, edges included, while it's shown. */
   covers(point: Point): boolean;
@@ -93,7 +93,7 @@ export function createIndicator(onStop: () => void): Indicator {
   });
 
   return {
-    set: ({ visible, cursor: point }) => {
+    set: ({ visible, cursor: point, hidden }) => {
       if (visible === true && !shown) {
         shown = true;
         document.documentElement.append(host);
@@ -103,6 +103,8 @@ export function createIndicator(onStop: () => void): Indicator {
         restore.disconnect();
         host.remove();
       }
+
+      if (hidden !== undefined) host.style.visibility = hidden ? 'hidden' : '';
 
       if (point) cursor.style.transform = `translate(${point.x - 3}px, ${point.y - 2}px)`;
     },

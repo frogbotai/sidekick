@@ -1,4 +1,4 @@
-export { chromeCdp, chromeTabs } from './chrome';
+export { chromeCdp, chromeImages, chromeTabs } from './chrome';
 export type { ActionOutput, BrowserEnv, ScreenMap } from './env';
 export type { ChromePageOptions } from './page';
 export { chromePage, frameOfRef } from './page';
@@ -17,10 +17,12 @@ export type {
   CdpEvent,
   Direction,
   FrameInfo,
+  Images,
   Page,
   Point,
   Rect,
   RefInfo,
+  Rgba,
   ScrollEnd,
   ScrollStart,
   Size,

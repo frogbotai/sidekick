@@ -396,6 +396,22 @@ describe('indicator', () => {
     expect(host.isConnected).toBe(false);
   });
 
+  it('hides from captures and shows again without leaving the page (sidekick-19)', async () => {
+    const { handlers } = setup();
+
+    unwrap(await handlers['page.indicator']({ visible: true }));
+
+    const host = hostOf();
+
+    unwrap(await handlers['page.indicator']({ hidden: true }));
+
+    expect([host.isConnected, (host as HTMLElement).style.visibility]).toEqual([true, 'hidden']);
+
+    unwrap(await handlers['page.indicator']({ hidden: false }));
+
+    expect([hostOf(), (host as HTMLElement).style.visibility]).toEqual([host, '']);
+  });
+
   it('frames the page with the old Sidekick overlay: a tint and a turning gradient frame', async () => {
     const { handlers } = setup();
 
