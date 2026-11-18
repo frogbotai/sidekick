@@ -1,4 +1,5 @@
 import type { ToolDefinition } from '../../tool/tool';
+import { createDialogs } from './dialogs';
 import type { BrowserEnv } from './env';
 import { createRuns } from './runs';
 import { createSessions } from './sessions';
@@ -26,7 +27,8 @@ export function createBrowserRuntime({
 }): BrowserRuntime {
   const sessions = createSessions({ cdp, tabs, page });
   const runs = createRuns(tabs);
-  const settler = createSettler({ cdp, page, tabs, sessions });
+  const dialogs = createDialogs({ cdp, tabs });
+  const settler = createSettler({ cdp, page, tabs, sessions, dialogs });
   const documents = new Map<number, number>();
   const env: BrowserEnv = {
     cdp,
@@ -34,6 +36,7 @@ export function createBrowserRuntime({
     tabs,
     sessions,
     settler,
+    dialogs,
     runs,
     screens: new Map(),
     documents,
@@ -50,6 +53,7 @@ export function createBrowserRuntime({
     start: () => sessions.start(),
     dispose: () => {
       stopCommits();
+      dialogs.dispose();
       sessions.dispose();
       runs.dispose();
     },

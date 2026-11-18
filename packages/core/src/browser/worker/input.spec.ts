@@ -35,7 +35,10 @@ describe('input order (req. 13)', () => {
       'tabs.get',
       'cdp.attach',
       'cdp.Network.enable',
+      'cdp.Page.enable',
       'page.scrollTo',
+      'tabs.onOpened',
+      'tabs.onCommitted',
       'page.indicator',
       'cdp.Input.dispatchMouseEvent',
       'cdp.Input.dispatchMouseEvent',
@@ -44,7 +47,14 @@ describe('input order (req. 13)', () => {
       'tabs.get',
     ]);
 
-    expect(output.output).toEqual({ url: 'https://example.com/', navigated: false, settled: true });
+    expect(output.output).toEqual({
+      url: 'https://example.com/',
+      navigated: false,
+      settled: true,
+      urlChanged: false,
+      newTabs: [],
+      dialog: null,
+    });
   });
 
   it('sends the click at the hit-tested point with the button, count and modifiers', async () => {

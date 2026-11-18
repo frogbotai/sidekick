@@ -604,7 +604,15 @@ describe('one call at a time per tab (331 D1)', () => {
 
     const [navigated, snapped] = await settleAll([navigate, snapshot]);
 
-    expect(navigated.output).toEqual({ url, navigated: true, settled: true });
+    expect(navigated.output).toEqual({
+      url,
+      navigated: true,
+      settled: true,
+      urlChanged: false,
+      newTabs: [],
+      dialog: null,
+    });
+
     expect(snapped.output).toMatchObject({ url });
     expect(read).toEqual([url]);
   });
@@ -661,8 +669,23 @@ describe('one call at a time per tab (331 D1)', () => {
       tool('fill').execute({ tab_id: START_TAB.id, ref: 'f0e2', text: 'hi' }, context('c-fill')),
     ]);
 
-    expect(clicked.output).toEqual({ url: next, navigated: true, settled: true });
-    expect(filled.output).toEqual({ url: next, navigated: false, settled: true });
+    expect(clicked.output).toEqual({
+      url: next,
+      navigated: true,
+      settled: true,
+      urlChanged: false,
+      newTabs: [],
+      dialog: null,
+    });
+
+    expect(filled.output).toEqual({
+      url: next,
+      navigated: false,
+      settled: true,
+      urlChanged: false,
+      newTabs: [],
+      dialog: null,
+    });
   });
 
   it('drops a waiting call aborted before its turn, and a failing call frees the tab', async () => {

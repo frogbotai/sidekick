@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { createDialogs } from './dialogs';
 import { fakeCdp, fakePage, fakeTabs, later, type Log } from './fakes';
 import { START_TAB } from './harness';
 import type { Sessions } from './sessions';
@@ -27,7 +28,11 @@ function setup({
   const cdp = fakeCdp(log);
   const page = fakePage(log, overrides);
   const tabs = fakeTabs(log, [START_TAB]);
-  const settler = createSettler({ cdp, page, tabs, sessions: sessions(attached) });
+  const dialogs = createDialogs({ cdp, tabs });
+
+  log.length = 0;
+
+  const settler = createSettler({ cdp, page, tabs, sessions: sessions(attached), dialogs });
 
   const request = (requestId: string, type = 'XHR') =>
     cdp.emit({ tabId: 1, method: 'Network.requestWillBeSent', params: { requestId, type } });
@@ -181,14 +186,15 @@ describe('settling (req. 18)', () => {
 
   it('stops listening to CDP events when done', async () => {
     const { settler, cdp } = setup();
+    const before = cdp.listeners();
     const settled = settler.settle(1, signal);
 
-    expect(cdp.listeners()).toBe(1);
+    expect(cdp.listeners()).toBe(before + 1);
 
     await vi.advanceTimersByTimeAsync(500);
     await settled;
 
-    expect(cdp.listeners()).toBe(0);
+    expect(cdp.listeners()).toBe(before);
   });
 });
 
@@ -277,5 +283,55 @@ describe('settling after a navigation (331 req. 2)', () => {
     expect(log).not.toContain('page.domQuiet');
 
     tabs.commit({ tabId: 1 });
+  });
+
+  it('ends at once with false when a dialog opens, and aborts the action’s signal', async () => {
+    const { cdp, settler } = setup();
+    let given: AbortSignal | undefined;
+
+    const settled = watch(
+      settler.settle(1, signal, (inner) => {
+        given = inner;
+
+        cdp.emit({
+          tabId: 1,
+          method: 'Page.javascriptDialogOpening',
+          params: { type: 'alert', message: 'Saved' },
+        });
+
+        return new Promise(() => undefined);
+      }),
+    );
+
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(settled.value).toBe(false);
+    expect(given?.aborted).toBe(true);
+  });
+
+  it('ignores a dialog on another tab', async () => {
+    const { cdp, settler } = setup();
+
+    const settled = watch(
+      settler.settle(
+        1,
+        signal,
+        later(() => {
+          cdp.emit({
+            tabId: 2,
+            method: 'Page.javascriptDialogOpening',
+            params: { type: 'alert', message: 'Elsewhere' },
+          });
+        }),
+      ),
+    );
+
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(settled.value).toBeUndefined();
+
+    await vi.advanceTimersByTimeAsync(700);
+
+    expect(settled.value).toBe(true);
   });
 });

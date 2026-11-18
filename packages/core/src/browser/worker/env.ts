@@ -2,9 +2,11 @@ import type { PermissionAction, ToolContext, ToolMetadata, ToolResult } from '..
 import { ToolError, UNTRUSTED } from '../../tool/tool';
 import { originOf } from '../../tool/url';
 import { checkpoint, race, stopped } from './abort';
+import { type Aftermath, diff, type Watch, watch } from './aftermath';
+import type { Dialog, Dialogs } from './dialogs';
 import type { Run, Runs } from './runs';
 import type { Sessions } from './sessions';
-import type { Settler } from './settle';
+import type { SettleOptions, Settler } from './settle';
 import type { Cdp, Page, Point, RefInfo, Size, TabInfo, Tabs } from './types';
 
 /** Screenshot pixels to viewport CSS pixels for one tab (271 D3). */
@@ -21,6 +23,7 @@ export interface BrowserEnv {
   tabs: Tabs;
   sessions: Sessions;
   settler: Settler;
+  dialogs: Dialogs;
   runs: Runs;
   screens: Map<number, ScreenMap>;
   /** New-document commits per tab, so a call can tell its page was replaced. */
@@ -70,17 +73,37 @@ export function runOf(env: BrowserEnv, ctx: ToolContext) {
   return { run, signal };
 }
 
+/** A dialog blocks the page's scripts, so a call that needs the page fails at once instead of timing out. */
+export function dialogOpen(dialog: Dialog) {
+  return new ToolError(
+    'dialog_open',
+    `A ${dialog.type} dialog is open on this tab. Answer it with the dialog tool (accept or dismiss) first; don’t repeat the action that opened it.`,
+    { ...dialog },
+  );
+}
+
+export interface EnterOptions {
+  /** The origin to ask about, when it isn't the tab's, as for `navigate`'s target. */
+  resource?: string;
+  /** Answers a dialog: runs while one is open, and skips the moved-site check a pending load would fail. */
+  dialog?: boolean;
+}
+
 export async function enter(
   env: BrowserEnv,
   ctx: ToolContext,
   tabId: number,
   action: PermissionAction,
-  resource?: string,
+  { resource, dialog = false }: EnterOptions = {},
 ): Promise<Act> {
   const { run, signal } = runOf(env, ctx);
   const tab = await getTab(env, tabId, signal);
 
   if (!env.runs.owns(run, tab)) throw notInGroup(tabId);
+
+  const pending = env.dialogs.get(tabId);
+
+  if (pending && action !== 'tabs' && !dialog) throw dialogOpen(pending);
 
   const origin = originOf(tab.url);
 
@@ -88,7 +111,7 @@ export async function enter(
 
   const act: Act = { env, ctx, run, signal, tabId, tab, origin, action, metadata: {} };
 
-  await recheck(act);
+  if (!dialog) await recheck(act);
 
   return act;
 }
@@ -282,16 +305,45 @@ export async function cursor(act: Act, point: Point) {
   await act.env.page.indicator(act.tabId, { cursor: point }).catch(() => undefined);
 }
 
-export interface ActionOutput {
+export interface ActionOutput extends Aftermath {
   url: string;
-  navigated: boolean;
   settled: boolean;
 }
 
-export async function finish(act: Act, settled: boolean): Promise<ActionOutput> {
-  const tab = await getTab(act.env, act.tabId, act.signal);
+/** The action result: the tab's URL and what changed since `watched` began (nothing without it). */
+export async function finish(act: Act, settled: boolean, watched?: Watch): Promise<ActionOutput> {
+  const { env, tabId } = act;
+  const tab = await getTab(env, tabId, act.signal);
+  const dialog = env.dialogs.get(tabId);
+  const after = await diff({ tabs: env.tabs, watched, documents: documentOf(env, tabId), dialog });
 
-  return { url: tab.url, navigated: tab.url !== act.tab.url, settled };
+  return { url: tab.url, settled, ...after };
+}
+
+/** Starts watching the tab, for `finish`; stop it when the call ends. */
+export function watchTab(act: Act) {
+  return watch(act.env.tabs, act.tabId, documentOf(act.env, act.tabId));
+}
+
+/**
+ * Runs `input` and waits for the page to settle, then gives the action result. A dialog ends the
+ * wait at once, and stops `input` before its next step, so it never acts on the dialog's page.
+ */
+export async function settleAfter(
+  act: Act,
+  input?: (act: Act) => Promise<unknown>,
+  options?: SettleOptions,
+) {
+  const watched = watchTab(act);
+
+  try {
+    const during = input && ((signal: AbortSignal) => input({ ...act, signal }));
+    const settled = await act.env.settler.settle(act.tabId, act.signal, during, options);
+
+    return await finish(act, settled, watched);
+  } finally {
+    watched.stop();
+  }
 }
 
 export function untrusted<O>(output: O, content: ToolResult['content'] = []): ToolResult<O> {

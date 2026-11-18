@@ -327,7 +327,14 @@ test('navigate waits for a slow page, so the next snapshot reads it (331)', asyn
   const run = await sidekick.start(page);
   const url = `${origin()}/slow.html`;
 
-  expect(await run.call('navigate', { url })).toEqual({ url, navigated: true, settled: true });
+  expect(await run.call('navigate', { url })).toEqual({
+    url,
+    navigated: true,
+    urlChanged: false,
+    settled: true,
+    newTabs: [],
+    dialog: null,
+  });
 
   const read = await run.call<SnapshotOutput>('snapshot');
 

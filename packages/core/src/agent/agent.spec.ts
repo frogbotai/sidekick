@@ -22,7 +22,7 @@ afterEach(() => {
 });
 
 const BROWSER_TOOLS = [
-  ...['click', 'hover', 'fill', 'check', 'select', 'press', 'drag'].map((id) => ({
+  ...['click', 'hover', 'fill', 'check', 'select', 'press', 'drag', 'dialog'].map((id) => ({
     id,
     permission: 'input',
   })),
