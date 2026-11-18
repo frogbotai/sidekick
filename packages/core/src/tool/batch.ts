@@ -168,7 +168,7 @@ export function batchTool({ tools, locks }: BatchToolOptions) {
         } catch (error) {
           if (ctx.signal.aborted) throw cancelled();
 
-          if (!(error instanceof ToolError)) throw error;
+          if (!(error instanceof ToolError) || error.code === 'declined') throw error;
 
           failed = { index, tool: tool.id, code: error.code, message: error.message };
 
