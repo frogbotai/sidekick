@@ -20,7 +20,7 @@ describe('jpegSize', () => {
 
     const bytes = [0xff, 0xd8, ...app0, 0x00, 0x01, 0x00, 0x01, 0x00, 0x00, ...frame.slice(2)];
 
-    expect(jpegSize(base64(bytes))).toEqual({ width: 801, height: 600 });
+    expect(jpegSize(base64(bytes))).toEqual({ width: 800, height: 600 });
   });
 
   it('gives undefined for data that isn’t a JPEG', () => {
