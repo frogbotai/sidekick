@@ -52,15 +52,28 @@ function caretToEnd(element: Element) {
   selection?.addRange(range);
 }
 
-/** Focuses `element`; with `end`, a field that didn't have focus gets its caret after its text. */
-export function focusElement(element: Element, end = false) {
-  if (!(element instanceof HTMLElement || element instanceof SVGElement)) return;
+export function focusElement(element: Element) {
+  if (element instanceof HTMLElement || element instanceof SVGElement) {
+    element.focus({ preventScroll: true });
+  }
+}
+
+/** `type`'s focus: refuses what `fill` refuses, and a field that didn't have focus gets its caret after its text. */
+export function focusField(element: Element, ref: string) {
+  if (element instanceof HTMLInputElement && CHECKABLE_INPUTS.has(element.type)) {
+    throw new ToolError(
+      'invalid_target',
+      `${ref} is a ${element.type}, not a text field. Use check to set it.`,
+    );
+  }
+
+  if (!isEditable(element) || !(element instanceof HTMLElement)) throw notText(ref);
 
   const had = deepActiveElement() === element;
 
   element.focus({ preventScroll: true });
 
-  if (end && !had) caretToEnd(element);
+  if (!had) caretToEnd(element);
 }
 
 /** Playwright's `fill` preparation: select the field's whole contents, so one `insertText` replaces it. */

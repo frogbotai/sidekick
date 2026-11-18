@@ -101,7 +101,9 @@ function keyFor(grapheme: string): KeyDescription | undefined {
   return /^[\x20-\x7e]$/.test(grapheme) ? describeKey(grapheme, false) : undefined;
 }
 
-function sameField(a: Focused, b: Focused) {
+type Field = Pick<Focused, 'frameId' | 'role' | 'name'>;
+
+export function sameField(a: Field, b: Field) {
   return a.frameId === b.frameId && a.role === b.role && a.name === b.name;
 }
 

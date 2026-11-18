@@ -3,6 +3,7 @@ import { expect, refFor, type SnapshotOutput, test } from './fixtures';
 declare global {
   interface Window {
     keys: string[];
+    after?: number;
   }
 }
 
@@ -163,4 +164,98 @@ test('eval of an endless loop fails timeout after 30 s, and the page works again
 
   expect(await run.fail('eval', { script: 'while (true) {}' })).toMatchObject({ code: 'timeout' });
   expect(await run.call('eval', { script: '1 + 1' })).toEqual({ value: '2', truncated: false });
+});
+
+test('eval awaits a promise the script returns, without a top-level await', async ({
+  context,
+  origin,
+  sidekick,
+}) => {
+  const page = await context.newPage();
+
+  await page.goto(`${origin()}/keys.html`);
+
+  const run = await sidekick.start(page);
+
+  expect(await run.call('eval', { script: 'Promise.resolve(5)' })).toEqual({
+    value: '5',
+    truncated: false,
+  });
+
+  expect(await run.call('eval', { script: 'fetch(location.href).then((r) => r.status)' })).toEqual({
+    value: '200',
+    truncated: false,
+  });
+
+  const { snapshot } = await run.call<SnapshotOutput>('snapshot', { scope: 'page' });
+
+  expect(
+    await run.call('eval', {
+      ref: refFor(snapshot, 'Notes'),
+      script: '(el) => Promise.resolve(el.value)',
+    }),
+  ).toEqual({ value: '"Hi "', truncated: false });
+});
+
+test('eval stops a script at its first dialog, so a second one never blocks the tab', async ({
+  context,
+  origin,
+  sidekick,
+}) => {
+  const page = await context.newPage();
+
+  page.on('dialog', () => undefined);
+
+  await page.goto(`${origin()}/keys.html`);
+
+  const run = await sidekick.start(page);
+  const error = await run.fail('eval', {
+    script: "alert('one'); window.after = 1; alert('two'); 'done'",
+  });
+
+  expect(error).toMatchObject({ code: 'script_error', message: expect.stringContaining('one') });
+
+  const started = Date.now();
+
+  expect(await run.call('eval', { script: '1 + 1' })).toEqual({ value: '2', truncated: false });
+  expect(Date.now() - started).toBeLessThan(5_000);
+});
+
+test('type by ref refuses a button and a disabled field, as fill does', async ({
+  context,
+  origin,
+  sidekick,
+}) => {
+  const page = await context.newPage();
+
+  await page.goto(`${origin()}/keys.html`);
+
+  await page.evaluate(() => {
+    const button = document.createElement('button');
+
+    button.textContent = 'Delete account';
+    button.addEventListener('click', () => (window.after = (window.after ?? 0) + 1));
+
+    const locked = document.createElement('input');
+
+    locked.setAttribute('aria-label', 'Locked');
+    locked.disabled = true;
+    document.body.append(button, locked);
+    document.getElementById('search')?.focus();
+  });
+
+  const run = await sidekick.start(page);
+  const { snapshot } = await run.call<SnapshotOutput>('snapshot', { scope: 'page' });
+
+  expect(
+    await run.fail('type', { ref: refFor(snapshot, 'Delete account'), text: ' ' }),
+  ).toMatchObject({ code: 'invalid_target' });
+
+  expect(await page.evaluate(() => window.after ?? 0)).toBe(0);
+
+  expect(await run.fail('type', { ref: refFor(snapshot, 'Locked'), text: 'abc' })).toMatchObject({
+    code: 'invalid_target',
+  });
+
+  await expect(page.locator('#search')).toHaveValue('');
 });

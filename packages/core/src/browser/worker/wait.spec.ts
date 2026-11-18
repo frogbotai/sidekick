@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ToolError } from '../../tool/tool';
 import { later } from './fakes';
 import { drain, failure, setupBrowser } from './harness';
-import { MAX_WAIT_MS, WAIT_TIMEOUT_MS } from './tools/page';
+import { MAX_WAIT_MS, POLL_MS, WAIT_TIMEOUT_MS } from './tools/page';
 
 beforeEach(() => {
   vi.useFakeTimers();
@@ -211,5 +211,27 @@ describe('wait_for limits (sidekick-17 req. 8, 10, 11)', () => {
     const { tool } = await setupBrowser();
 
     expect(tool('wait_for').permission).toBe('read');
+  });
+});
+
+describe('wait_for keeps to timeout_ms (sidekick-17 req. 8, 10)', () => {
+  it('fails timeout close to timeout_ms, not after a slow 15 s probe', async () => {
+    const slowProbe = () =>
+      new Promise<boolean>((_, reject) =>
+        setTimeout(
+          () => reject(new ToolError('timeout', 'page.hasText took over 15000 ms.')),
+          15_000,
+        ),
+      );
+
+    const { tool, ctx } = await setupBrowser({ page: { hasText: slowProbe } });
+    const started = Date.now();
+
+    const error = await failure(
+      tool('wait_for').execute({ tab_id: 1, text: 'Done', timeout_ms: 1_000 }, ctx),
+    );
+
+    expect(error).toMatchObject({ code: 'timeout' });
+    expect(Date.now() - started).toBeLessThanOrEqual(1_000 + POLL_MS + 100);
   });
 });
