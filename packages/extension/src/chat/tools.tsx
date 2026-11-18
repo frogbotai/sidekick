@@ -197,6 +197,27 @@ export const TOOL_LINES: Record<string, (call: ToolCall) => ToolLine> = {
         : {}),
     };
   },
+  screenshot_diff: ({ input, output }) => {
+    const src = screenshotOf(output);
+    const baseline = text(input.baseline);
+    const since = baseline ? ` since “${short(baseline)}”` : '';
+    const changed = typeof output.changed_pixels === 'number' ? output.changed_pixels : undefined;
+
+    return {
+      icon: 'image',
+      running: 'Comparing screenshots',
+      done:
+        changed === undefined
+          ? 'Compared screenshots'
+          : changed === 0
+            ? `No change${since}`
+            : `${changed.toLocaleString('en-US')} pixel${changed === 1 ? '' : 's'} changed${since}`,
+      failed: 'Compare screenshots',
+      ...(src
+        ? { body: <img className="sidekick-tool-image" src={src} alt="screenshot diff" /> }
+        : {}),
+    };
+  },
   scroll: ({ input, output }) => {
     const direction = text(input.direction) ?? 'down';
 

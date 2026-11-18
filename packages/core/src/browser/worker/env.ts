@@ -5,7 +5,7 @@ import { checkpoint, race, stopped } from './abort';
 import type { Run, Runs } from './runs';
 import type { Sessions } from './sessions';
 import type { Settler } from './settle';
-import type { Cdp, Page, Point, RefInfo, Size, TabInfo, Tabs } from './types';
+import type { Cdp, Images, Page, Point, RefInfo, Size, TabInfo, Tabs } from './types';
 
 /** Screenshot pixels to viewport CSS pixels for one tab (271 D3). */
 export interface ScreenMap {
@@ -19,6 +19,7 @@ export interface BrowserEnv {
   cdp: Cdp;
   page: Page;
   tabs: Tabs;
+  images: Images;
   sessions: Sessions;
   settler: Settler;
   runs: Runs;

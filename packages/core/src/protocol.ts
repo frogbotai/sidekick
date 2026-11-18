@@ -270,7 +270,11 @@ export const frameProtocol = defineProtocol({
       output: outcome(z.array(z.string())),
     },
     'page.indicator': {
-      input: z.object({ visible: z.optional(z.boolean()), cursor: z.optional(point) }),
+      input: z.object({
+        visible: z.optional(z.boolean()),
+        cursor: z.optional(point),
+        hidden: z.optional(z.boolean()),
+      }),
       output: outcome(z.null()),
     },
     'page.stopAt': { input: z.object({ point }), output: outcome(z.boolean()) },

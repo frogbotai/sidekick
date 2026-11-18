@@ -6,6 +6,7 @@ import { BUILTIN_AGENTS } from '../agent/builtin';
 import {
   type FakeCdp,
   fakeCdp,
+  fakeImages,
   fakePage,
   fakeTabs,
   later,
@@ -138,7 +139,13 @@ function boot(
 ): Boot {
   const log: Log = [];
   const cdp = fakeCdp(log);
-  const runtime = createBrowserRuntime({ cdp, page: fakePage(log, page), tabs, mac: false });
+  const runtime = createBrowserRuntime({
+    cdp,
+    page: fakePage(log, page),
+    tabs,
+    images: fakeImages(log),
+    mac: false,
+  });
 
   const browser = createBrowserWorker(runtime);
   const registry = createRegistry<ToolDefinition>('tools');
