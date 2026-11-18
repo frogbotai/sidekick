@@ -7,10 +7,13 @@ export interface Taken<T> {
   dropped: number;
 }
 
-/** A ring buffer that keeps the newest `limit` entries; `take` empties it, so each read sees only newer entries. */
+/**
+ * A ring buffer that keeps the newest `limit` entries. `take` removes the entries it returns, so each
+ * read sees only newer ones; entries `match` turns down stay for a later read.
+ */
 export interface CaptureBuffer<T> {
   push(entry: T): void;
-  take(): Taken<T>;
+  take(match?: (entry: T) => boolean): Taken<T>;
 }
 
 export function createBuffer<T>(limit = CAPTURE_LIMIT): CaptureBuffer<T> {
@@ -26,10 +29,10 @@ export function createBuffer<T>(limit = CAPTURE_LIMIT): CaptureBuffer<T> {
         dropped++;
       }
     },
-    take: () => {
-      const taken = { entries, dropped };
+    take: (match) => {
+      const taken = { entries: match ? entries.filter(match) : entries, dropped };
 
-      entries = [];
+      entries = match ? entries.filter((entry) => !match(entry)) : [];
       dropped = 0;
 
       return taken;

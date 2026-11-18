@@ -382,3 +382,96 @@ describe('captured data holds no raw secret (sidekick-18 req. 6, 8)', () => {
     ).toHaveLength(1);
   });
 });
+
+describe('nothing a read skips is lost (sidekick-18 req. 4, 5)', () => {
+  it('keeps requests a url_contains read skips for the next read', async () => {
+    const setup = await setupBrowser();
+
+    await call(setup, 'network_capture', { action: 'start' });
+    request(setup, { id: 'a', url: 'https://example.com/api/save' });
+    request(setup, { id: 'b', url: 'https://example.com/logo.png' });
+
+    const api = await output(setup, 'network_capture', { action: 'read', url_contains: '/api/' });
+    const rest = await output(setup, 'network_capture', { action: 'read' });
+
+    expect(api.entries.map(({ url }) => url)).toEqual(['https://example.com/api/save']);
+    expect(rest.entries.map(({ url }) => url)).toEqual(['https://example.com/logo.png']);
+  });
+
+  it('keeps messages a level read skips, and stop returns them', async () => {
+    const setup = await setupBrowser();
+
+    await call(setup, 'console_capture', { action: 'start' });
+    pageContext(setup);
+    log(setup, 'hint');
+    log(setup, 'boom', { type: 'error' });
+
+    const errors = await output(setup, 'console_capture', { action: 'read', level: 'error' });
+    const rest = await output(setup, 'console_capture', { action: 'stop' });
+
+    expect(errors.entries.map(({ text }) => text)).toEqual(['boom']);
+    expect(rest.entries.map(({ text }) => text)).toEqual(['hint']);
+  });
+
+  it('a start after the capture ended on its own returns what it left unread, and why', async () => {
+    const setup = await setupBrowser();
+
+    await call(setup, 'console_capture', { action: 'start' });
+    pageContext(setup);
+    log(setup, 'the clue');
+    setup.cdp.detachByChrome(1, 'canceled_by_user');
+    await vi.advanceTimersByTimeAsync(0);
+
+    const restarted = await output(setup, 'console_capture', { action: 'start' });
+
+    expect(restarted).toMatchObject({ started: true, capturing: true, ended: 'canceled_by_user' });
+    expect(restarted.entries.map(({ text }) => text)).toEqual(['the clue']);
+  });
+});
+
+describe('console text hides credentials by shape (sidekick-18 req. 6)', () => {
+  it('hides a token a request is still sending, before the request finishes', async () => {
+    const setup = await setupBrowser();
+    const token = 'e2e-bearer-5f4e3d2c1b0a9f8e';
+
+    await call(setup, 'network_capture', { action: 'start', bodies: true });
+    await call(setup, 'console_capture', { action: 'start' });
+    pageContext(setup);
+
+    setup.cdp.emit({
+      tabId: 1,
+      method: 'Network.requestWillBeSent',
+      params: {
+        requestId: 's',
+        frameId: MAIN_FRAME,
+        timestamp: 1,
+        request: { url: 'https://example.com/api', headers: { authorization: `Bearer ${token}` } },
+      },
+    });
+
+    log(setup, `save failed: 404 with ${token}`, { type: 'error' });
+
+    const read = await output(setup, 'console_capture', { action: 'read' });
+
+    expect(read.entries.map(({ text }) => text)).toEqual(['save failed: 404 with [redacted]']);
+  });
+
+  it('hides scheme tokens, JWTs and secret-named values with no capture teaching them', async () => {
+    const setup = await setupBrowser();
+
+    await call(setup, 'console_capture', { action: 'start' });
+    pageContext(setup);
+    log(setup, 'Authorization: Bearer eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.c2lnbmF0dXJl');
+    log(setup, JSON.stringify({ password: 'hunter2hunter2', user: 'ada' }));
+    log(setup, 'GET https://example.com/api?access_token=tok_live_abcdef123456&page=2');
+    log(setup, 'status: 404, page=2');
+
+    const read = await output(setup, 'console_capture', { action: 'read' });
+    const text = read.entries.map((entry) => String(entry.text));
+
+    expect(JSON.stringify(text)).not.toMatch(/eyJ|hunter2|tok_live/);
+    expect(text[1]).toBe('{"password":"[redacted]","user":"ada"}');
+    expect(text[2]).toContain('&page=2');
+    expect(text[3]).toBe('status: 404, page=2');
+  });
+});

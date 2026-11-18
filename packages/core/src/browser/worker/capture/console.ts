@@ -23,7 +23,7 @@ export interface ConsoleEntry {
 
 /** Console messages from one tab's main-frame page world, redacted before they are stored. */
 export interface ConsoleCapture {
-  take(): Taken<ConsoleEntry>;
+  take(match?: (entry: ConsoleEntry) => boolean): Taken<ConsoleEntry>;
   stop(): void;
 }
 
@@ -47,6 +47,29 @@ const LOG_LEVELS: Record<string, ConsoleLevel> = {
   warning: 'warning',
   verbose: 'debug',
 };
+
+const SCHEME_TOKEN = /\b(Bearer|Basic|Token)\s+[\w.~+/=-]{8,}/gi;
+
+const JWT = /\beyJ[\w-]{5,}\.[\w-]{5,}\.[\w-]*/g;
+
+const NAMED_VALUE = /(["']?)([\w.-]+)\1(\s*[:=]\s*)(?!\/\/)(["']?)([^\s"'&,;}[\]]+)\4/g;
+
+/**
+ * Hides credentials console text shows by shape, whether or not a request taught the redactor them:
+ * auth scheme tokens, JWTs, and values after a secret-like name (`password=…`, `"token": "…"`).
+ */
+export function scrubText(value: string) {
+  return value
+    .replace(SCHEME_TOKEN, `$1 ${REDACTED}`)
+    .replace(JWT, REDACTED)
+    .replace(
+      NAMED_VALUE,
+      (whole, quote: string, name: string, gap: string, open: string, found: string) =>
+        SECRET_NAME.test(name) && found !== REDACTED
+          ? `${quote}${name}${quote}${gap}${open}${REDACTED}${open}`
+          : whole,
+    );
+}
 
 function record(value: unknown): Record<string, unknown> {
   return typeof value === 'object' && value !== null
@@ -119,7 +142,7 @@ export function captureConsole({
   let stopped = false;
 
   const store = (entry: ConsoleEntry) => {
-    const scrubbed = redactor.redactText(entry.text);
+    const scrubbed = scrubText(redactor.redactText(entry.text));
     const cut =
       scrubbed.length > MAX_MESSAGE_CHARS ? `${scrubbed.slice(0, MAX_MESSAGE_CHARS)}…` : scrubbed;
 
@@ -205,7 +228,7 @@ export function captureConsole({
   const unsubscribe = cdp.onEvent(onEvent);
 
   return {
-    take: () => buffer.take(),
+    take: (match) => buffer.take(match),
     stop: () => {
       stopped = true;
       unsubscribe();

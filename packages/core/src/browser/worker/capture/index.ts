@@ -27,27 +27,36 @@ export interface CaptureRead<T> extends Taken<T> {
   ended?: EndReason;
 }
 
-export interface CaptureStart {
+export interface CaptureStart<T> {
   /** `false` when a capture of this kind was already running on the tab, which keeps running. */
   started: boolean;
+  /** What a capture that ended on its own left unread, with why it ended. */
+  previous?: CaptureRead<T>;
 }
 
 /** The running captures, per tab and kind. */
 export interface Captures {
-  start(
+  start<K extends CaptureKind>(
     tabId: number,
-    kind: CaptureKind,
+    kind: K,
     options: { bodies?: boolean },
     signal: AbortSignal,
-  ): Promise<CaptureStart>;
-  /** `undefined` when the tab has no capture of this kind to read. */
-  read<K extends CaptureKind>(tabId: number, kind: K): CaptureRead<Entries[K]> | undefined;
+  ): Promise<CaptureStart<Entries[K]>>;
+  /**
+   * `undefined` when the tab has no capture of this kind to read. Entries `match` turns down stay
+   * for a later read; an ended capture is forgotten once a read takes everything.
+   */
+  read<K extends CaptureKind>(
+    tabId: number,
+    kind: K,
+    match?: (entry: Entries[K]) => boolean,
+  ): CaptureRead<Entries[K]> | undefined;
   stop<K extends CaptureKind>(tabId: number, kind: K): Promise<CaptureRead<Entries[K]> | undefined>;
   dispose(): void;
 }
 
 interface Source<T> {
-  take(): Taken<T>;
+  take(match?: (entry: T) => boolean): Taken<T>;
   pending(): number;
   scrub(entry: T): T;
 }
@@ -116,7 +125,7 @@ export function createCaptures({ cdp, sessions }: { cdp: Cdp; sessions: Sessions
     let stopping: Promise<void> | undefined;
 
     const capture: Running<T> = {
-      take: () => source.take(),
+      take: (match) => source.take(match),
       pending: () => source.pending(),
       scrub: (entry) => source.scrub(entry),
       stop: () => {
@@ -142,7 +151,7 @@ export function createCaptures({ cdp, sessions }: { cdp: Cdp; sessions: Sessions
     const redactor = redactorFor(tabId);
     const capture = captureNetwork({ cdp, tabId, frameId, redactor, bodies });
     const source: Source<NetworkEntry> = {
-      take: () => capture.take(),
+      take: (match) => capture.take(match),
       pending: () => capture.pending(),
       scrub: (entry) => redactKnown(entry, redactor),
     };
@@ -165,7 +174,7 @@ export function createCaptures({ cdp, sessions }: { cdp: Cdp; sessions: Sessions
     const redactor = redactorFor(tabId);
     const capture = captureConsole({ cdp, tabId, frameId, redactor });
     const source: Source<ConsoleEntry> = {
-      take: () => capture.take(),
+      take: (match) => capture.take(match),
       pending: () => 0,
       scrub: (entry) => ({ ...entry, text: redactor.redactText(entry.text) }),
     };
@@ -189,12 +198,16 @@ export function createCaptures({ cdp, sessions }: { cdp: Cdp; sessions: Sessions
     }
   };
 
-  const take = <K extends CaptureKind>(tabId: number, kind: K) => {
+  const take = <K extends CaptureKind>(
+    tabId: number,
+    kind: K,
+    match?: (entry: Entries[K]) => boolean,
+  ) => {
     const capture = running[kind].get(tabId);
 
     if (!capture) return undefined;
 
-    const { entries, dropped } = capture.take();
+    const { entries, dropped } = capture.take(match);
 
     return {
       capture,
@@ -217,6 +230,9 @@ export function createCaptures({ cdp, sessions }: { cdp: Cdp; sessions: Sessions
       const current = running[kind].get(tabId);
 
       if (current && !current.ended) return { started: false };
+
+      const previous = current && take(tabId, kind)?.read;
+
       if (current) forget(tabId, kind);
 
       await sessions.ensure(tabId, signal);
@@ -224,12 +240,12 @@ export function createCaptures({ cdp, sessions }: { cdp: Cdp; sessions: Sessions
       if (kind === 'network') await startNetwork(tabId, bodies, signal);
       else await startConsole(tabId, signal);
 
-      return { started: true };
+      return { started: true, ...(previous ? { previous } : {}) };
     },
-    read: (tabId, kind) => {
-      const taken = take(tabId, kind);
+    read: (tabId, kind, match) => {
+      const taken = take(tabId, kind, match);
 
-      if (taken?.capture.ended) forget(tabId, kind);
+      if (taken?.capture.ended && !match) forget(tabId, kind);
 
       return taken?.read;
     },

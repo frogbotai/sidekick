@@ -57,7 +57,7 @@ interface Extra {
 
 /** Requests and responses from one tab's main frame, redacted before they are stored. */
 export interface NetworkCapture {
-  take(): Taken<NetworkEntry>;
+  take(match?: (entry: NetworkEntry) => boolean): Taken<NetworkEntry>;
   /** Requests started but not yet stored: in flight, or waiting for their bodies. */
   pending(): number;
   /** Stops listening and stores what is in flight as it is. */
@@ -327,6 +327,21 @@ export function captureNetwork({
     store(entry);
   };
 
+  const learnHeaders = (headers: Header[]) => {
+    redactor.protectHeaders(headers);
+
+    return headers;
+  };
+
+  const learn = (hop: Hop) => {
+    redactor.protectUrl(hop.url);
+    learnHeaders(hop.headers);
+
+    if (hop.postData !== undefined) {
+      redactor.protectBody(hop.postData, headerValue(hop.headers, 'content-type'));
+    }
+  };
+
   const begin = (params: Record<string, unknown>) => {
     const requestId = text(params.requestId);
     const request = record(params.request);
@@ -342,7 +357,7 @@ export function captureNetwork({
 
     redirects.set(requestId, count + 1);
 
-    hops.set(requestId, {
+    const hop: Hop = {
       id: count === 0 ? requestId : `${requestId}.${count}`,
       requestId,
       startedAt: Math.round(number(params.wallTime, Date.now() / 1000) * 1000),
@@ -354,7 +369,10 @@ export function captureNetwork({
       ...(typeof request.postData === 'string' ? { postData: request.postData } : {}),
       hasPostData: request.hasPostData === true,
       ...(previous && params.redirectResponse ? { redirectedFrom: previous.url } : {}),
-    });
+    };
+
+    learn(hop);
+    hops.set(requestId, hop);
   };
 
   const onEvent = (event: CdpEvent) => {
@@ -367,11 +385,11 @@ export function captureNetwork({
       case 'Network.requestWillBeSent':
         return begin(params);
       case 'Network.requestWillBeSentExtraInfo':
-        extraFor(requestId).request = headersOf(params.headers);
+        extraFor(requestId).request = learnHeaders(headersOf(params.headers));
 
         return;
       case 'Network.responseReceivedExtraInfo':
-        extraFor(requestId).response = headersOf(params.headers);
+        extraFor(requestId).response = learnHeaders(headersOf(params.headers));
 
         return;
     }
@@ -382,6 +400,7 @@ export function captureNetwork({
 
     if (event.method === 'Network.responseReceived') {
       hop.response = responseOf(params.response);
+      learnHeaders(hop.response.headers);
       hop.resourceType = text(params.type, hop.resourceType);
     } else if (event.method === 'Network.loadingFinished') {
       finish(hop, number(params.timestamp, hop.timestamp), {
@@ -400,7 +419,7 @@ export function captureNetwork({
   const unsubscribe = cdp.onEvent(onEvent);
 
   return {
-    take: () => buffer.take(),
+    take: (match) => buffer.take(match),
     pending: () => hops.size + finishing.size,
     stop: () => {
       if (stopped) return;

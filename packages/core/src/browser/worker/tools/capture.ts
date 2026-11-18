@@ -51,7 +51,9 @@ const state = {
   ended: z
     .enum(['time_limit', 'tab_closed', 'devtools_opened', 'canceled_by_user', 'detached'])
     .optional()
-    .describe('Why the capture ended on its own; start a new one to keep watching.'),
+    .describe(
+      'Why the capture ended on its own; start a new one to keep watching. On start: why the previous one ended, with what it left unread.',
+    ),
   truncated: z.boolean().describe('Older entries were left out to fit the reply.'),
 };
 
@@ -162,7 +164,7 @@ export function captureTools(env: BrowserEnv) {
         url_contains: z
           .string()
           .optional()
-          .describe('read, stop: only requests whose URL has this text.'),
+          .describe('read: only requests whose URL has this text; the rest stay for a later read.'),
         headers: z
           .boolean()
           .optional()
@@ -179,26 +181,41 @@ export function captureTools(env: BrowserEnv) {
         const act = await enter(env, ctx, tab_id, 'read');
 
         if (step === 'start') {
-          const { started } = await env.captures.start(tab_id, 'network', { bodies }, act.signal);
+          const { started, previous } = await env.captures.start(
+            tab_id,
+            'network',
+            { bodies },
+            act.signal,
+          );
 
-          return untrusted({ ...STARTED, started, pending: 0 });
+          if (!previous) return untrusted({ ...STARTED, started, pending: 0 });
+
+          return untrusted({
+            ...section(
+              previous,
+              previous.entries.map((entry) => networkView(entry, false)),
+            ),
+            capturing: true,
+            started,
+            pending: 0,
+          });
         }
+
+        const match = url_contains
+          ? (entry: NetworkEntry) => entry.request.url.includes(url_contains)
+          : undefined;
 
         const read =
           step === 'read'
-            ? env.captures.read(tab_id, 'network')
+            ? env.captures.read(tab_id, 'network', match)
             : await env.captures.stop(tab_id, 'network');
 
         if (!read) throw notStarted('network');
 
-        const matching = read.entries.filter(
-          (entry) => !url_contains || entry.request.url.includes(url_contains),
-        );
-
         return untrusted({
           ...section(
             read,
-            matching.map((entry) => networkView(entry, headers ?? false)),
+            read.entries.map((entry) => networkView(entry, headers ?? false)),
           ),
           pending: read.pending,
         });
@@ -207,14 +224,16 @@ export function captureTools(env: BrowserEnv) {
     defineTool({
       id: 'console_capture',
       description:
-        'Record a tab’s console messages, uncaught errors and browser warnings, to debug it. Start before the action to watch; each read returns the messages since the last read; stop when done, since sites can detect a running capture. Main frame only. Known credentials are hidden. Ends on its own after 30 minutes.',
+        'Record a tab’s console messages, uncaught errors and browser warnings, to debug it. Start before the action to watch; each read returns the messages since the last read; stop when done, since sites can detect a running capture. Main frame only. Credentials are hidden: tokens, passwords and values the network capture hid. Ends on its own after 30 minutes.',
       input: z.object({
         tab_id: tabId,
         action,
         level: z
           .enum(LEVELS)
           .optional()
-          .describe('read, stop: this level and above; every level when left out.'),
+          .describe(
+            'read: this level and above, every level when left out; the rest stay for a later read.',
+          ),
       }),
       output: z.object({ ...state, entries: z.array(consoleEntry) }),
       permission: 'read',
@@ -223,23 +242,30 @@ export function captureTools(env: BrowserEnv) {
         const act = await enter(env, ctx, tab_id, 'read');
 
         if (step === 'start') {
-          const { started } = await env.captures.start(tab_id, 'console', {}, act.signal);
+          const { started, previous } = await env.captures.start(tab_id, 'console', {}, act.signal);
 
-          return untrusted({ ...STARTED, started });
+          if (!previous) return untrusted({ ...STARTED, started });
+
+          return untrusted({
+            ...section(previous, previous.entries.map(consoleView)),
+            capturing: true,
+            started,
+          });
         }
+
+        const floor = LEVELS.indexOf(level ?? 'debug');
+        const match = level
+          ? (entry: ConsoleEntry) => LEVELS.indexOf(entry.level satisfies ConsoleLevel) >= floor
+          : undefined;
 
         const read =
           step === 'read'
-            ? env.captures.read(tab_id, 'console')
+            ? env.captures.read(tab_id, 'console', match)
             : await env.captures.stop(tab_id, 'console');
 
         if (!read) throw notStarted('console');
 
-        const floor = LEVELS.indexOf(level ?? 'debug');
-        const atLeast = (entry: ConsoleEntry) =>
-          LEVELS.indexOf(entry.level satisfies ConsoleLevel) >= floor;
-
-        return untrusted(section(read, read.entries.filter(atLeast).map(consoleView)));
+        return untrusted(section(read, read.entries.map(consoleView)));
       },
     }),
   ];
