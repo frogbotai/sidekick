@@ -140,7 +140,7 @@ describe('classify (req. 2, 3, 12)', () => {
         ],
       },
       'cloudflare',
-      'interactive',
+      'non-interactive',
     ],
   ])('%s', (_name, input, vendor, kind) => {
     expect(classify(page(input))).toEqual({ vendor, kind });

@@ -108,11 +108,15 @@ export function classify(probe: Probe & { frameUrls: string[] }): Detection | nu
     /^https:\/\/challenges\.cloudflare\.com\/.*(turnstile|challenge-platform)/,
   );
 
-  const asks = /verify you are human by completing|click to verify|confirm you are human/.test(
-    text,
-  );
+  const asks =
+    /verify you are human by completing|click to verify|confirm you are human|security check/.test(
+      text,
+    );
 
-  if (interstitial || (turnstile && short && asks)) {
+  const checking =
+    /verifying you are human|checking (?:if the site connection is secure|your browser)/.test(text);
+
+  if (interstitial || (turnstile && short && (asks || checking))) {
     const widget = visible('.cf-turnstile') || asks;
 
     return found('cloudflare', widget ? 'interactive' : 'non-interactive');
@@ -181,14 +185,18 @@ export function classify(probe: Probe & { frameUrls: string[] }): Detection | nu
   if (!short) return null;
 
   const recaptcha = frame(
-    /^https:\/\/www\.(?:google|recaptcha)\.(?:com|net)\/recaptcha\/(?:api2|enterprise)\/anchor/,
+    /^https:\/\/www\.(?:google|recaptcha)\.(?:com|net)\/recaptcha\/(?:api2|enterprise)\/anchor(?!.*[?&]size=invisible)/,
   );
 
-  const hcaptcha = frame(/^https:\/\/(?:newassets\.|assets\.)?hcaptcha\.com\/captcha\//);
+  const hcaptcha = frame(
+    /^https:\/\/(?:newassets\.|assets\.)?hcaptcha\.com\/captcha\/(?!.*#.*-invisible)/,
+  );
+
+  const unnoticed = text.replace(/protected by (?:re|h)captcha/g, '');
   const wall =
     /verify you are (?:a )?human|are you a robot|not a robot|unusual traffic|security check|complete the captcha|captcha/.test(
-      text,
-    ) || /captcha|security check|verify/.test(title);
+      unnoticed,
+    ) || /captcha|security check/.test(title);
 
   if (hcaptcha && wall) return found('hcaptcha', 'interactive');
 
