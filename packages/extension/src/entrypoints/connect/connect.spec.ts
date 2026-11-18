@@ -4,17 +4,27 @@ import { type ConnectPage, runConnectPage } from './connect';
 
 const BASE = 'chrome-extension://kilnglameccalibejghopglodbidhkmj/connect.html';
 
-function page(query: string, connect: ConnectPage['connect'] = vi.fn()) {
+function page(
+  query: string,
+  connect: ConnectPage['connect'] = vi.fn(),
+  calls: Partial<Pick<ConnectPage, 'pair' | 'unpair'>> = {},
+) {
   const replaced: string[] = [];
+  const pair = calls.pair ?? vi.fn<ConnectPage['pair']>();
+  const unpair = calls.unpair ?? vi.fn<ConnectPage['unpair']>();
 
   return {
     replaced,
     connect,
+    pair,
+    unpair,
     page: {
       href: `${BASE}?${query}`,
       replaceUrl: (url: string) => void replaced.push(url),
       tabId: () => Promise.resolve(7),
       connect,
+      pair,
+      unpair,
     } satisfies ConnectPage,
   };
 }
@@ -76,5 +86,66 @@ describe('the connect page', () => {
     );
 
     expect(spare.close).toBe(true);
+  });
+
+  it('asks before pairing an install command, names its computer and agents, and pairs on Approve', async () => {
+    const pair = vi.fn<ConnectPage['pair']>(() =>
+      Promise.resolve({ paired: true, name: 'laptop' }),
+    );
+
+    const target = page(
+      `hub=${HUB}&pair=req-1&computer=laptop&agents=${encodeURIComponent('Codex, Cursor')}`,
+      vi.fn(),
+      { pair },
+    );
+
+    const view = await runConnectPage(target.page);
+
+    expect(target.replaced).toEqual([`${BASE}?hub=${HUB}&computer=laptop&agents=Codex%2C+Cursor`]);
+
+    expect(view.text).toBe('Add Sidekick to Codex, Cursor on laptop?');
+    expect(view.detail).toContain('Approve only if you ran it');
+    expect(pair).not.toHaveBeenCalled();
+    expect(target.connect).not.toHaveBeenCalled();
+
+    const done = await view.approve?.();
+
+    expect(pair).toHaveBeenCalledWith({
+      hub: 'ws://127.0.0.1:4100/secret',
+      pair: 'req-1',
+      computer: 'laptop',
+    });
+
+    expect(done?.text).toBe(
+      'Sidekick is added to Codex, Cursor on laptop. You can close this tab.',
+    );
+  });
+
+  it('says a used or expired request can’t pair, and never asks for a hub off this computer', async () => {
+    const refused = await runConnectPage(
+      page(`hub=${HUB}&pair=old&computer=laptop`, vi.fn(), {
+        pair: () => Promise.resolve({ paired: false, reason: 'unreachable' }),
+      }).page,
+    );
+
+    expect((await refused.approve?.())?.text).toContain('expired, was already used');
+
+    const off = await runConnectPage(
+      page(`hub=${encodeURIComponent('ws://example.com/x')}&pair=req&computer=laptop`).page,
+    );
+
+    expect(off.approve).toBeUndefined();
+    expect(off.settings).toBe(true);
+  });
+
+  it('revokes for uninstall without a click, then closes the tab', async () => {
+    const unpair = vi.fn<ConnectPage['unpair']>(() => Promise.resolve({ unpaired: true }));
+    const target = page(`hub=${HUB}&token=sk_a&unpair=1`, vi.fn(), { unpair });
+    const view = await runConnectPage(target.page);
+
+    expect(target.replaced).toEqual([`${BASE}?hub=${HUB}`]);
+    expect(unpair).toHaveBeenCalledWith({ hub: 'ws://127.0.0.1:4100/secret', token: 'sk_a' });
+    expect(target.connect).not.toHaveBeenCalled();
+    expect(view.close).toBe(true);
   });
 });

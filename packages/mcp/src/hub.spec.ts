@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { WebSocket } from 'ws';
 
-import { type Hub, refusal, startHub, STORE_EXTENSION_ID } from './hub.js';
+import { type Hub, refusal, startHub, startPairHub, STORE_EXTENSION_ID } from './hub.js';
 
 const TOKEN = 'sk_test-token';
 
@@ -93,5 +93,67 @@ describe('the hub', () => {
     expect(
       refusal(request, { path: '/p', token: undefined, extensionId: STORE_EXTENSION_ID }),
     ).toBe('token');
+  });
+});
+
+const ORIGIN = `chrome-extension://${STORE_EXTENSION_ID}`;
+
+async function pairHub(ttl?: number) {
+  const started = await startPairHub({ extensionId: STORE_EXTENSION_ID, ...(ttl ? { ttl } : {}) });
+
+  hubs.push(started);
+
+  return started;
+}
+
+function send(url: string, message: unknown) {
+  return new Promise<unknown>((resolve, reject) => {
+    const socket = new WebSocket(url, { origin: ORIGIN });
+
+    socket.once('open', () => socket.send(JSON.stringify(message)));
+    socket.once('message', (data) => resolve(JSON.parse(String(data))));
+    socket.once('close', () => resolve(undefined));
+    socket.once('error', reject);
+  });
+}
+
+const withPair = (url: string, id: string) => `${url}?pair=${encodeURIComponent(id)}`;
+
+describe('the hub in pair mode', () => {
+  const KEY = { type: 'sidekick/paired', key: 'sk_new', pairingID: 'p1' };
+
+  it('takes the key once, acknowledges it, and refuses every later socket', async () => {
+    const started = await pairHub();
+
+    expect(await send(withPair(started.url, started.id), KEY)).toEqual({ type: 'sidekick/ok' });
+    expect(await started.paired).toEqual({ key: 'sk_new', pairingID: 'p1' });
+    expect(await dial(withPair(started.url, started.id), ORIGIN)).toBe(403);
+  });
+
+  it('refuses a wrong origin, path or request id', async () => {
+    const started = await pairHub();
+    const { port } = new URL(started.url);
+
+    expect(await dial(withPair(started.url, started.id), 'https://example.com')).toBe(403);
+    expect(await dial(withPair(`ws://127.0.0.1:${port}/guess`, started.id), ORIGIN)).toBe(403);
+    expect(await dial(withPair(started.url, 'wrong'), ORIGIN)).toBe(403);
+    expect(await dial(withToken(started.url, started.id), ORIGIN)).toBe(403);
+
+    expect(await send(withPair(started.url, started.id), KEY)).toEqual({ type: 'sidekick/ok' });
+  });
+
+  it('spends the request on a socket that sends no key', async () => {
+    const started = await pairHub();
+
+    expect(await send(withPair(started.url, started.id), { type: 'other' })).toBeUndefined();
+    expect(await started.paired).toBeUndefined();
+    expect(await dial(withPair(started.url, started.id), ORIGIN)).toBe(403);
+  });
+
+  it('expires, and refuses the request after', async () => {
+    const started = await pairHub(50);
+
+    expect(await started.paired).toBeUndefined();
+    expect(await dial(withPair(started.url, started.id), ORIGIN)).toBe(403);
   });
 });

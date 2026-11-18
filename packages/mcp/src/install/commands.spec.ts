@@ -10,6 +10,7 @@ import { writeKey } from '../key.js';
 import { AGENT_NAMES, agentLocations, type AgentName, type Environment } from './agents.js';
 import { BACKUP_SUFFIX } from './browse/edit.js';
 import { type CommandIO, type CommandName, runCommand } from './commands.js';
+import type { PairOutcome } from './pair.js';
 
 const folders: string[] = [];
 
@@ -31,6 +32,13 @@ function computer(env: NodeJS.ProcessEnv = {}, binaries: string[] = []) {
 
   const lines: string[] = [];
   const picks: AgentName[][] = [];
+  const pairing = {
+    outcome: { pending: 'chrome' } as PairOutcome,
+    revokes: true,
+    asked: [] as (readonly string[])[],
+    unpaired: [] as string[],
+  };
+
   const io = (tty = false, choice?: AgentName[]): CommandIO => ({
     environment,
     keyFile: path.join(home, '.config', 'sidekick', 'pairing.json'),
@@ -40,6 +48,18 @@ function computer(env: NodeJS.ProcessEnv = {}, binaries: string[] = []) {
       picks.push(initial);
 
       return Promise.resolve(choice);
+    },
+    pairing: {
+      pair: (agents) => {
+        pairing.asked.push(agents);
+
+        return Promise.resolve(pairing.outcome);
+      },
+      unpair: ({ key }) => {
+        pairing.unpaired.push(key);
+
+        return Promise.resolve(pairing.revokes);
+      },
     },
   });
 
@@ -68,7 +88,7 @@ function computer(env: NodeJS.ProcessEnv = {}, binaries: string[] = []) {
     return file;
   };
 
-  return { home, run, location, write, picks, keyFile: io().keyFile };
+  return { home, run, location, write, picks, pairing, keyFile: io().keyFile };
 }
 
 const FIXTURES: Record<AgentName, string> = {
@@ -260,6 +280,90 @@ describe('status', () => {
       'Sidekick is paired on this computer.',
     );
 
-    expect((await machine.run('uninstall')).output).toContain('The pairing is still active');
+    expect((await machine.run('uninstall')).output).toContain(
+      `The pairing stays until uninstall succeeds: ${machine.keyFile}`,
+    );
+
+    expect(machine.pairing.unpaired).toEqual([]);
+  });
+});
+
+describe('pairing', () => {
+  const KEY = { key: 'sk_new', pairingID: 'p1', computer: 'laptop' };
+
+  it('asks Sidekick for the agents it set up and keeps the key readable only by this user', async () => {
+    const machine = computer();
+
+    machine.pairing.outcome = { key: KEY };
+
+    const { code, output } = await machine.run('install', ['-a', 'cursor', 'codex']);
+
+    expect(code).toBe(0);
+    expect(machine.pairing.asked).toEqual([['Codex', 'Cursor']]);
+
+    expect(output).toContain(
+      `✓ Paired with Sidekick in Chrome, as laptop. Key: ${machine.keyFile}`,
+    );
+
+    expect(JSON.parse(fs.readFileSync(machine.keyFile, 'utf8'))).toEqual(KEY);
+    expect(fs.statSync(machine.keyFile).mode & 0o777).toBe(0o600);
+
+    await machine.run('install', ['-a', 'cursor']);
+
+    expect(machine.pairing.asked).toHaveLength(1);
+  });
+
+  it('pairs nothing when no agent was set up', async () => {
+    const machine = computer();
+
+    machine.write('cursor', '{ broken');
+
+    expect((await machine.run('install', ['-a', 'cursor'])).code).toBe(1);
+    expect(machine.pairing.asked).toEqual([]);
+  });
+
+  it('exits 0 with the configs written when Chrome can’t open, or the request expires', async () => {
+    const machine = computer();
+    const chrome = await machine.run('install', ['-a', 'cursor']);
+
+    expect(chrome.code).toBe(0);
+    expect(chrome.output).toContain('Couldn’t open Chrome. Pairing is pending');
+    expect(fs.existsSync(machine.location('cursor').entry.file)).toBe(true);
+
+    machine.pairing.outcome = { pending: 'expired' };
+
+    const expired = await machine.run('install', ['-a', 'cursor']);
+
+    expect(expired.code).toBe(0);
+    expect(expired.output).toContain('wasn’t approved in time. Pairing is pending');
+    expect(fs.existsSync(machine.keyFile)).toBe(false);
+  });
+
+  it('revokes on uninstall only once no agent uses the key, and keeps it when Sidekick can’t be reached', async () => {
+    const machine = computer();
+
+    machine.pairing.outcome = { key: KEY };
+    await machine.run('install', ['-a', 'cursor', 'codex']);
+
+    const partial = await machine.run('uninstall', ['-a', 'cursor']);
+
+    expect(partial.output).toContain(`The pairing stays for Codex: ${machine.keyFile}`);
+    expect(machine.pairing.unpaired).toEqual([]);
+
+    machine.pairing.revokes = false;
+
+    const unreachable = await machine.run('uninstall');
+
+    expect(unreachable.code).toBe(0);
+    expect(unreachable.output).toContain('Couldn’t reach Sidekick, so the pairing is still active');
+    expect(fs.existsSync(machine.keyFile)).toBe(true);
+
+    machine.pairing.revokes = true;
+
+    const revoked = await machine.run('uninstall');
+
+    expect(machine.pairing.unpaired).toEqual(['sk_new', 'sk_new']);
+    expect(revoked.output).toContain('✓ Revoked the pairing in Sidekick and removed its key.');
+    expect(fs.existsSync(machine.keyFile)).toBe(false);
   });
 });
