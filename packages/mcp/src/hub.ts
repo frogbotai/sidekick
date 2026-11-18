@@ -123,7 +123,8 @@ function pairedKey(data: unknown): PairedKey | undefined {
 /**
  * A hub in pair mode: one request, good for `ttl` and for one socket. That socket must carry
  * Sidekick's origin, the path and `?pair=<id>`, and its first message is the new key, which the
- * hub acknowledges. Every later socket, and any socket after expiry, gets a 403.
+ * hub acknowledges. Every later socket, and any socket after expiry, gets a 403; the request
+ * expires on time even while a socket holds it without sending a key.
  */
 export async function startPairHub({
   extensionId,
@@ -156,7 +157,6 @@ export async function startPairHub({
     },
     (socket) => {
       open = false;
-      clearTimeout(timer);
 
       socket.once('message', (data) => {
         const key = pairedKey(data);

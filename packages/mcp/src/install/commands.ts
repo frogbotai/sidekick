@@ -59,7 +59,9 @@ const PENDING = `Pairing is pending: run \`${INSTALL}\` again to pair with Sidek
 
 async function pairAgents(agents: readonly string[], io: CommandIO) {
   if (await readKey(io.keyFile)) {
-    io.log('Sidekick is paired on this computer.');
+    io.log(
+      `Sidekick is paired on this computer. If you revoked it in Sidekick’s settings, run \`${COMMAND.join(' ')} uninstall\`, then install again.`,
+    );
 
     return;
   }

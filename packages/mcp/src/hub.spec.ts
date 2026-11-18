@@ -150,6 +150,22 @@ describe('the hub in pair mode', () => {
     expect(await dial(withPair(started.url, started.id), ORIGIN)).toBe(403);
   });
 
+  it('expires even while a socket holds the request without sending a key', async () => {
+    const started = await pairHub(100);
+    const socket = new WebSocket(withPair(started.url, started.id), { origin: ORIGIN });
+
+    await new Promise((resolve) => socket.once('open', resolve));
+
+    const result = await Promise.race([
+      started.paired.then(() => 'expired'),
+      new Promise((resolve) => setTimeout(() => resolve('waiting'), 1000)),
+    ]);
+
+    socket.close();
+
+    expect(result).toBe('expired');
+  });
+
   it('expires, and refuses the request after', async () => {
     const started = await pairHub(50);
 
