@@ -101,6 +101,17 @@ export function readEntry(entry: ConfigEntry): EntryState {
   }
 }
 
+/** The value at the entry's place, or undefined when it's absent or the file doesn't parse. */
+export function readValue(entry: ConfigEntry): unknown {
+  try {
+    const parsed = parseConfig(fs.readFileSync(entry.file, 'utf8'), entry.format);
+
+    return parsed.ok ? plain(lookup(parsed.config, entry.path).value) : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 function indentUnit(text: string) {
   const match = /^([ \t]+)\S/m.exec(text);
 

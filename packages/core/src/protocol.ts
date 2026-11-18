@@ -158,6 +158,20 @@ export const sidekickProtocol = defineProtocol({
       ]),
     },
     'mcp.disconnect': { input: z.object({ pairingID: id }), output: z.object({}) },
+    'mcp.pair': {
+      input: z.object({ hub: z.string(), pair: z.string(), computer: z.string() }),
+      output: z.union([
+        z.object({ paired: z.literal(true), name: z.string() }),
+        z.object({ paired: z.literal(false), reason: z.enum(['not_loopback', 'unreachable']) }),
+      ]),
+    },
+    'mcp.unpair': {
+      input: z.object({ hub: z.string(), token: z.string() }),
+      output: z.union([
+        z.object({ unpaired: z.literal(true) }),
+        z.object({ unpaired: z.literal(false), reason: z.enum(['not_loopback', 'unreachable']) }),
+      ]),
+    },
   },
   events: {
     'run.stopped': z.object({
