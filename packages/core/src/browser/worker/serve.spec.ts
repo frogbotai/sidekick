@@ -166,3 +166,29 @@ describe('the browser worker', () => {
     });
   });
 });
+
+describe('handing the tab back (sidekick-17 req. 24)', () => {
+  it('clears the run’s emulation on run.end but keeps the run', async () => {
+    const { runtime, worker, cdp } = setup();
+    const { id } = await worker.sessionRun({ sessionID: 'ses-1', windowId: 1 });
+
+    await vi.advanceTimersByTimeAsync(100);
+
+    const set = runtime.env.emulation.set({
+      tabId: 1,
+      runId: id,
+      overrides: { color_scheme: 'dark' },
+    });
+
+    await vi.advanceTimersByTimeAsync(100);
+    await set;
+    cdp.sent.length = 0;
+
+    await worker.handlers['run.end']({ sessionID: 'ses-1', close: false });
+    await vi.advanceTimersByTimeAsync(100);
+
+    expect(cdp.sent.map(({ method }) => method)).toContain('Emulation.clearGeolocationOverride');
+    expect(runtime.env.emulation.active(1)).toEqual({});
+    expect(runtime.env.runs.get(id)).toBeDefined();
+  });
+});

@@ -1,4 +1,5 @@
 import type { ToolDefinition } from '../../tool/tool';
+import { createEmulation } from './emulation';
 import type { BrowserEnv } from './env';
 import { createRuns } from './runs';
 import { createSessions } from './sessions';
@@ -27,6 +28,7 @@ export function createBrowserRuntime({
   const sessions = createSessions({ cdp, tabs, page });
   const runs = createRuns(tabs);
   const settler = createSettler({ cdp, page, tabs, sessions });
+  const emulation = createEmulation({ cdp, sessions, runs });
   const documents = new Map<number, number>();
   const env: BrowserEnv = {
     cdp,
@@ -35,6 +37,7 @@ export function createBrowserRuntime({
     sessions,
     settler,
     runs,
+    emulation,
     screens: new Map(),
     documents,
     mac,
@@ -50,6 +53,7 @@ export function createBrowserRuntime({
     start: () => sessions.start(),
     dispose: () => {
       stopCommits();
+      emulation.dispose();
       sessions.dispose();
       runs.dispose();
     },

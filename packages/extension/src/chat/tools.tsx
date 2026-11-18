@@ -85,6 +85,26 @@ function waitedFor(input: Record<string, unknown>, target: string | undefined) {
   return 'the page to load';
 }
 
+function emulated(input: Record<string, unknown>) {
+  const viewport = record(input.viewport);
+  const size =
+    typeof viewport.width === 'number' && typeof viewport.height === 'number'
+      ? joined(`${viewport.width}×${viewport.height}`, viewport.mobile === true ? 'phone' : '')
+      : undefined;
+
+  const motion = text(input.reduced_motion);
+
+  return [
+    size,
+    text(input.color_scheme) && `${text(input.color_scheme)} mode`,
+    motion && (motion === 'reduce' ? 'reduced motion' : 'full motion'),
+    text(input.user_agent) && 'another user agent',
+    Object.keys(record(input.geolocation)).length > 0 && 'another location',
+  ]
+    .filter((part) => typeof part === 'string' && part)
+    .join(', ');
+}
+
 function linkTo(url: string | undefined): readonly LinkListItem[] | undefined {
   return web(url) ? [{ url: url as string }] : undefined;
 }
@@ -338,6 +358,23 @@ export const TOOL_LINES: Record<string, (call: ToolCall) => ToolLine> = {
     failed: 'Run a script',
     subtitle: text(metadata.target),
   }),
+  emulate: ({ input }) => {
+    const to = emulated(input);
+
+    return to
+      ? {
+          icon: 'resize',
+          running: `Switching to ${to}`,
+          done: `Switched to ${to}`,
+          failed: `Switch to ${to}`,
+        }
+      : {
+          icon: 'resize',
+          running: 'Resetting the tab’s look',
+          done: 'Reset the tab’s look',
+          failed: 'Reset the tab’s look',
+        };
+  },
   web_search: ({ input, output }) => {
     const query = `“${short(text(input.query) ?? '')}”`;
     const results = Array.isArray(output.results) ? output.results.map(record) : [];
