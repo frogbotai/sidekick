@@ -95,6 +95,8 @@ describe('the MCP server', () => {
     expect(tools.find((tool) => tool.name === 'snapshot')?.annotations).toEqual({
       readOnlyHint: true,
     });
+
+    expect(tools.find((tool) => tool.name === 'webmcp')).not.toHaveProperty('annotations');
   });
 
   it('returns a screenshot as an image after the untrusted note, and a ToolError as isError', async () => {
