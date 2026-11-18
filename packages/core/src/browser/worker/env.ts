@@ -2,6 +2,7 @@ import type { PermissionAction, ToolContext, ToolMetadata, ToolResult } from '..
 import { ToolError, UNTRUSTED } from '../../tool/tool';
 import { originOf } from '../../tool/url';
 import { checkpoint, race, stopped } from './abort';
+import type { Recordings } from './recordings';
 import type { Run, Runs } from './runs';
 import type { Sessions } from './sessions';
 import type { Settler } from './settle';
@@ -22,6 +23,8 @@ export interface BrowserEnv {
   sessions: Sessions;
   settler: Settler;
   runs: Runs;
+  /** The person's demonstrations, one per tab (sidekick-21). */
+  recordings: Recordings;
   screens: Map<number, ScreenMap>;
   /** New-document commits per tab, so a call can tell its page was replaced. */
   documents: Map<number, number>;

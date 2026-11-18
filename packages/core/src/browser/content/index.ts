@@ -1,4 +1,4 @@
-import { contentProtocol, type frameProtocol } from '../../protocol';
+import { contentProtocol, type frameProtocol, type RecordedStep } from '../../protocol';
 import { callWorker } from '../../rpc/content';
 import type { Handlers } from '../../rpc/define';
 import { ToolError, type ToolErrorCode, type ToolErrorDetail } from '../../tool/tool';
@@ -14,6 +14,7 @@ import {
 import { frameSources, stripFrames } from './frames';
 import { createIndicator, type Indicator } from './indicator';
 import { domQuiet } from './quiet';
+import { createRecorder } from './recorder';
 import { createRefs, navigated } from './refs';
 import { fingerprintOf, isRedacted } from './roles';
 import { frameBox, scrollBegin, scrollFallback, scrollFinish, scrollToElement } from './scroll';
@@ -42,6 +43,9 @@ export interface ContentOptions {
     visible: () => Promise<boolean>;
     stop: () => Promise<void>;
     identify: Identify;
+    /** Whether the person's tab is being recorded, for a frame that loads mid-recording. */
+    recording: () => Promise<boolean>;
+    step: (step: RecordedStep) => Promise<void>;
   };
 }
 
@@ -49,6 +53,8 @@ const chromeWorker: NonNullable<ContentOptions['worker']> = {
   visible: async () => (await callWorker(contentProtocol, 'indicator.state', {})).visible,
   stop: async () => void (await callWorker(contentProtocol, 'indicator.stop', {})),
   identify: () => callWorker(contentProtocol, 'frame.identify', {}),
+  recording: async () => (await callWorker(contentProtocol, 'recorder.state', {})).on,
+  step: async (step) => void (await callWorker(contentProtocol, 'recorder.step', step)),
 };
 
 /** The content script's answers to the worker for one frame's document (req. 9–12, 16–17, 23). */
@@ -60,8 +66,14 @@ export function createContent({
   let frameId = 0;
   const refs = createRefs(() => frameId);
   let indicator: Indicator | undefined;
+  const recorder = createRecorder((step) => void worker.step(step).catch(() => undefined));
 
   listenForFrames(worker.identify);
+
+  void worker
+    .recording()
+    .then((on) => on && recorder.set(true))
+    .catch(() => undefined);
 
   const resolve = (ref: string, expected?: string) => {
     if (expected !== undefined && expected !== doc) throw navigated(ref);
@@ -169,7 +181,13 @@ export function createContent({
         return null;
       }),
     'page.stopAt': ({ point }) => guard(() => top && indicator?.covers(point) === true),
+    'page.record': ({ on }) =>
+      guard(() => {
+        recorder.set(on);
+
+        return null;
+      }),
   };
 
-  return { handlers, indicator: () => indicator };
+  return { handlers, indicator: () => indicator, recorder };
 }

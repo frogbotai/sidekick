@@ -93,6 +93,22 @@ const scrollStart = z.object({
 
 const scrollEnd = z.object({ moved: z.number(), at_end: z.boolean() });
 
+const recordedStep = z.object({
+  kind: z.enum(['click', 'fill', 'check', 'select']),
+  frameUrl: z.string(),
+  role: z.string(),
+  name: z.string(),
+  nearby: z.string(),
+  selector: z.string(),
+  value: z.optional(z.string()),
+  redacted: z.optional(z.boolean()),
+  checked: z.optional(z.boolean()),
+  options: z.optional(z.array(z.string())),
+});
+
+/** One thing the person did while Sidekick recorded the tab, as the frame saw it. */
+export type RecordedStep = z.infer<typeof recordedStep>;
+
 export const sidekickProtocol = defineProtocol({
   methods: {
     'tab.ping': {
@@ -274,6 +290,7 @@ export const frameProtocol = defineProtocol({
       output: outcome(z.null()),
     },
     'page.stopAt': { input: z.object({ point }), output: outcome(z.boolean()) },
+    'page.record': { input: z.object({ on: z.boolean() }), output: outcome(z.null()) },
   },
 });
 
@@ -283,5 +300,7 @@ export const contentProtocol = defineProtocol({
     'indicator.state': { input: z.object({}), output: z.object({ visible: z.boolean() }) },
     'indicator.stop': { input: z.object({}), output: z.object({}) },
     'frame.identify': { input: z.object({}), output: z.object({ frameId, key: z.string() }) },
+    'recorder.state': { input: z.object({}), output: z.object({ on: z.boolean() }) },
+    'recorder.step': { input: recordedStep, output: z.object({}) },
   },
 });

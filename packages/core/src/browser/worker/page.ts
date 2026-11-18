@@ -429,5 +429,14 @@ export function chromePage({ tabs, inject, refs = memoryRefStore() }: ChromePage
       await call(tabId, 0, 'page.indicator', state);
     },
     stopAt: (tabId, point) => call(tabId, 0, 'page.stopAt', { point }),
+    record: async (tabId, on) => {
+      const frames = await tabs.frames(tabId).catch(() => []);
+
+      await Promise.all(
+        frames.map(({ frameId }) =>
+          call(tabId, frameId, 'page.record', { on }, { inject: on }).catch(() => undefined),
+        ),
+      );
+    },
   };
 }
