@@ -1,6 +1,7 @@
+import { ToolError } from '../../tool/tool';
 import type { Runs } from './runs';
 import type { Sessions } from './sessions';
-import type { Cdp } from './types';
+import type { Cdp, Tabs } from './types';
 
 /** A tab's viewport override, in CSS pixels. */
 export interface Viewport {
@@ -51,45 +52,73 @@ type Send = (method: string, params: Record<string, unknown>) => Promise<unknown
 
 const MEDIA = { color_scheme: 'prefers-color-scheme', reduced_motion: 'prefers-reduced-motion' };
 
-function mediaOf(overrides: Overrides) {
-  return {
-    features: (['color_scheme', 'reduced_motion'] as const).flatMap((key) => {
-      const value = overrides[key];
-
-      return value === undefined ? [] : [{ name: MEDIA[key], value }];
-    }),
-  };
+interface Group {
+  keys: (keyof Overrides)[];
+  apply(send: Send, overrides: Overrides): Promise<unknown>;
 }
 
-function hasMedia(overrides: Overrides) {
-  return overrides.color_scheme !== undefined || overrides.reduced_motion !== undefined;
+const GROUPS: Group[] = [
+  {
+    keys: ['viewport'],
+    apply: (send, { viewport }) =>
+      send('Emulation.setDeviceMetricsOverride', {
+        width: viewport?.width,
+        height: viewport?.height,
+        deviceScaleFactor: viewport?.device_scale_factor ?? 0,
+        mobile: viewport?.mobile ?? false,
+      }),
+  },
+  {
+    keys: ['color_scheme', 'reduced_motion'],
+    apply: (send, overrides) =>
+      send('Emulation.setEmulatedMedia', {
+        features: (['color_scheme', 'reduced_motion'] as const).flatMap((key) => {
+          const value = overrides[key];
+
+          return value === undefined ? [] : [{ name: MEDIA[key], value }];
+        }),
+      }),
+  },
+  {
+    keys: ['user_agent'],
+    apply: (send, { user_agent }) =>
+      send('Emulation.setUserAgentOverride', { userAgent: user_agent }),
+  },
+  {
+    keys: ['geolocation'],
+    apply: (send, { geolocation }) =>
+      send('Emulation.setGeolocationOverride', {
+        latitude: geolocation?.latitude,
+        longitude: geolocation?.longitude,
+        accuracy: geolocation?.accuracy ?? 10,
+      }),
+  },
+];
+
+function touches(group: Group, overrides: Overrides) {
+  return group.keys.some((key) => overrides[key] !== undefined);
 }
 
 async function apply(send: Send, overrides: Overrides, changed: Overrides = overrides) {
-  const { viewport, user_agent, geolocation } = overrides;
+  for (const group of GROUPS) {
+    if (touches(group, changed)) await group.apply(send, overrides);
+  }
+}
 
-  if (changed.viewport && viewport) {
-    await send('Emulation.setDeviceMetricsOverride', {
-      width: viewport.width,
-      height: viewport.height,
-      deviceScaleFactor: viewport.device_scale_factor ?? 0,
-      mobile: viewport.mobile ?? false,
-    });
+async function reapply(send: Send, overrides: Overrides) {
+  let applied = overrides;
+
+  for (const group of GROUPS.filter((each) => touches(each, overrides))) {
+    try {
+      await group.apply(send, overrides);
+    } catch {
+      applied = Object.fromEntries(
+        Object.entries(applied).filter(([key]) => !group.keys.some((each) => each === key)),
+      );
+    }
   }
 
-  if (hasMedia(changed)) await send('Emulation.setEmulatedMedia', mediaOf(overrides));
-
-  if (changed.user_agent && user_agent) {
-    await send('Emulation.setUserAgentOverride', { userAgent: user_agent });
-  }
-
-  if (changed.geolocation && geolocation) {
-    await send('Emulation.setGeolocationOverride', {
-      latitude: geolocation.latitude,
-      longitude: geolocation.longitude,
-      accuracy: geolocation.accuracy ?? 10,
-    });
-  }
+  return applied;
 }
 
 async function clear(send: Send) {
@@ -108,12 +137,15 @@ export function createEmulation({
   cdp,
   sessions,
   runs,
+  tabs,
 }: {
   cdp: Cdp;
   sessions: Sessions;
   runs: Runs;
+  tabs: Tabs;
 }): Emulation {
   const entries = new Map<number, Entry>();
+  const releases = new Map<string, number>();
 
   const forget = (tabId: number) => {
     entries.delete(tabId);
@@ -131,10 +163,12 @@ export function createEmulation({
   };
 
   const release = async (runId: string) => {
-    const tabs = [...entries].filter(([, entry]) => entry.runId === runId).map(([tabId]) => tabId);
+    releases.set(runId, (releases.get(runId) ?? 0) + 1);
+
+    const held = [...entries].filter(([, entry]) => entry.runId === runId).map(([tabId]) => tabId);
 
     await Promise.all(
-      tabs.map(async (tabId) => {
+      held.map(async (tabId) => {
         forget(tabId);
 
         if (!sessions.attached(tabId)) return;
@@ -161,11 +195,25 @@ export function createEmulation({
     sessions.onAttached(async (tabId) => {
       const entry = entries.get(tabId);
 
-      if (entry) await apply((method, params) => cdp.send(tabId, method, params), entry.overrides);
+      if (!entry) return;
+
+      const applied = await reapply(
+        (method, params) => cdp.send(tabId, method, params),
+        entry.overrides,
+      );
+
+      if (entries.get(tabId) !== entry) return;
+
+      if (isEmpty(applied)) forget(tabId);
+      else entry.overrides = applied;
     }),
     runs.onStopped(({ runId }) => void release(runId)),
     cdp.onDetach((tabId, reason) => {
-      if (reason === 'target_closed') forget(tabId);
+      if (reason !== 'target_closed') return;
+
+      void tabs.get(tabId).catch(() => {
+        if (entries.has(tabId)) forget(tabId);
+      });
     }),
   ];
 
@@ -176,7 +224,16 @@ export function createEmulation({
 
       if (isEmpty(merged)) return {};
 
+      const epoch = releases.get(runId);
+
       await sessions.ensure(tabId, signal);
+
+      if (releases.get(runId) !== epoch) {
+        throw new ToolError(
+          'stopped',
+          'The task handed this tab back before the emulation applied, so nothing changed.',
+        );
+      }
 
       const entry = { runId, overrides: merged };
 

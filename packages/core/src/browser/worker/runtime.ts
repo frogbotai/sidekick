@@ -28,7 +28,7 @@ export function createBrowserRuntime({
   const sessions = createSessions({ cdp, tabs, page });
   const runs = createRuns(tabs);
   const settler = createSettler({ cdp, page, tabs, sessions });
-  const emulation = createEmulation({ cdp, sessions, runs });
+  const emulation = createEmulation({ cdp, sessions, runs, tabs });
   const documents = new Map<number, number>();
   const env: BrowserEnv = {
     cdp,
