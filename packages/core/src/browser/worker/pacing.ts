@@ -88,6 +88,11 @@ export function createPacer({
       const fresh = last ? undefined : await still();
       const held = last ?? (fresh === undefined ? undefined : { data: fresh, slot: 0 });
 
+      if (fresh !== undefined) {
+        counts.captured += 1;
+        counts.fallback += 1;
+      }
+
       last = undefined;
 
       if (held) {

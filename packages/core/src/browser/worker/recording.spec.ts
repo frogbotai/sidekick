@@ -243,7 +243,7 @@ describe('record_start, record_status and record_stop (sidekick-19)', () => {
     await call(setup, 'record_start');
 
     expect(await call(setup, 'record_stop')).toMatchObject({
-      frames_captured: 0,
+      frames_captured: 1,
       frames_written: 1,
     });
 

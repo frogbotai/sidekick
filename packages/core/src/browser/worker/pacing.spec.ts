@@ -97,6 +97,20 @@ describe('createPacer', () => {
     await pacer.finish(1_000, () => Promise.resolve('still'));
 
     expect(written).toEqual([{ data: 'still', timestamp: 0, duration: 1 }]);
+
+    expect(pacer.quality(1_000)).toMatchObject({
+      frames_captured: 1,
+      fps: 1,
+      screenshot_fallback: true,
+    });
+  });
+
+  it('reports 0 fps when the final screenshot fails to write', async () => {
+    const pacer = createPacer({ frameRate: 10, write: () => Promise.reject(new Error('gone')) });
+
+    await pacer.finish(100, () => Promise.resolve('still'));
+
+    expect(pacer.quality(100)).toMatchObject({ frames_captured: 1, frames_dropped: 1, fps: 0 });
   });
 
   it('counts a failed write as dropped', async () => {
