@@ -98,3 +98,63 @@ test('eval returns JSON from the page and the message of a thrown error', async 
   expect(dialog.message).toContain('Hello there');
   expect(await run.call('eval', { script: '1 + 1' })).toEqual({ value: '2', truncated: false });
 });
+
+test('eval refuses a DOM node, a function or a Map instead of returning {}', async ({
+  context,
+  origin,
+  sidekick,
+}) => {
+  const page = await context.newPage();
+
+  await page.goto(`${origin()}/keys.html`);
+
+  const run = await sidekick.start(page);
+
+  for (const script of ['document.body', '() => 1', 'new Map([[1, 2]])', '({ a: [window] })']) {
+    expect(await run.fail('eval', { script })).toMatchObject({ code: 'script_error' });
+  }
+
+  expect(
+    await run.call('eval', { script: '({ when: new Date(0), list: [1, "a", null] })' }),
+  ).toEqual({ value: '{"when":"1970-01-01T00:00:00.000Z","list":[1,"a",null]}', truncated: false });
+});
+
+test('eval that takes 25 s returns its value and runs once, past the idle detach', async ({
+  context,
+  origin,
+  sidekick,
+}) => {
+  test.setTimeout(60_000);
+
+  const page = await context.newPage();
+
+  await page.goto(`${origin()}/keys.html`);
+
+  const run = await sidekick.start(page);
+
+  expect(
+    await run.call('eval', {
+      script:
+        'window.runs = (window.runs ?? 0) + 1; await new Promise((r) => setTimeout(r, 25000)); "done"',
+    }),
+  ).toEqual({ value: '"done"', truncated: false });
+
+  expect(await page.evaluate(() => Reflect.get(window, 'runs'))).toBe(1);
+});
+
+test('eval of an endless loop fails timeout after 30 s, and the page works again', async ({
+  context,
+  origin,
+  sidekick,
+}) => {
+  test.setTimeout(60_000);
+
+  const page = await context.newPage();
+
+  await page.goto(`${origin()}/keys.html`);
+
+  const run = await sidekick.start(page);
+
+  expect(await run.fail('eval', { script: 'while (true) {}' })).toMatchObject({ code: 'timeout' });
+  expect(await run.call('eval', { script: '1 + 1' })).toEqual({ value: '2', truncated: false });
+});

@@ -45,10 +45,24 @@ const isObject = (value: unknown): value is object => typeof value === 'object' 
 
 const isEvaluated = (value: unknown): value is Evaluated => isObject(value);
 
-function notJson() {
+const SERIALIZE = `function () {
+  const refused = ['Map', 'Set', 'WeakMap', 'WeakSet', 'WeakRef', 'Promise', 'RegExp', 'Error', 'Window'];
+  return JSON.stringify(this, function (key, value) {
+    if (typeof value === 'function') throw new TypeError('sidekick:a function');
+    if (typeof value === 'symbol') throw new TypeError('sidekick:a symbol');
+    if (typeof value === 'bigint') throw new TypeError('sidekick:a BigInt');
+    if (value === null || typeof value !== 'object') return value;
+    if (typeof Node === 'function' && value instanceof Node) throw new TypeError('sidekick:a DOM node');
+    const tag = Object.prototype.toString.call(value).slice(8, -1);
+    if (refused.includes(tag)) throw new TypeError('sidekick:a ' + tag);
+    return value;
+  });
+}`;
+
+function notJson(what: string) {
   return new ToolError(
     'script_error',
-    'The script’s result isn’t JSON: it is a DOM node, a function or an object that refers to itself. Return plain data, like element.textContent.',
+    `The script’s result isn’t JSON: it holds ${what}. Return plain data, like element.textContent or an object of strings and numbers.`,
   );
 }
 
@@ -61,13 +75,24 @@ function thrown({ exceptionDetails }: Evaluated) {
   return new ToolError('script_error', `${String(message)} (line ${lineNumber + 1})`);
 }
 
-function valueOf(evaluated: Evaluated): ScriptResult {
-  const error = thrown(evaluated);
+function refusal({ exceptionDetails }: Evaluated) {
+  const message = exceptionDetails?.exception?.description ?? exceptionDetails?.text ?? '';
+  const named = /sidekick:([^\n]+)/.exec(message)?.[1];
 
-  if (error) throw error;
+  if (named) return notJson(named);
 
-  const result = evaluated.result;
+  return notJson(
+    /circular/i.test(message) ? 'an object that refers to itself' : 'something JSON can’t hold',
+  );
+}
 
+function cut(json: string): ScriptResult {
+  if (json.length <= MAX_RESULT_CHARS) return { value: json, truncated: false };
+
+  return { value: json.slice(0, MAX_RESULT_CHARS), truncated: true };
+}
+
+async function serialize(act: Act, result: RemoteObject | undefined): Promise<ScriptResult> {
   if (result?.unserializableValue !== undefined) {
     throw new ToolError(
       'script_error',
@@ -75,11 +100,29 @@ function valueOf(evaluated: Evaluated): ScriptResult {
     );
   }
 
-  const json = JSON.stringify(result?.value ?? null);
+  const objectId = result?.objectId;
 
-  if (json.length <= MAX_RESULT_CHARS) return { value: json, truncated: false };
+  if (objectId === undefined) return cut(JSON.stringify(result?.value ?? null));
 
-  return { value: json.slice(0, MAX_RESULT_CHARS), truncated: true };
+  try {
+    const sent = await send(act, 'Runtime.callFunctionOn', {
+      functionDeclaration: SERIALIZE,
+      objectId,
+      returnByValue: true,
+    });
+
+    const serialized = isEvaluated(sent) ? sent : {};
+
+    if (serialized.exceptionDetails) throw refusal(serialized);
+
+    const json = serialized.result?.value;
+
+    return cut(typeof json === 'string' ? json : 'null');
+  } finally {
+    await act.env.sessions
+      .send(act.tabId, 'Runtime.releaseObject', { objectId })
+      .catch(() => undefined);
+  }
 }
 
 function dialogWatch(act: Act) {
@@ -120,9 +163,9 @@ async function evaluate(act: Act, method: string, params: Record<string, unknown
     const running = act.env.sessions.send(
       act.tabId,
       method,
-      { ...params, awaitPromise: true, returnByValue: true, userGesture: true },
+      { ...params, awaitPromise: true, returnByValue: false, userGesture: true },
       act.signal,
-      SCRIPT_TIMEOUT_MS,
+      { timeout: SCRIPT_TIMEOUT_MS, once: true },
     );
 
     running.catch(() => undefined);
@@ -144,12 +187,11 @@ async function evaluate(act: Act, method: string, params: Record<string, unknown
       );
     }
 
-    if (
-      /could not be (cloned|serialized)|couldn't be returned by value|object reference chain is too long/i.test(
-        messageOf(error),
-      )
-    ) {
-      throw notJson();
+    if (/detached|not attached/i.test(messageOf(error))) {
+      throw new ToolError(
+        'script_error',
+        'The debugger let go of the tab while the script ran, so its result is lost and it may have finished. Check the page before running it again.',
+      );
     }
 
     if (/does not evaluate to a function/i.test(messageOf(error))) {
@@ -234,5 +276,9 @@ export async function runScript(act: Act, script: string, ref?: string): Promise
       ? await evaluate(act, 'Runtime.evaluate', { expression: script, replMode: true })
       : await onElement(act, ref, script);
 
-  return valueOf(evaluated);
+  const error = thrown(evaluated);
+
+  if (error) throw error;
+
+  return serialize(act, evaluated.result);
 }

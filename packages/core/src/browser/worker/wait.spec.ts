@@ -166,6 +166,14 @@ describe('wait_for limits (sidekick-17 req. 8, 10, 11)', () => {
     });
   });
 
+  it('refuses text made only of spaces, which every page contains', async () => {
+    const { tool } = await setupBrowser();
+    const { input } = tool('wait_for');
+
+    expect(input.safeParse({ tab_id: 1, text: '   ' }).success).toBe(false);
+    expect(input.safeParse({ tab_id: 1, text_gone: '\n ' }).success).toBe(false);
+  });
+
   it('caps timeout_ms at 30 s', async () => {
     const { tool } = await setupBrowser();
     const { input } = tool('wait_for');

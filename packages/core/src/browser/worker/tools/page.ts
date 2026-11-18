@@ -16,8 +16,13 @@ const CONDITIONS = ['text', 'text_gone', 'url', 'ref', 'load'] as const;
 
 const waitInput = z.object({
   tab_id: tabId,
-  text: z.string().min(1).optional().describe('Wait until this text shows on the page.'),
-  text_gone: z.string().min(1).optional().describe('Wait until this text is gone from the page.'),
+  text: z.string().trim().min(1).optional().describe('Wait until this text shows on the page.'),
+  text_gone: z
+    .string()
+    .trim()
+    .min(1)
+    .optional()
+    .describe('Wait until this text is gone from the page.'),
   url: z.string().min(1).optional().describe('Wait until the tab’s URL contains this.'),
   ref: ref.optional().describe('Wait until this element is visible, or hidden with state.'),
   state: z.enum(['visible', 'hidden']).optional().describe('For ref; visible when left out.'),

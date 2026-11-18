@@ -22,7 +22,11 @@ describe('eval without a ref (sidekick-17 req. 15-17)', () => {
   it('runs in the main world, awaits promises and returns JSON text', async () => {
     const { tool, ctx, cdp } = await setupBrowser();
 
-    cdp.replies.set('Runtime.evaluate', evaluates({ title: 'Example', count: 2 }));
+    cdp.replies.set('Runtime.evaluate', () => ({ result: { type: 'object', objectId: 'res-1' } }));
+
+    cdp.replies.set('Runtime.callFunctionOn', () => ({
+      result: { type: 'string', value: '{"title":"Example","count":2}' },
+    }));
 
     const { output } = await drain(
       tool('eval').execute({ tab_id: 1, script: 'await fetchTitle()' }, ctx),
@@ -34,9 +38,17 @@ describe('eval without a ref (sidekick-17 req. 15-17)', () => {
       expression: 'await fetchTitle()',
       replMode: true,
       awaitPromise: true,
-      returnByValue: true,
+      returnByValue: false,
       userGesture: true,
     });
+
+    expect(
+      cdp.sent.find(({ method }) => method === 'Runtime.callFunctionOn')?.params,
+    ).toMatchObject({ objectId: 'res-1', returnByValue: true });
+
+    expect(cdp.sent).toContainEqual(
+      expect.objectContaining({ method: 'Runtime.releaseObject', params: { objectId: 'res-1' } }),
+    );
   });
 
   it('returns null for undefined', async () => {
@@ -76,14 +88,39 @@ describe('eval without a ref (sidekick-17 req. 15-17)', () => {
     expect(error).toMatchObject({ code: 'script_error', message: 'Error: nope (line 2)' });
   });
 
-  it('says a result that isn’t JSON can’t come back', async () => {
+  it.each([
+    ['TypeError: sidekick:a DOM node\n    at JSON.stringify', /holds a DOM node/],
+    ['TypeError: sidekick:a Map', /holds a Map/],
+    ['TypeError: Converting circular structure to JSON', /refers to itself/],
+  ])('says a result that isn’t JSON can’t come back: %s', async (description, message) => {
     const { tool, ctx, cdp } = await setupBrowser();
 
-    cdp.sendErrors.set('Runtime.evaluate', [new Error('Object reference chain is too long')]);
+    cdp.replies.set('Runtime.evaluate', () => ({ result: { type: 'object', objectId: 'res-1' } }));
 
-    const error = await failure(tool('eval').execute({ tab_id: 1, script: 'window' }, ctx));
+    cdp.replies.set('Runtime.callFunctionOn', () => ({
+      result: { type: 'object', subtype: 'error' },
+      exceptionDetails: {
+        text: 'Uncaught',
+        lineNumber: 0,
+        exception: { type: 'object', description },
+      },
+    }));
 
-    expect(error).toMatchObject({ code: 'script_error', message: /isn’t JSON/ });
+    const error = await failure(tool('eval').execute({ tab_id: 1, script: 'document.body' }, ctx));
+
+    expect(error).toMatchObject({ code: 'script_error', message });
+    expect(sentMethods(cdp.sent)).toContain('Runtime.releaseObject');
+  });
+
+  it('never runs the script twice when the debugger detaches mid-run', async () => {
+    const { tool, ctx, cdp } = await setupBrowser();
+
+    cdp.sendErrors.set('Runtime.evaluate', [new Error('Detached while handling command.')]);
+
+    const error = await failure(tool('eval').execute({ tab_id: 1, script: 'submit()' }, ctx));
+
+    expect(error).toMatchObject({ code: 'script_error', message: /may have finished/ });
+    expect(sentMethods(cdp.sent).filter((method) => method === 'Runtime.evaluate')).toHaveLength(1);
   });
 
   it('refuses NaN and Infinity, which JSON can’t hold', async () => {
@@ -189,7 +226,7 @@ describe('eval with a ref (sidekick-17 req. 14)', () => {
       objectId: 'node-42',
       arguments: [{ objectId: 'node-42' }],
       awaitPromise: true,
-      returnByValue: true,
+      returnByValue: false,
       userGesture: true,
     });
 
