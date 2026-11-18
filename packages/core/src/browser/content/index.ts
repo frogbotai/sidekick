@@ -7,6 +7,7 @@ import {
   checkState,
   focusedField,
   focusElement,
+  focusField,
   maxLengthOf,
   selectContents,
   selectOptions,
@@ -125,7 +126,8 @@ export function createContent({
       }),
     'page.focus': ({ ref, doc: expected, end }) =>
       guard(() => {
-        focusElement(resolve(ref, expected), end);
+        if (end) focusField(resolve(ref, expected), ref);
+        else focusElement(resolve(ref, expected));
 
         return null;
       }),

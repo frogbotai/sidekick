@@ -17,7 +17,7 @@ import {
   scrollIntoView,
   untrusted,
 } from '../env';
-import { click, drag, fill, hover, press, typeText } from '../input';
+import { click, drag, fill, hover, press, sameField, typeText } from '../input';
 import type { Point } from '../types';
 import { action, byTab, coordinate, modifiers, pointer, ref, tabId } from './schema';
 
@@ -195,6 +195,13 @@ export function inputTools(env: BrowserEnv) {
           if (element !== undefined) await race(env.page.focus(tab_id, element, true), act.signal);
 
           const start = await race(env.page.focused(tab_id), act.signal);
+
+          if (element !== undefined && info && !(start.editable && sameField(info, start))) {
+            throw new ToolError(
+              'invalid_target',
+              `Focus didn’t land on ${element}, so nothing was typed. Take a snapshot and pick an enabled text field.`,
+            );
+          }
 
           typed = await typeText(act, text, start);
 

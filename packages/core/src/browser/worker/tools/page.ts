@@ -130,6 +130,22 @@ async function conditionOf(act: Act, input: WaitInput): Promise<Condition> {
   };
 }
 
+async function within(holds: Condition['holds'], left: number) {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const probe = holds(Math.max(left, 0));
+  const expired = new Promise<false>((resolve) => {
+    timer = setTimeout(() => resolve(false), Math.max(left, 0));
+  });
+
+  probe.catch(() => undefined);
+
+  try {
+    return await Promise.race([probe, expired]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 async function waitFor(act: Act, input: WaitInput) {
   const timeout = input.timeout_ms ?? WAIT_TIMEOUT_MS;
   const condition = await conditionOf(act, input);
@@ -137,7 +153,7 @@ async function waitFor(act: Act, input: WaitInput) {
   const deadline = started + timeout;
 
   for (;;) {
-    if (await condition.holds(Math.max(deadline - Date.now(), 0))) return Date.now() - started;
+    if (await within(condition.holds, deadline - Date.now())) return Date.now() - started;
 
     const left = deadline - Date.now();
 

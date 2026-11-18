@@ -8,6 +8,9 @@ export const SCRIPT_TIMEOUT_MS = 30_000;
 
 export const MAX_RESULT_CHARS = 20_000;
 
+/** How long a script stopped by its dialog gets to wind down, while later dialogs are still dismissed. */
+export const DIALOG_SETTLE_MS = 2_000;
+
 interface RemoteObject {
   type: string;
   subtype?: string;
@@ -92,7 +95,13 @@ function cut(json: string): ScriptResult {
   return { value: json.slice(0, MAX_RESULT_CHARS), truncated: true };
 }
 
-async function serialize(act: Act, result: RemoteObject | undefined): Promise<ScriptResult> {
+interface Run {
+  act: Act;
+  deadline: number;
+  watch: ReturnType<typeof dialogWatch>;
+}
+
+async function serialize(run: Run, result: RemoteObject | undefined): Promise<ScriptResult> {
   if (result?.unserializableValue !== undefined) {
     throw new ToolError(
       'script_error',
@@ -105,13 +114,11 @@ async function serialize(act: Act, result: RemoteObject | undefined): Promise<Sc
   if (objectId === undefined) return cut(JSON.stringify(result?.value ?? null));
 
   try {
-    const sent = await send(act, 'Runtime.callFunctionOn', {
+    const serialized = await timed(run, 'Runtime.callFunctionOn', {
       functionDeclaration: SERIALIZE,
       objectId,
       returnByValue: true,
     });
-
-    const serialized = isEvaluated(sent) ? sent : {};
 
     if (serialized.exceptionDetails) throw refusal(serialized);
 
@@ -119,10 +126,18 @@ async function serialize(act: Act, result: RemoteObject | undefined): Promise<Sc
 
     return cut(typeof json === 'string' ? json : 'null');
   } finally {
-    await act.env.sessions
-      .send(act.tabId, 'Runtime.releaseObject', { objectId })
-      .catch(() => undefined);
+    await release(run.act, objectId);
   }
+}
+
+function release(act: Act, objectId: string) {
+  return act.env.sessions
+    .send(act.tabId, 'Runtime.releaseObject', { objectId })
+    .catch(() => undefined);
+}
+
+function terminate(act: Act) {
+  return act.env.sessions.send(act.tabId, 'Runtime.terminateExecution', {}).catch(() => undefined);
 }
 
 function dialogWatch(act: Act) {
@@ -135,6 +150,8 @@ function dialogWatch(act: Act) {
       const type = field(event.params, 'type', isString) ?? 'alert';
       const message = field(event.params, 'message', isString) ?? '';
 
+      void terminate(act);
+
       void act.env.sessions
         .send(act.tabId, 'Page.handleJavaScriptDialog', { accept: false })
         .catch(() => undefined);
@@ -142,7 +159,7 @@ function dialogWatch(act: Act) {
       reject(
         new ToolError(
           'script_error',
-          `The script opened a ${type} dialog saying “${message}”. Sidekick dismissed it; change the script so it doesn’t open dialogs.`,
+          `The script opened a ${type} dialog saying “${message}”. Sidekick dismissed it and stopped the script, though code just after the dialog may have run. Change the script so it doesn’t open dialogs.`,
           { dialog: type, message },
         ),
       );
@@ -154,37 +171,56 @@ function dialogWatch(act: Act) {
   return { opened, stop: () => stop() };
 }
 
-async function evaluate(act: Act, method: string, params: Record<string, unknown>) {
-  const watch = dialogWatch(act);
+function timedOut() {
+  return new ToolError(
+    'timeout',
+    `The script ran for ${SCRIPT_TIMEOUT_MS / 1000} s without finishing, so Sidekick stopped it.`,
+  );
+}
+
+async function settled(running: Promise<unknown>, ms: number) {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+
+  await Promise.race([
+    running.catch(() => undefined),
+    new Promise((resolve) => (timer = setTimeout(resolve, Math.max(ms, 0)))),
+  ]);
+
+  clearTimeout(timer);
+}
+
+async function timed(run: Run, method: string, params: Record<string, unknown>) {
+  const { act, deadline, watch } = run;
+  const left = deadline - Date.now();
+
+  if (left <= 0) {
+    await terminate(act);
+
+    throw timedOut();
+  }
+
+  const running = act.env.sessions.send(act.tabId, method, params, act.signal, {
+    timeout: left,
+    once: true,
+  });
+
+  running.catch(() => undefined);
 
   try {
-    await send(act, 'Page.enable', {});
-
-    const running = act.env.sessions.send(
-      act.tabId,
-      method,
-      { ...params, awaitPromise: true, returnByValue: false, userGesture: true },
-      act.signal,
-      { timeout: SCRIPT_TIMEOUT_MS, once: true },
-    );
-
-    running.catch(() => undefined);
-
     const evaluated = await Promise.race([running, watch.opened]);
 
     return isEvaluated(evaluated) ? evaluated : {};
   } catch (error) {
     if (error instanceof ToolError && (error.code === 'timeout' || error.code === 'stopped')) {
-      await act.env.sessions
-        .send(act.tabId, 'Runtime.terminateExecution', {})
-        .catch(() => undefined);
+      await terminate(act);
 
-      if (error.code === 'stopped') throw error;
+      throw error.code === 'stopped' ? error : timedOut();
+    }
 
-      throw new ToolError(
-        'timeout',
-        `The script ran for ${SCRIPT_TIMEOUT_MS / 1000} s without finishing, so Sidekick stopped it.`,
-      );
+    if (error instanceof ToolError && error.detail?.dialog !== undefined) {
+      await settled(running, Math.min(deadline - Date.now(), DIALOG_SETTLE_MS));
+
+      throw error;
     }
 
     if (/detached|not attached/i.test(messageOf(error))) {
@@ -202,8 +238,30 @@ async function evaluate(act: Act, method: string, params: Record<string, unknown
     }
 
     throw error;
+  }
+}
+
+const RUN_OPTIONS = { awaitPromise: true, returnByValue: false, userGesture: true };
+
+async function awaited(run: Run, evaluated: Evaluated): Promise<Evaluated> {
+  const error = thrown(evaluated);
+
+  if (error) throw error;
+
+  const promise = evaluated.result;
+
+  if (promise?.subtype !== 'promise' || promise.objectId === undefined) return evaluated;
+
+  try {
+    return await awaited(
+      run,
+      await timed(run, 'Runtime.awaitPromise', {
+        promiseObjectId: promise.objectId,
+        returnByValue: false,
+      }),
+    );
   } finally {
-    watch.stop();
+    await release(run.act, promise.objectId);
   }
 }
 
@@ -234,14 +292,14 @@ async function tagged(act: Act, token: string) {
   }
 }
 
-async function onElement(act: Act, ref: string, script: string) {
+async function onElement(run: Run, ref: string, script: string) {
+  const { act } = run;
   const token = crypto.randomUUID();
-
-  await race(act.env.page.tag(act.tabId, ref, token), act.signal);
-
   let objectId: string | undefined;
 
   try {
+    await race(act.env.page.tag(act.tabId, ref, token), act.signal);
+
     objectId = await tagged(act, token);
   } finally {
     await act.env.page.tag(act.tabId, ref, null).catch(() => undefined);
@@ -255,30 +313,36 @@ async function onElement(act: Act, ref: string, script: string) {
   }
 
   try {
-    return await evaluate(act, 'Runtime.callFunctionOn', {
+    return await timed(run, 'Runtime.callFunctionOn', {
       functionDeclaration: script,
       objectId,
       arguments: [{ objectId }],
+      ...RUN_OPTIONS,
     });
   } finally {
-    await act.env.sessions
-      .send(act.tabId, 'Runtime.releaseObject', { objectId })
-      .catch(() => undefined);
+    await release(act, objectId);
   }
 }
 
 /** OpenCode v2's `evaluate`: the page's main world, promises awaited, JSON back, at most 30 s. */
 export async function runScript(act: Act, script: string, ref?: string): Promise<ScriptResult> {
   await act.env.sessions.ensure(act.tabId, act.signal);
+  await send(act, 'Page.enable', {});
 
-  const evaluated =
-    ref === undefined
-      ? await evaluate(act, 'Runtime.evaluate', { expression: script, replMode: true })
-      : await onElement(act, ref, script);
+  const run = { act, deadline: Date.now() + SCRIPT_TIMEOUT_MS, watch: dialogWatch(act) };
 
-  const error = thrown(evaluated);
+  try {
+    const evaluated =
+      ref === undefined
+        ? await timed(run, 'Runtime.evaluate', {
+            expression: script,
+            replMode: true,
+            ...RUN_OPTIONS,
+          })
+        : await onElement(run, ref, script);
 
-  if (error) throw error;
-
-  return serialize(act, evaluated.result);
+    return await serialize(run, (await awaited(run, evaluated)).result);
+  } finally {
+    run.watch.stop();
+  }
 }
