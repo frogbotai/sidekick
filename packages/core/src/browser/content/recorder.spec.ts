@@ -3,7 +3,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type { RecordedStep } from '../../protocol';
-import { setup, unwrap, useContentDom } from './harness';
+import { closedRoots, setup, unwrap, useContentDom } from './harness';
 
 useContentDom();
 
@@ -23,17 +23,25 @@ function field(id: string) {
   return element;
 }
 
-function type(field: HTMLInputElement | HTMLTextAreaElement, value: string) {
-  field.value = value;
-  field.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
+function trusted<T extends Event>(event: T) {
+  Object.defineProperty(event, 'isTrusted', { value: true });
+
+  return event;
 }
 
-function click(element: Element) {
-  element.dispatchEvent(new MouseEvent('click', { bubbles: true, composed: true }));
+function input(element: Element) {
+  element.dispatchEvent(trusted(new Event('input', { bubbles: true, composed: true })));
 }
 
-function change(element: Element) {
-  element.dispatchEvent(new Event('change', { bubbles: true, composed: true }));
+function type(target: HTMLInputElement | HTMLTextAreaElement, value: string) {
+  target.value = value;
+  input(target);
+}
+
+function click(element: Element, detail = 1) {
+  element.dispatchEvent(
+    trusted(new MouseEvent('click', { bubbles: true, composed: true, detail })),
+  );
 }
 
 async function recording() {
@@ -72,14 +80,16 @@ describe('recorder steps (sidekick-21, req. 2 to 4)', () => {
 
     click(byId('inner'));
     type(field('search'), 'red shoes');
-    click(byId('terms'));
+    field('terms').checked = true;
+    input(byId('terms'));
+
     const size = byId('size');
 
     if (!(size instanceof HTMLSelectElement)) throw new Error('No select');
 
     size.selectedIndex = 1;
     click(size);
-    change(size);
+    input(size);
     click(byId('help'));
 
     expect(steps()).toEqual([
@@ -108,6 +118,18 @@ describe('recorder steps (sidekick-21, req. 2 to 4)', () => {
     ]);
   });
 
+  it('ignores events the page fires itself', async () => {
+    document.body.innerHTML = FORM;
+
+    const { steps } = await recording();
+
+    byId('save').click();
+    field('search').value = 'forged';
+    field('search').dispatchEvent(new Event('input', { bubbles: true, composed: true }));
+
+    expect(steps()).toEqual([]);
+  });
+
   it('sends every keystroke’s fill; the worker collapses them', async () => {
     document.body.innerHTML = FORM;
 
@@ -120,17 +142,16 @@ describe('recorder steps (sidekick-21, req. 2 to 4)', () => {
     expect(steps().map((step) => step.value)).toEqual(['r', 're']);
   });
 
-  it('records no fill for checkboxes, file inputs or buttons, and no click on plain text', async () => {
+  it('records no fill for file inputs or buttons, and no click on plain text or a field', async () => {
     document.body.innerHTML = FORM;
 
     const { steps } = await recording();
 
-    for (const id of ['terms', 'upload', 'go']) {
-      byId(id).dispatchEvent(new Event('input', { bubbles: true, composed: true }));
-    }
-
+    input(byId('upload'));
+    input(byId('go'));
     click(byId('text'));
     click(byId('search'));
+    click(byId('terms'));
 
     expect(steps()).toEqual([]);
   });
@@ -140,7 +161,7 @@ describe('recorder steps (sidekick-21, req. 2 to 4)', () => {
 
     const { steps } = await recording();
 
-    byId('bold').dispatchEvent(new Event('input', { bubbles: true, composed: true }));
+    input(byId('bold'));
 
     expect(steps()).toEqual([
       expect.objectContaining({
@@ -153,10 +174,61 @@ describe('recorder steps (sidekick-21, req. 2 to 4)', () => {
     ]);
   });
 
-  it('names a button in a closed shadow root and gives a selector through it', async () => {
+  it('finds the focused target behind a closed shadow host, and gives a selector through it', async () => {
     document.body.innerHTML = '<section aria-label="Cart"><cart-box id="box"></cart-box></section>';
 
-    const root = byId('box').attachShadow({ mode: 'closed' });
+    const host = byId('box');
+    const root = host.attachShadow({ mode: 'closed' });
+
+    root.innerHTML =
+      '<div><button>Remove</button><button id="buy">Buy now</button><input id="qty" aria-label="Quantity"><input id="gift" type="checkbox" aria-label="Gift"></div>';
+
+    const { steps } = await recording();
+    const inner = (id: string) => {
+      const element = closedRoots.get(host)?.getElementById(id);
+
+      if (!(element instanceof HTMLElement)) throw new Error(`No #${id}`);
+
+      return element;
+    };
+
+    inner('buy').focus();
+    click(host, 0);
+
+    const qty = inner('qty');
+
+    if (!(qty instanceof HTMLInputElement)) throw new Error('No input');
+
+    qty.focus();
+    qty.value = '2';
+    input(host);
+
+    const gift = inner('gift');
+
+    if (!(gift instanceof HTMLInputElement)) throw new Error('No checkbox');
+
+    gift.focus();
+    gift.checked = true;
+    input(host);
+
+    expect(steps()).toEqual([
+      expect.objectContaining({
+        kind: 'click',
+        role: 'button',
+        name: 'Buy now',
+        nearby: 'Cart',
+        selector: 'cart-box#box >>> button#buy',
+      }),
+      expect.objectContaining({ kind: 'fill', name: 'Quantity', value: '2' }),
+      expect.objectContaining({ kind: 'check', name: 'Gift', checked: true }),
+    ]);
+  });
+
+  it('gives a positional selector inside a shadow root', async () => {
+    document.body.innerHTML = '<cart-box id="box"></cart-box>';
+
+    const host = byId('box');
+    const root = host.attachShadow({ mode: 'open' });
 
     root.innerHTML = '<div><button>Remove</button><button>Buy now</button></div>';
 
@@ -169,8 +241,6 @@ describe('recorder steps (sidekick-21, req. 2 to 4)', () => {
 
     expect(steps()).toEqual([
       expect.objectContaining({
-        kind: 'click',
-        role: 'button',
         name: 'Buy now',
         selector: 'cart-box#box >>> div > button:nth-of-type(2)',
       }),
@@ -223,6 +293,40 @@ describe('masking (D3 B, req. 5)', () => {
     expect(JSON.stringify(steps())).not.toMatch(/hunter2|123456/);
   });
 
+  it('keeps a password redacted after a Show button turns it into a text field', async () => {
+    document.body.innerHTML = FORM;
+
+    const { steps } = await recording();
+    const password = field('password');
+
+    type(password, 'hunter');
+    password.type = 'text';
+    type(password, 'hunter2');
+
+    expect(steps().map((step) => step.redacted)).toEqual([true, true]);
+    expect(JSON.stringify(steps())).not.toMatch(/hunter/);
+  });
+
+  it('keeps a password added later redacted when it was shown before the first keystroke', async () => {
+    document.body.innerHTML = FORM;
+
+    const { steps } = await recording();
+
+    byId('save').insertAdjacentHTML(
+      'afterend',
+      '<input id="late" type="password" aria-label="Late">',
+    );
+
+    const password = field('late');
+
+    await Promise.resolve();
+    password.type = 'text';
+    await Promise.resolve();
+    type(password, 'hunter2');
+
+    expect(steps()).toEqual([expect.objectContaining({ redacted: true })]);
+  });
+
   it('replaces personal values with their autocomplete token, and keeps a search', async () => {
     document.body.innerHTML = FORM;
 
@@ -242,8 +346,8 @@ describe('masking (D3 B, req. 5)', () => {
 
     const { steps } = await recording();
 
-    change(byId('exp'));
-    change(byId('country'));
+    input(byId('exp'));
+    input(byId('country'));
 
     expect(steps()).toEqual([
       expect.objectContaining({ kind: 'select', redacted: true }),

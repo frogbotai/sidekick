@@ -1,5 +1,5 @@
 import type { RecordedStep } from '../../protocol';
-import { isOwn, parentAcross } from './dom';
+import { deepActiveElement, hitTest, isOwn, parentAcross, shadowOf } from './dom';
 import { clip, isChecked, nameOf, REDACT_AUTOCOMPLETE, roleOf, valueOf } from './roles';
 
 const ACTIONABLE = new Set([
@@ -29,12 +29,21 @@ const HEADING = 'h1, h2, h3, h4, h5, h6, [role="heading"]';
 
 const NEARBY_DEPTH = 6;
 
-type Field = HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement;
+const secrets = new WeakSet<Element>();
 
 function targetOf(event: Event) {
   const target = event.composedPath()[0];
 
-  return target instanceof Element ? target : undefined;
+  if (!event.isTrusted || !(target instanceof Element) || isOwn(target)) return undefined;
+
+  if (!shadowOf(target)) return target;
+
+  const deep =
+    event instanceof MouseEvent && event.detail > 0
+      ? hitTest({ x: event.clientX, y: event.clientY })
+      : deepActiveElement();
+
+  return deep && !isOwn(deep) ? deep : target;
 }
 
 function isNative(element: Element) {
@@ -79,10 +88,19 @@ function tokensOf(element: Element) {
   return (element.getAttribute('autocomplete') ?? '').toLowerCase().split(/\s+/);
 }
 
-function privacyOf(element: Element): string | undefined {
-  if (element instanceof HTMLInputElement && element.type === 'password') return 'secret';
+function isSecret(element: Element) {
+  return (
+    (element instanceof HTMLInputElement && element.type === 'password') ||
+    REDACT_AUTOCOMPLETE.test(element.getAttribute('autocomplete') ?? '')
+  );
+}
 
-  if (REDACT_AUTOCOMPLETE.test(element.getAttribute('autocomplete') ?? '')) return 'secret';
+function privacyOf(element: Element): string | undefined {
+  if (secrets.has(element) || isSecret(element)) {
+    secrets.add(element);
+
+    return 'secret';
+  }
 
   const token = tokensOf(element).find((entry) => PERSONAL.test(entry));
 
@@ -199,14 +217,26 @@ function selectStep(element: HTMLSelectElement): RecordedStep {
   return { kind: 'select', ...base(element), options: privacy ? [`<${privacy}>`] : labels };
 }
 
-function changeStep(element: Field): RecordedStep | undefined {
-  if (element instanceof HTMLSelectElement) return selectStep(element);
+function inputStep(target: Element): RecordedStep | undefined {
+  if (target instanceof HTMLSelectElement) return selectStep(target);
 
-  if (element instanceof HTMLInputElement && /^(checkbox|radio)$/.test(element.type)) {
-    return { kind: 'check', ...base(element), checked: isChecked(element) };
+  if (target instanceof HTMLInputElement && /^(checkbox|radio)$/.test(target.type)) {
+    return { kind: 'check', ...base(target), checked: isChecked(target) };
   }
 
-  return undefined;
+  const field = typedField(target);
+
+  return field && { kind: 'fill', ...base(field), ...kept(field, valueOf(field) ?? '') };
+}
+
+function rememberSecrets(root: Document | ShadowRoot) {
+  for (const element of root.querySelectorAll('*')) {
+    if (isSecret(element)) secrets.add(element);
+
+    const shadow = shadowOf(element);
+
+    if (shadow) rememberSecrets(shadow);
+  }
 }
 
 export interface Recorder {
@@ -216,12 +246,20 @@ export interface Recorder {
 
 /**
  * Records the person's clicks on actionable targets, fills, checks and selects in this frame
- * (sidekick-21, after browse's `demonstrate`). Each step goes to `send` as it happens, so a
- * navigation can't drop it. Passwords and secret fields keep no value; personal fields keep
- * their autocomplete token in place of the value (D3 B).
+ * (sidekick-21, after browse's `demonstrate`). Only trusted events count, so a page can't add
+ * steps, and targets inside closed shadow roots are found from the point or the focus. Each step
+ * goes to `send` as it happens, so a navigation can't drop it. A field that was ever a password
+ * or secret keeps no value, even after a Show button makes it text; personal fields keep their
+ * autocomplete token in place of the value (D3 B).
  */
 export function createRecorder(send: (step: RecordedStep) => void): Recorder {
   let recording = false;
+
+  const revealed = new MutationObserver((mutations) => {
+    for (const { target, oldValue } of mutations) {
+      if (oldValue?.toLowerCase() === 'password' && target instanceof Element) secrets.add(target);
+    }
+  });
 
   const onClick = (event: Event) => {
     const target = targetOf(event);
@@ -232,25 +270,7 @@ export function createRecorder(send: (step: RecordedStep) => void): Recorder {
 
   const onInput = (event: Event) => {
     const target = targetOf(event);
-    const element = target && !isOwn(target) ? typedField(target) : undefined;
-
-    if (!element) return;
-
-    send({ kind: 'fill', ...base(element), ...kept(element, valueOf(element) ?? '') });
-  };
-
-  const onChange = (event: Event) => {
-    const target = targetOf(event);
-
-    if (
-      !target ||
-      isOwn(target) ||
-      !(target instanceof HTMLInputElement || target instanceof HTMLSelectElement)
-    ) {
-      return;
-    }
-
-    const step = changeStep(target);
+    const step = target && inputStep(target);
 
     if (step) send(step);
   };
@@ -258,7 +278,6 @@ export function createRecorder(send: (step: RecordedStep) => void): Recorder {
   const listeners = [
     ['click', onClick],
     ['input', onInput],
-    ['change', onChange],
   ] as const;
 
   return {
@@ -270,6 +289,18 @@ export function createRecorder(send: (step: RecordedStep) => void): Recorder {
       for (const [type, listener] of listeners) {
         if (on) document.addEventListener(type, listener, true);
         else document.removeEventListener(type, listener, true);
+      }
+
+      if (on) {
+        rememberSecrets(document);
+
+        revealed.observe(document, {
+          subtree: true,
+          attributeFilter: ['type'],
+          attributeOldValue: true,
+        });
+      } else {
+        revealed.disconnect();
       }
     },
     on: () => recording,
