@@ -57,6 +57,16 @@ await show(
     replaceUrl: (url) => history.replaceState(null, '', url),
     tabId: async () => (await chrome.tabs.getCurrent())?.id,
     connect: (input) => worker.call('mcp.connect', input, { timeout: false }),
+    shown: ({ hub, pair }) => {
+      const url = new URL(hub);
+
+      url.searchParams.set('pair', pair);
+      url.searchParams.set('shown', '1');
+
+      const socket = new WebSocket(url);
+
+      socket.onopen = () => socket.close();
+    },
     pair: (input) => worker.call('mcp.pair', input, { timeout: false }),
     unpair: (input) => worker.call('mcp.unpair', input, { timeout: false }),
   }).catch(failed),

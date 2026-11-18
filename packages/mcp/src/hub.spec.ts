@@ -172,4 +172,42 @@ describe('the hub in pair mode', () => {
     expect(await started.paired).toBeUndefined();
     expect(await dial(withPair(started.url, started.id), ORIGIN)).toBe(403);
   });
+
+  it('drops a held socket on expiry and acknowledges no key it sends after', async () => {
+    const started = await pairHub(100);
+    const socket = new WebSocket(withPair(started.url, started.id), { origin: ORIGIN });
+
+    await new Promise((resolve) => socket.once('open', resolve));
+
+    expect(await started.paired).toBeUndefined();
+
+    const reply = await new Promise<unknown>((resolve) => {
+      socket.once('message', (data) => resolve(JSON.parse(String(data))));
+      socket.once('close', () => resolve('closed'));
+      setTimeout(() => resolve('silent'), 500);
+
+      if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify(KEY));
+    });
+
+    socket.terminate();
+
+    expect(reply).not.toEqual({ type: 'sidekick/ok' });
+  });
+
+  it('marks the request shown when the Approve page loads, and keeps it unspent', async () => {
+    const started = await pairHub();
+    let shown = false;
+
+    void started.shown.then(() => (shown = true));
+
+    expect(await dial(`${withPair(started.url, 'wrong')}&shown=1`, ORIGIN)).toBe(403);
+    expect(shown).toBe(false);
+
+    expect(await dial(`${withPair(started.url, started.id)}&shown=1`, ORIGIN)).toBe('open');
+
+    await started.shown;
+
+    expect(await send(withPair(started.url, started.id), KEY)).toEqual({ type: 'sidekick/ok' });
+    expect(await started.paired).toEqual({ key: 'sk_new', pairingID: 'p1' });
+  });
 });

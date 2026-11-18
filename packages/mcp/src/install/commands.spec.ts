@@ -322,7 +322,7 @@ describe('pairing', () => {
     expect(machine.pairing.asked).toEqual([]);
   });
 
-  it('exits 0 with the configs written when Chrome can’t open, or the request expires', async () => {
+  it('exits 0 with the configs written when Chrome can’t open, Sidekick doesn’t answer, or the request expires', async () => {
     const machine = computer();
     const chrome = await machine.run('install', ['-a', 'cursor']);
 
@@ -330,12 +330,47 @@ describe('pairing', () => {
     expect(chrome.output).toContain('Couldn’t open Chrome. Pairing is pending');
     expect(fs.existsSync(machine.location('cursor').entry.file)).toBe(true);
 
+    machine.pairing.outcome = { pending: 'extension' };
+
+    const extension = await machine.run('install', ['-a', 'cursor']);
+
+    expect(extension.code).toBe(0);
+    expect(extension.output).toContain('Sidekick didn’t answer. Install or turn on Sidekick');
+
     machine.pairing.outcome = { pending: 'expired' };
 
     const expired = await machine.run('install', ['-a', 'cursor']);
 
     expect(expired.code).toBe(0);
     expect(expired.output).toContain('wasn’t approved in time. Pairing is pending');
+    expect(fs.existsSync(machine.keyFile)).toBe(false);
+  });
+
+  it('keeps the key while an entry someone edited still runs the helper without its own token', async () => {
+    const machine = computer();
+
+    machine.pairing.outcome = { key: KEY };
+    await machine.run('install', ['-a', 'cursor', 'codex']);
+
+    const { file } = machine.location('cursor').entry;
+    const pinned = fs.readFileSync(file, 'utf8').replace('sidekick-mcp"', 'sidekick-mcp@0.2.0"');
+
+    fs.writeFileSync(file, pinned);
+
+    const kept = await machine.run('uninstall');
+
+    expect(kept.output).toContain(`The pairing stays for Cursor: ${machine.keyFile}`);
+    expect(machine.pairing.unpaired).toEqual([]);
+    expect(fs.existsSync(machine.keyFile)).toBe(true);
+
+    machine.write(
+      'cursor',
+      '{ "mcpServers": { "sidekick": { "command": "npx", "args": ["-y", "@frogbotai/sidekick-mcp@0.2.0"], "env": { "SIDEKICK_TOKEN": "sk_own" } } } }',
+    );
+
+    await machine.run('uninstall');
+
+    expect(machine.pairing.unpaired).toEqual(['sk_new']);
     expect(fs.existsSync(machine.keyFile)).toBe(false);
   });
 

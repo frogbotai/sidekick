@@ -9,7 +9,7 @@ import {
   type Environment,
   SERVER,
 } from './agents.js';
-import { editConfig, type EditResult, readEntry } from './browse/edit.js';
+import { editConfig, type EditResult, readEntry, readValue } from './browse/edit.js';
 import type { Pairing } from './pair.js';
 import { agentFlags, agentPlan } from './plan.js';
 
@@ -57,6 +57,12 @@ async function choose(args: readonly string[], agents: AgentLocation[], io: Comm
 
 const PENDING = `Pairing is pending: run \`${INSTALL}\` again to pair with Sidekick in Chrome.`;
 
+const PENDING_REASONS = {
+  chrome: 'Couldn’t open Chrome.',
+  extension: 'Chrome opened, but Sidekick didn’t answer. Install or turn on Sidekick in Chrome.',
+  expired: 'The request wasn’t approved in time.',
+} as const;
+
 async function pairAgents(agents: readonly string[], io: CommandIO) {
   if (await readKey(io.keyFile)) {
     io.log(
@@ -75,11 +81,21 @@ async function pairAgents(agents: readonly string[], io: CommandIO) {
     return;
   }
 
-  io.log(
-    outcome.pending === 'chrome'
-      ? `Couldn’t open Chrome. ${PENDING}`
-      : `The request wasn’t approved in time. ${PENDING}`,
-  );
+  io.log(`${PENDING_REASONS[outcome.pending]} ${PENDING}`);
+}
+
+const HELPER = COMMAND[2];
+
+function usesKey(agent: AgentLocation) {
+  const state = readEntry(agent.entry);
+
+  if (state === 'owned') return true;
+
+  if (state !== 'other') return false;
+
+  const text = JSON.stringify(readValue(agent.entry)) ?? '';
+
+  return text.includes(HELPER) && !text.includes('SIDEKICK_TOKEN');
 }
 
 async function unpairAgents(io: CommandIO) {
@@ -87,9 +103,7 @@ async function unpairAgents(io: CommandIO) {
 
   if (!key) return;
 
-  const remaining = agentLocations(io.environment).filter(
-    (agent) => readEntry(agent.entry) === 'owned',
-  );
+  const remaining = agentLocations(io.environment).filter(usesKey);
 
   if (remaining.length) {
     io.log(

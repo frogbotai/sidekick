@@ -24,6 +24,8 @@ export interface ConnectPage {
   replaceUrl: (url: string) => void;
   tabId: () => Promise<number | undefined>;
   connect: (input: { hub: string; token: string; tabId?: number }) => Promise<McpConnectResult>;
+  /** Tells the install command's hub that its Approve page loaded, so it doesn't wait in vain. */
+  shown: (input: { hub: string; pair: string }) => void;
   pair: (input: { hub: string; pair: string; computer: string }) => Promise<McpPairResult>;
   unpair: (input: { hub: string; token: string }) => Promise<McpUnpairResult>;
 }
@@ -121,7 +123,11 @@ export async function runConnectPage(page: ConnectPage): Promise<ConnectView> {
 
   if (!isLoopbackHub(hub)) return { text: SETTINGS, settings: true };
 
-  if (pair) return pairView(page, hub, pair, url);
+  if (pair) {
+    page.shown({ hub, pair });
+
+    return pairView(page, hub, pair, url);
+  }
 
   if (!token) return { text: SETTINGS, settings: true };
 

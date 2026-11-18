@@ -12,10 +12,12 @@ function page(
   const replaced: string[] = [];
   const pair = calls.pair ?? vi.fn<ConnectPage['pair']>();
   const unpair = calls.unpair ?? vi.fn<ConnectPage['unpair']>();
+  const shown = vi.fn<ConnectPage['shown']>();
 
   return {
     replaced,
     connect,
+    shown,
     pair,
     unpair,
     page: {
@@ -23,6 +25,7 @@ function page(
       replaceUrl: (url: string) => void replaced.push(url),
       tabId: () => Promise.resolve(7),
       connect,
+      shown,
       pair,
       unpair,
     } satisfies ConnectPage,
@@ -105,6 +108,7 @@ describe('the connect page', () => {
 
     expect(view.text).toBe('Add Sidekick to Codex, Cursor on laptop?');
     expect(view.detail).toContain('Approve only if you ran it');
+    expect(target.shown).toHaveBeenCalledWith({ hub: 'ws://127.0.0.1:4100/secret', pair: 'req-1' });
     expect(pair).not.toHaveBeenCalled();
     expect(target.connect).not.toHaveBeenCalled();
 

@@ -46,7 +46,9 @@ export function refusal(
 
 type Refuse = (request: Pick<IncomingMessage, 'url' | 'headers'>, path: string) => unknown;
 
-async function listen(refuse: Refuse, onSocket: (socket: WebSocket) => void) {
+type OnSocket = (socket: WebSocket, request: IncomingMessage) => void;
+
+async function listen(refuse: Refuse, onSocket: OnSocket) {
   const path = `/${randomBytes(18).toString('base64url')}`;
   const sockets = new WebSocketServer({ noServer: true });
   const server = createServer((_request, response) => response.writeHead(404).end());
@@ -100,6 +102,8 @@ export interface PairedKey {
 export interface PairHub extends Hub {
   /** The request's id, which the connect page passes back as `?pair=`. */
   id: string;
+  /** Resolves once Sidekick's Approve page for this request has loaded. */
+  shown: Promise<void>;
   /** The key, or undefined once the request expires, fails or the hub closes. */
   paired: Promise<PairedKey | undefined>;
 }
@@ -123,8 +127,10 @@ function pairedKey(data: unknown): PairedKey | undefined {
 /**
  * A hub in pair mode: one request, good for `ttl` and for one socket. That socket must carry
  * Sidekick's origin, the path and `?pair=<id>`, and its first message is the new key, which the
- * hub acknowledges. Every later socket, and any socket after expiry, gets a 403; the request
- * expires on time even while a socket holds it without sending a key.
+ * hub acknowledges. Every later socket, and any socket after expiry, gets a 403; on expiry the
+ * hub drops a socket that holds the request and acknowledges nothing it sends. A socket that also
+ * carries `&shown=1` is the Approve page saying it loaded: it resolves `shown` and leaves the
+ * request unspent.
  */
 export async function startPairHub({
   extensionId,
@@ -135,12 +141,23 @@ export async function startPairHub({
 }): Promise<PairHub> {
   const id = randomBytes(18).toString('base64url');
   let open = true;
-  let settle: (value: PairedKey | undefined) => void = () => undefined;
-  const paired = new Promise<PairedKey | undefined>((resolve) => (settle = resolve));
+  let held: WebSocket | undefined;
+  let markShown: () => void = () => undefined;
+  const shown = new Promise<void>((resolve) => (markShown = resolve));
+  let resolvePaired: (value: PairedKey | undefined) => void = () => undefined;
+  const paired = new Promise<PairedKey | undefined>((resolve) => (resolvePaired = resolve));
+
+  let done = false;
+
+  const settle = (value: PairedKey | undefined) => {
+    open = false;
+    done = true;
+    resolvePaired(value);
+  };
 
   const timer = setTimeout(() => {
-    open = false;
     settle(undefined);
+    held?.terminate();
   }, ttl);
 
   const hub = await listen(
@@ -155,11 +172,20 @@ export async function startPairHub({
 
       return open ? undefined : 'used';
     },
-    (socket) => {
+    (socket, request) => {
+      markShown();
+
+      if (new URL(request.url ?? '/', 'ws://127.0.0.1').searchParams.get('shown') === '1') {
+        socket.close();
+
+        return;
+      }
+
       open = false;
+      held = socket;
 
       socket.once('message', (data) => {
-        const key = pairedKey(data);
+        const key = done ? undefined : pairedKey(data);
 
         if (key) socket.send(JSON.stringify({ type: 'sidekick/ok' }));
 
@@ -174,9 +200,9 @@ export async function startPairHub({
   return {
     ...hub,
     id,
+    shown,
     paired,
     close: () => {
-      open = false;
       clearTimeout(timer);
       settle(undefined);
 
