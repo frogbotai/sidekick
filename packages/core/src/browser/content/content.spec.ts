@@ -412,6 +412,19 @@ describe('indicator', () => {
     expect([hostOf(), (host as HTMLElement).style.visibility]).toEqual([host, '']);
   });
 
+  it.each([[[]], [[{ visible: false }]]])(
+    'shows again on visible: true after a hide nothing undid, through %j (sidekick-19)',
+    async (between) => {
+      const { handlers } = setup();
+
+      for (const input of [{ visible: true }, { hidden: true }, ...between, { visible: true }]) {
+        unwrap(await handlers['page.indicator'](input));
+      }
+
+      expect((hostOf() as HTMLElement).style.visibility).toBe('');
+    },
+  );
+
   it('frames the page with the old Sidekick overlay: a tint and a turning gradient frame', async () => {
     const { handlers } = setup();
 
