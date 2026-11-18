@@ -49,6 +49,25 @@ describe('parseMatches', () => {
     ]);
   });
 
+  it('counts only the refs before the reason', () => {
+    expect(parseMatches('f0e3 — better than f0e2 which is Go', OUTLINE)).toEqual([
+      'button "Submit" [f0e3] — better than f0e2 which is Go',
+    ]);
+
+    expect(parseMatches('f0e3 — unlike f9e9', OUTLINE)).toEqual([
+      'button "Submit" [f0e3] — unlike f9e9',
+    ]);
+
+    expect(parseMatches('[f0e3] and [f0e2] — both buttons', OUTLINE)).toEqual([
+      'button "Submit" [f0e3] — both buttons',
+      'button "Go" [f0e2] — both buttons',
+    ]);
+
+    expect(parseMatches('- button "Submit" [f0e3] — submit', OUTLINE)).toEqual([
+      'button "Submit" [f0e3] — submit',
+    ]);
+  });
+
   it('caps reasons and the number of matches', () => {
     const outline = Array.from({ length: 20 }, (_, i) => `- link "L${i}" [f0e${i}]`).join('\n');
     const reply = Array.from({ length: 20 }, (_, i) => `f0e${i} — ${'x'.repeat(300)}`).join('\n');
