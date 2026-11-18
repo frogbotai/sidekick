@@ -25,6 +25,8 @@ const SAMPLES: Record<string, { input: Record<string, unknown>; resource: string
   select: { input: { tab_id: 1, ref: 'f0e1', values: ['a'] }, resource: 'https://example.com' },
   press: { input: { tab_id: 1, key: 'Enter' }, resource: 'https://example.com' },
   drag: { input: { tab_id: 1, from: 'f0e1', to: 'f0e2' }, resource: 'https://example.com' },
+  network_capture: { input: { tab_id: 1, action: 'start' }, resource: 'https://example.com' },
+  console_capture: { input: { tab_id: 1, action: 'start' }, resource: 'https://example.com' },
 };
 
 const disposers: (() => void)[] = [];
@@ -51,7 +53,7 @@ function bad(id: string, input: z.ZodType = z.object({})): ToolDefinition {
 }
 
 describe('browser tools in the tools registry', () => {
-  it('registers all 15, and sends a bad id or schema to errors()', async () => {
+  it('registers all 17, and sends a bad id or schema to errors()', async () => {
     const { runtime } = await setupBrowser();
 
     disposers.push(
