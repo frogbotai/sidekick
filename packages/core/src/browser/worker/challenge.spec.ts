@@ -168,6 +168,16 @@ describe('classify (req. 2, 3, 12)', () => {
       },
     ],
     [
+      'a sign-in page with an invisible Turnstile and a security checkup link',
+      {
+        title: 'Account',
+        text: 'Sign in\nEmail\nPassword\nRun a security checkup',
+        frameUrls: [
+          'https://challenges.cloudflare.com/cdn-cgi/challenge-platform/h/b/turnstile/if/ov2',
+        ],
+      },
+    ],
+    [
       'a short sign-in page with an invisible reCAPTCHA and its notice',
       {
         title: 'Sign in',
