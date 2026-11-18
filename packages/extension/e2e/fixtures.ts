@@ -78,6 +78,7 @@ declare global {
     swaps: number;
     domainValue: () => string;
     nameservers: () => string[];
+    answers: (boolean | string | null)[];
   }
 }
 
@@ -373,7 +374,10 @@ export interface SnapshotOutput {
 export interface ActionOutput {
   url: string;
   navigated: boolean;
+  urlChanged: boolean;
   settled: boolean;
+  newTabs: { tab_id: number; url: string }[];
+  dialog: { type: string; message: string; defaultValue: string } | null;
 }
 
 /** Evaluates expressions in the extension content script's isolated world on `page`. */

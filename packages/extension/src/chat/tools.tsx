@@ -294,6 +294,31 @@ export const TOOL_LINES: Record<string, (call: ToolCall) => ToolLine> = {
 
     return { icon: 'cursor', running: 'Dragging', done: `Dragged${ends}`, failed: `Drag${ends}` };
   },
+  dialog: ({ input, output }) => {
+    const shown = record(output.dialog);
+    const message = text(shown.message);
+
+    if (input.action === 'accept' || input.action === 'dismiss') {
+      const [running, done, failed] =
+        input.action === 'accept'
+          ? ['Accepting', 'Accepted', 'Accept']
+          : ['Dismissing', 'Dismissed', 'Dismiss'];
+
+      return {
+        icon: 'message-square-text',
+        running: `${running} the dialog`,
+        done: `${done} the dialog`,
+        failed: `${failed} the dialog`,
+      };
+    }
+
+    return {
+      icon: 'message-square-text',
+      running: 'Reading the dialog',
+      done: message ? `Dialog “${short(message)}”` : 'No dialog open',
+      failed: 'Read the dialog',
+    };
+  },
   web_search: ({ input, output }) => {
     const query = `“${short(text(input.query) ?? '')}”`;
     const results = Array.isArray(output.results) ? output.results.map(record) : [];

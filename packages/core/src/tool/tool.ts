@@ -75,6 +75,7 @@ export const TOOL_ERROR_CODES = [
   'invalid_target',
   'input_mismatch',
   'not_editable',
+  'dialog_open',
   'timeout',
   'stopped',
   'not_connected',

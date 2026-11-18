@@ -144,6 +144,7 @@ export function createSessions({
     }
 
     await cdp.send(tabId, 'Network.enable', {});
+    await cdp.send(tabId, 'Page.enable', {});
   };
 
   const ensure = async (tabId: number, signal = NEVER) => {

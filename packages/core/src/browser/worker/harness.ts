@@ -1,6 +1,7 @@
 import { vi } from 'vitest';
 
 import { installFakeChrome } from '../../testing/fakeChrome';
+import { createToolCaller } from '../../tool/bridge';
 import { fakeCdp, fakeContext, fakePage, fakeTabs, type Log } from './fakes';
 import { createBrowserRuntime } from './runtime';
 import type { Page, TabInfo } from './types';
@@ -72,4 +73,28 @@ export async function failure(promise: Promise<unknown>) {
 
 export function sentMethods(sent: { method: string }[]) {
   return sent.map(({ method }) => method);
+}
+
+/** Calls tools through the bridge's caller, so calls on one tab take its lock in turn. */
+export function callerOf({ runtime, run }: Awaited<ReturnType<typeof setupBrowser>>) {
+  const caller = createToolCaller({
+    tools: {
+      list: () => runtime.tools,
+      get: (id) => runtime.tools.find((entry) => entry.id === id),
+    },
+    permission: {
+      assert: () => Promise.resolve(),
+      reply: () => Promise.resolve(),
+      list: () => [],
+      cancel: () => undefined,
+    },
+  });
+
+  let next = 0;
+
+  return (tool: string, input: unknown) =>
+    caller.call(
+      { tool, input, sessionID: 'ses-1', messageID: 'msg-1', callID: `c${next++}`, agent: 'build' },
+      { run: () => Promise.resolve({ id: run.id }) },
+    );
 }
