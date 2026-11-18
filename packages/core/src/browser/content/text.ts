@@ -12,12 +12,20 @@ export interface PageText {
   truncated: boolean;
 }
 
-function hidden(element: Element) {
+function gone(element: Element) {
   if (element.hasAttribute('hidden') || element.getAttribute('aria-hidden') === 'true') return true;
 
-  const style = getComputedStyle(element);
+  return getComputedStyle(element).display === 'none';
+}
 
-  return style.display === 'none' || style.visibility === 'hidden';
+function veiled(element: Element) {
+  const { visibility } = getComputedStyle(element);
+
+  return visibility === 'hidden' || visibility === 'collapse';
+}
+
+function hidden(element: Element) {
+  return gone(element) || veiled(element);
 }
 
 function visible(element: Element) {
@@ -32,7 +40,7 @@ function prose(element: Element) {
   let length = 0;
 
   for (const child of element.children) {
-    if (PROSE.has(child.tagName)) length += child.textContent?.trim().length ?? 0;
+    if (PROSE.has(child.tagName) && !hidden(child)) length += child.textContent?.trim().length ?? 0;
   }
 
   return length;
@@ -59,6 +67,12 @@ function mainElement(): Element {
 }
 
 function prune(live: Element, copy: Element) {
+  if (veiled(live)) {
+    for (const node of [...copy.childNodes]) {
+      if (node.nodeType === Node.TEXT_NODE) node.remove();
+    }
+  }
+
   const twins = [...copy.children];
 
   [...live.children].forEach((child, index) => {
@@ -66,7 +80,7 @@ function prune(live: Element, copy: Element) {
 
     if (!twin) return;
 
-    if (isOwn(child) || isRedacted(child) || hidden(child)) twin.remove();
+    if (isOwn(child) || isRedacted(child) || gone(child)) twin.remove();
     else prune(child, twin);
   });
 }

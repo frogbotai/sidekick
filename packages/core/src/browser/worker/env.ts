@@ -228,6 +228,14 @@ export function fromScreenshot(env: BrowserEnv, tabId: number, point: Point): Po
   if (!found) return point;
 
   const map = current(env, tabId, found);
+  const { width, height } = map.image;
+
+  if (point.x < 0 || point.y < 0 || point.x > width || point.y > height) {
+    throw new ToolError(
+      'invalid_target',
+      `(${point.x}, ${point.y}) is outside your last screenshot, which is ${width}×${height}. Pick a point inside it.`,
+    );
+  }
 
   return { x: map.offset.x + point.x * map.scale.x, y: map.offset.y + point.y * map.scale.y };
 }
