@@ -1,8 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { BUILTIN_MODES, PLAN_MODE } from '../../../permission/modes';
+import { whollyDenied } from '../../../permission/rules';
 import { ToolError, UNTRUSTED } from '../../../tool/tool';
+import { fakeTabs } from '../fakes';
 import { later } from '../fakes';
 import { drain, failure, setupBrowser } from '../harness';
+import { chromePage } from '../page';
 import type { Page, PageTool } from '../types';
 
 const TOP = 'https://example.com';
@@ -48,6 +52,14 @@ async function setup(page: Partial<Page> = {}) {
 }
 
 describe('webmcp list', () => {
+  it('is offered in Plan mode, like snapshot, while call still asks input', async () => {
+    const { tool } = await setup();
+    const plan = BUILTIN_MODES.find((mode) => mode.id === PLAN_MODE)?.rules ?? [];
+
+    expect(whollyDenied(plan, tool('webmcp').permission)).toBe(false);
+    expect(whollyDenied(plan, 'input')).toBe(true);
+  });
+
   it('asks read, passes the secure cross-origin frames, and returns hints as page_hints', async () => {
     const webmcpList = vi.fn(later(() => ({ tools: TOOLS, more: 3 })));
     const { run, ctx } = await setup({ webmcpList });
@@ -170,5 +182,29 @@ describe('webmcp call', () => {
 
     expect(await pending).toMatchObject({ code: 'stopped' });
     expect(webmcpCancel).toHaveBeenCalledWith(1, expect.any(String));
+  });
+});
+
+describe('webmcp over the page', () => {
+  it('sends a call once, never again into the next document, when the page navigates mid-call', async () => {
+    const sendMessage = vi.fn(() =>
+      Promise.reject(new Error('The message port closed before a response was received.')),
+    );
+
+    const inject = vi.fn(() => Promise.resolve());
+
+    vi.stubGlobal('chrome', { tabs: { sendMessage } });
+
+    try {
+      const page = chromePage({ tabs: fakeTabs([], []), inject });
+      const call = { token: 't1', name: 'add_to_cart', origin: TOP, input: {}, fromOrigins: [] };
+
+      await page.webmcpCall(1, call).catch(() => undefined);
+
+      expect(sendMessage).toHaveBeenCalledTimes(1);
+      expect(inject).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 });
