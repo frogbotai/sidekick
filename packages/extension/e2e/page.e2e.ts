@@ -204,6 +204,8 @@ test('eval stops a script at its first dialog, so a second one never blocks the 
 }) => {
   const page = await context.newPage();
 
+  page.on('dialog', () => undefined);
+
   await page.goto(`${origin()}/keys.html`);
 
   const run = await sidekick.start(page);

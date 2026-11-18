@@ -8,9 +8,6 @@ export const SCRIPT_TIMEOUT_MS = 30_000;
 
 export const MAX_RESULT_CHARS = 20_000;
 
-/** How long a script stopped by its dialog gets to wind down, while later dialogs are still dismissed. */
-export const DIALOG_SETTLE_MS = 2_000;
-
 interface RemoteObject {
   type: string;
   subtype?: string;
@@ -218,7 +215,7 @@ async function timed(run: Run, method: string, params: Record<string, unknown>) 
     }
 
     if (error instanceof ToolError && error.detail?.dialog !== undefined) {
-      await settled(running, Math.min(deadline - Date.now(), DIALOG_SETTLE_MS));
+      await settled(running, deadline - Date.now());
 
       throw error;
     }

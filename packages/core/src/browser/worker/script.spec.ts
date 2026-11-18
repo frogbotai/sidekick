@@ -4,7 +4,7 @@ import { EVAL_TAG } from '../../protocol';
 import { ToolError } from '../../tool/tool';
 import { later } from './fakes';
 import { drain, failure, sentMethods, setupBrowser } from './harness';
-import { DIALOG_SETTLE_MS, MAX_RESULT_CHARS, SCRIPT_TIMEOUT_MS } from './script';
+import { MAX_RESULT_CHARS, SCRIPT_TIMEOUT_MS } from './script';
 
 beforeEach(() => {
   vi.useFakeTimers();
@@ -167,7 +167,7 @@ describe('eval without a ref (sidekick-17 req. 15-17)', () => {
 
     const running = failure(tool('eval').execute({ tab_id: 1, script: 'confirm("x")' }, ctx));
 
-    await vi.advanceTimersByTimeAsync(DIALOG_SETTLE_MS);
+    await vi.advanceTimersByTimeAsync(SCRIPT_TIMEOUT_MS);
 
     const error = await running;
 
@@ -210,7 +210,7 @@ describe('eval without a ref (sidekick-17 req. 15-17)', () => {
     expect(sentMethods(cdp.sent)).toContain('Runtime.terminateExecution');
 
     dialog('two');
-    await vi.advanceTimersByTimeAsync(DIALOG_SETTLE_MS);
+    await vi.advanceTimersByTimeAsync(SCRIPT_TIMEOUT_MS);
 
     expect(await running).toMatchObject({ code: 'script_error', message: /saying “one”/ });
 
