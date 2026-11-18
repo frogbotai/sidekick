@@ -13,6 +13,7 @@ import {
 } from './fields';
 import { frameSources, stripFrames } from './frames';
 import { createIndicator, type Indicator } from './indicator';
+import { probePage } from './probe';
 import { domQuiet } from './quiet';
 import { createRefs, navigated } from './refs';
 import { fingerprintOf, isRedacted } from './roles';
@@ -161,6 +162,7 @@ export function createContent({
     'page.domQuiet': ({ quiet, cap }) => guard(() => domQuiet(quiet, cap)),
     'page.viewport': () => guard(() => ({ width: innerWidth, height: innerHeight })),
     'page.iframes': () => guard(frameSources),
+    'page.probe': ({ selectors }) => guard(() => probePage(selectors)),
     'page.strip': ({ reported, surplus }) => guard(() => stripFrames(reported, surplus)),
     'page.indicator': (state) =>
       guard(() => {
