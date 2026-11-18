@@ -104,7 +104,7 @@ export function createIndicator(onStop: () => void): Indicator {
         host.remove();
       }
 
-      if (hidden !== undefined) host.style.visibility = hidden ? 'hidden' : '';
+      if (hidden !== undefined || visible === true) host.style.visibility = hidden ? 'hidden' : '';
 
       if (point) cursor.style.transform = `translate(${point.x - 3}px, ${point.y - 2}px)`;
     },
