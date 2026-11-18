@@ -86,7 +86,7 @@ export function webmcpTools(env: BrowserEnv) {
         error: z.string().optional().describe('The message the page’s tool failed with.'),
         truncated: z.boolean().optional(),
       }),
-      permission: 'input',
+      permission: 'read',
       lock: byTab,
       execute: async ({ tab_id, action, tool: name, input, origin }, ctx) => {
         if (action === 'list') {

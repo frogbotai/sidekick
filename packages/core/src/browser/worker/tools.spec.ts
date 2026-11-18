@@ -25,7 +25,7 @@ const SAMPLES: Record<string, { input: Record<string, unknown>; resource: string
   select: { input: { tab_id: 1, ref: 'f0e1', values: ['a'] }, resource: 'https://example.com' },
   press: { input: { tab_id: 1, key: 'Enter' }, resource: 'https://example.com' },
   drag: { input: { tab_id: 1, from: 'f0e1', to: 'f0e2' }, resource: 'https://example.com' },
-  webmcp: { input: { tab_id: 1, action: 'call', tool: 'echo' }, resource: 'https://example.com' },
+  webmcp: { input: { tab_id: 1, action: 'list' }, resource: 'https://example.com' },
 };
 
 const disposers: (() => void)[] = [];
