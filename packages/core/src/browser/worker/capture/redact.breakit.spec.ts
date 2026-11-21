@@ -170,4 +170,17 @@ describe('re-check of the PR #33 fix round', () => {
       'https://a.test/?otpCode=[redacted]&authKey=[redacted]',
     );
   });
+
+  it('hides names that start with an acronym', () => {
+    const redactor = new SecretRedactor();
+
+    expect(
+      redactor.protectBody(
+        JSON.stringify({ OTPCode: '4444', PINCode: '6666' }),
+        'application/json',
+      ),
+    ).toBe('{"OTPCode":"[redacted]","PINCode":"[redacted]"}');
+
+    expect(redactor.redactText('4444 6666')).toBe('[redacted] [redacted]');
+  });
 });
