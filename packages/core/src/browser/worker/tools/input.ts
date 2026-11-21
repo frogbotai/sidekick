@@ -12,6 +12,7 @@ import {
   fromScreenshot,
   inspectTarget,
   offStop,
+  onPage,
   recheck,
   report,
   scrollIntoView,
@@ -36,7 +37,7 @@ async function focusTarget(act: Act, element: string | undefined) {
 
 async function stateAfter(act: Act, element: string) {
   try {
-    return await race(act.env.page.checkState(act.tabId, element), act.signal);
+    return await onPage(act, () => act.env.page.checkState(act.tabId, element));
   } catch (error) {
     if (!(error instanceof ToolError && error.code === 'stale_ref')) throw error;
 
@@ -53,7 +54,7 @@ async function stateAfter(act: Act, element: string) {
 async function check(act: Act, element: string, checked: boolean) {
   await inspectTarget(act, element);
 
-  const before = await race(act.env.page.checkState(act.tabId, element), act.signal);
+  const before = await onPage(act, () => act.env.page.checkState(act.tabId, element));
 
   if (before.checked === checked) {
     return untrusted({ ...(await finish(act, true)), checked, changed: false });
@@ -220,6 +221,7 @@ export function inputTools(env: BrowserEnv) {
 
         await inspectTarget(act, element);
         await recheck(act);
+        await env.sessions.ensure(tab_id, act.signal);
 
         const selected = await settleAfter(act, async (during) => {
           const chosen = await race(env.page.selectOptions(tab_id, element, values), during.signal);

@@ -25,9 +25,9 @@ export function createBrowserRuntime({
   tabs: Tabs;
   mac: boolean;
 }): BrowserRuntime {
-  const sessions = createSessions({ cdp, tabs, page });
-  const runs = createRuns(tabs);
   const dialogs = createDialogs({ cdp, tabs });
+  const sessions = createSessions({ cdp, tabs, page, keep: (tabId) => !!dialogs.get(tabId) });
+  const runs = createRuns(tabs);
   const settler = createSettler({ cdp, page, tabs, sessions, dialogs });
   const documents = new Map<number, number>();
   const env: BrowserEnv = {
