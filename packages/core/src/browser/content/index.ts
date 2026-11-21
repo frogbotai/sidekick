@@ -19,6 +19,7 @@ import { createRefs, navigated } from './refs';
 import { fingerprintOf, isRedacted } from './roles';
 import { frameBox, scrollBegin, scrollFallback, scrollFinish, scrollToElement } from './scroll';
 import { snapshotFrame } from './snapshot';
+import { readText } from './text';
 
 export type PageHandlers = Omit<Handlers<(typeof frameProtocol)['methods']>, 'frame.ping'>;
 
@@ -102,6 +103,13 @@ export function createContent({
 
         return { ...snapshot, doc, next: refs.next() };
       }),
+    'page.text': ({ ref, doc: expected, max_chars }) =>
+      guard(() =>
+        readText({
+          root: ref === undefined ? undefined : resolve(ref, expected),
+          maxChars: max_chars,
+        }),
+      ),
     'page.inspect': ({ ref, doc: expected }) =>
       guard(() => {
         const element = resolve(ref, expected);

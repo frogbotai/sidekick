@@ -8,10 +8,11 @@ import {
   NavSection,
   NavShell,
   RecentChats,
+  useIsMobile,
   useNavAdapter,
 } from '@frogbotai/ui';
 import type { ChatDocument, ChatPlatformAdapter } from '@frogbotai/ui/chat';
-import { SettingIcon } from '@frogbotai/ui/icons';
+import { SettingIcon, SidebarLeftIcon } from '@frogbotai/ui/icons';
 import { type ReactNode, useState } from 'react';
 
 import { CHAT_PATH, CHATS_PATH, SETTINGS_PATH } from './paths';
@@ -88,6 +89,7 @@ export interface PanelNavProps {
 
 /**
  * FrogBot's app sidebar over the panel: a drawer below 768px, a rail that collapses above it.
+ * Below 768px the bar draws the drawer's toggle, since `NavShell` leaves it to the host.
  * Picking an item closes the drawer, even when it is the page already open.
  */
 export function PanelNav({
@@ -100,9 +102,10 @@ export function PanelNav({
   children,
 }: PanelNavProps) {
   const [open, setOpen] = useState(() => initialOpen && !matchMedia(MOBILE).matches);
+  const isMobile = useIsMobile();
 
   const navigate = (next: string) => {
-    if (matchMedia(MOBILE).matches) setOpen(false);
+    if (isMobile) setOpen(false);
 
     onNavigate(next);
   };
@@ -135,6 +138,16 @@ export function PanelNav({
         />
         <main className="sidekick-panel__main">
           <div className="sidekick-panel__bar">
+            {isMobile && !open && (
+              <button
+                aria-label="Open navigation"
+                className="sidekick-panel__nav-toggle"
+                onClick={() => setOpen(true)}
+                type="button"
+              >
+                <SidebarLeftIcon className="fb-sidebar-toggle-icon" size={20} />
+              </button>
+            )}
             <span className="sidekick-panel__title">{title}</span>
           </div>
           {children}

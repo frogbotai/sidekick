@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Article</title>
+    <style>
+      body {
+        margin: 0;
+        font: 16px/1.5 sans-serif;
+      }
+      #fine {
+        position: fixed;
+        top: 100px;
+        left: 100px;
+        width: 40px;
+        height: 20px;
+        font-size: 6px;
+        padding: 0;
+      }
+      main {
+        margin: 160px 24px 0;
+      }
+    </style>
+  </head>
+  <body>
+    <nav><a href="/home">Home</a> <a href="/pricing">Pricing</a></nav>
+    <button id="fine" onclick="window.log.push('fine')">Fine print</button>
+    <main>
+      <h1>Install</h1>
+      <p>Run <a href="setup.sh">the script</a> first.</p>
+      <p style="display: none">Hidden paragraph</p>
+      <label>Password <input id="password" type="password" /></label>
+      <h2>Next</h2>
+      <p>Then open the app.</p>
+    </main>
+    <script>
+      window.log = [];
+    </script>
+  </body>
+</html>
