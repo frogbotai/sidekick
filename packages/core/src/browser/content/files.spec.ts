@@ -71,4 +71,46 @@ describe('setting files on a file input (16 req. 9–11)', () => {
     expect(inputNamed('Locked').files?.length ?? 0).toBe(0);
     expect(inputNamed('Resume').files?.length ?? 0).toBe(0);
   });
+
+  it('reaches a hidden file input through its label or the button beside it', async () => {
+    document.body.innerHTML = [
+      '<div><label for="resume" role="button">Upload resume</label>',
+      '<input id="resume" type="file" style="display:none" aria-label="Resume"></div>',
+      '<div class="dropzone"><button type="button">Choose photo</button>',
+      '<input type="file" hidden aria-label="Photo"></div>',
+    ].join('');
+
+    const { handlers, text } = setup();
+    const snapshot = await text();
+
+    expect(snapshot).not.toContain('Resume');
+
+    for (const [label, file] of [
+      ['Upload resume', RESUME],
+      ['Choose photo', PHOTO],
+    ] as const) {
+      const ref = refOf(snapshot, label);
+
+      expect(unwrap(await handlers['page.setFiles']({ ref, files: [file] }))).toBe(1);
+    }
+
+    expect(inputNamed('Resume').files?.[0]?.name).toBe('resume.pdf');
+    expect(inputNamed('Photo').files?.[0]?.name).toBe('photo.png');
+  });
+
+  it('refuses a button with two file inputs beside it, as it can’t tell which', async () => {
+    document.body.innerHTML = [
+      '<div><button type="button">Upload</button>',
+      '<input type="file" hidden aria-label="A"><input type="file" hidden aria-label="B"></div>',
+    ].join('');
+
+    const { handlers, text } = setup();
+    const ref = refOf(await text(), 'Upload');
+    const error = await failure(
+      (async () => unwrap(await handlers['page.setFiles']({ ref, files: [RESUME] })))(),
+    );
+
+    expect(error instanceof ToolError && error.code).toBe('invalid_target');
+    expect(inputNamed('A').files?.length ?? 0).toBe(0);
+  });
 });

@@ -68,6 +68,14 @@ describe('chat attachments for upload (16 req. 9)', () => {
     });
   });
 
+  it('resolves an { attachment } that carries other keys too', async () => {
+    const find = (name: string) => Promise.resolve(attachedFile(MESSAGES, name));
+
+    expect(
+      await withAttachments({ files: [{ attachment: 'photo.png', name: 'photo.png' }] }, find),
+    ).toEqual({ files: [{ name: 'photo.png', mimeType: 'image/png', data: 'cG5n' }] });
+  });
+
   it('fails with what to do when the chat has no file by that name', async () => {
     const error = await withAttachments({ files: [{ attachment: 'missing.pdf' }] }, () =>
       Promise.resolve(undefined),

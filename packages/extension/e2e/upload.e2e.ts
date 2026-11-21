@@ -57,4 +57,15 @@ test('uploads a file to a file input, and refuses a text field, no files and 6 M
 
   expect(await page.evaluate(() => window.changes)).toBe(1);
   await expect(page.locator('#chosen')).toHaveText('resume.pdf');
+
+  const cover = await run.call('upload', {
+    ref: refFor(snapshot, 'Upload cover letter'),
+    files: [{ name: 'cover.pdf', mimeType: 'application/pdf', data: btoa(PDF) }],
+  });
+
+  expect(cover).toMatchObject({ files: 1 });
+
+  expect(
+    await page.evaluate(() => document.querySelector<HTMLInputElement>('#cover')?.files?.[0]?.name),
+  ).toBe('cover.pdf');
 });
