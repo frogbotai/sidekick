@@ -72,6 +72,19 @@ function problemOf(key: string, value: unknown, providers: string[]): string | u
   return undefined;
 }
 
+const UNSAFE_KEY = '__proto__';
+
+function refuseUnsafeKey(value: unknown, ctx: z.RefinementCtx) {
+  if (typeof value === 'object' && value !== null && Object.hasOwn(value, UNSAFE_KEY)) {
+    ctx.addIssue({
+      code: 'custom',
+      message: `Nothing changed. ${problemOf(UNSAFE_KEY, undefined, [])}`,
+    });
+  }
+
+  return value;
+}
+
 async function readSettings() {
   const [themeValue, provider, mode, blocked, models, prompts] = await Promise.all([
     theme.get(),
@@ -140,7 +153,7 @@ export function connectionTools({
     description: `Reads Sidekick’s settings (${READABLE_SETTINGS.join(', ')}), or changes them with \`set\`. Agents may change only ${WRITABLE_SETTINGS.join(' and ')}; ask the person to change anything else in Sidekick’s settings. Change a setting only when the person asks, then tell them what changed.`,
     input: z.object({
       set: z
-        .record(z.string(), z.unknown())
+        .preprocess(refuseUnsafeKey, z.record(z.string(), z.unknown()))
         .optional()
         .describe(`Settings to change, as { "theme": "dark" }. Omit to read.`),
     }),

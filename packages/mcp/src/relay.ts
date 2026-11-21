@@ -182,13 +182,12 @@ export function createRelay({
     waiting = timer;
 
     void wake().catch(() => {
-      last = 'wake_failed';
-
       if (socket || waiting !== timer) return;
 
+      last = 'wake_failed';
       clearTimeout(timer);
       waiting = undefined;
-      giveUp(NO_CONNECTION);
+      giveUp(NO_CHROME);
     });
   };
 
@@ -207,7 +206,7 @@ export function createRelay({
       return textResult(disconnectedStatus({ hasToken, nextStep: nextStep(), helperVersion }));
     }
 
-    if (callOf(request, 'settings')) return textResult(nextStep(), true);
+    if (callOf(request, 'settings')) return textResult({ nextStep: nextStep() }, true);
 
     if (!unreachable) return undefined;
 
@@ -223,6 +222,20 @@ export function createRelay({
 
     return undefined;
   }
+
+  const answerQueuedOffline = () => {
+    const rest = queue.splice(0).filter((message) => {
+      const result = isRequest(message) ? offline(message, false) : undefined;
+
+      if (result === undefined) return true;
+
+      send({ jsonrpc: '2.0', id: message.id, result });
+
+      return false;
+    });
+
+    queue.push(...rest);
+  };
 
   const deliver = (message: Message) => {
     if (ready) {
@@ -331,6 +344,7 @@ export function createRelay({
     ready = false;
     last = 'dropped';
     drop();
+    answerQueuedOffline();
 
     if (queue.some(isRequest)) ensure();
   };
