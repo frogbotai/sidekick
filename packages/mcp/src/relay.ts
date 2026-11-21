@@ -184,6 +184,12 @@ export function createRelay({
     void wake().catch(() => {
       failed = true;
       last = 'wake_failed';
+
+      if (socket) return;
+
+      clearTimeout(waiting);
+      waiting = undefined;
+      giveUp(NO_CONNECTION);
     });
   };
 

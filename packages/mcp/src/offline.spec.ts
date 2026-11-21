@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { Cache, Cached } from './cache.js';
-import { CONNECT_TIMEOUT, createRelay, type Message, type RelaySocket } from './relay.js';
+import { createRelay, type Message, type RelaySocket } from './relay.js';
 import { OLD_EXTENSION } from './status.js';
 
 function memoryCache(initial: Cached = {}): Cache {
@@ -82,7 +82,6 @@ describe('status while Sidekick can’t connect', () => {
     relay.fromClient(initialize);
     relay.fromClient(list);
     await flush();
-    await vi.advanceTimersByTimeAsync(CONNECT_TIMEOUT);
 
     expect(namesOf(toClient[1])).toContain('status');
 
