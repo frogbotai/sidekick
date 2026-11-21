@@ -138,7 +138,13 @@ describe('emulate (sidekick-17 req. 20-26)', () => {
   it('forgets the last screenshot’s pixel map when the viewport changes', async () => {
     const { emulate, runtime } = await emulating();
 
-    runtime.env.screens.set(1, { offset: { x: 0, y: 0 }, scale: { x: 1, y: 1 }, document: 0 });
+    runtime.env.screens.set(1, {
+      offset: { x: 0, y: 0 },
+      scale: { x: 1, y: 1 },
+      image: { width: 1280, height: 800 },
+      document: 0,
+    });
+
     await emulate({ color_scheme: 'dark' });
 
     expect(runtime.env.screens.has(1)).toBe(true);

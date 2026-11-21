@@ -1,3 +1,5 @@
+import type { Probe } from './challenge';
+
 export interface Point {
   x: number;
   y: number;
@@ -69,8 +71,8 @@ export interface Tabs {
   close(tabId: number): Promise<void>;
   frames(tabId: number): Promise<FrameInfo[]>;
   waitForLoad(tabId: number, timeout: number): Promise<boolean>;
-  /** The window's visible tab as a JPEG resized to `size`. */
-  captureVisible(windowId: number, size: Size): Promise<Capture>;
+  /** The window's visible tab as a JPEG resized to `size`; `source` crops it first, in fractions of the tab (0 to 1). */
+  captureVisible(windowId: number, size: Size, source?: Rect): Promise<Capture>;
   /** A page in `sourceTabId` opened tab `id` (a link with a target, `window.open`); not a tab the user opened. */
   onOpened(listener: (tab: { id: number; sourceTabId: number }) => void): () => void;
   onGroupRemoved(listener: (groupId: number) => void): () => void;
@@ -138,6 +140,13 @@ export interface Snapshot {
   truncated: boolean;
 }
 
+/** The page's main text as markdown, cut at `max_chars`. */
+export interface PageText {
+  title: string;
+  text: string;
+  truncated: boolean;
+}
+
 /**
  * The content scripts, addressed per tab; refs name their frame. Methods throw `ToolError`
  * (`stale_ref`, `unsupported_page`) when the page can't answer.
@@ -149,6 +158,8 @@ export interface Page {
     tabId: number,
     input: { scope: 'viewport' | 'page'; ref?: string; max_chars: number },
   ): Promise<Snapshot>;
+  /** The top frame's main text, or the text of `ref` in its own frame. */
+  text(tabId: number, input: { ref?: string; max_chars: number }): Promise<PageText>;
   inspect(tabId: number, ref: string): Promise<RefInfo>;
   scrollTo(tabId: number, ref: string): Promise<Target>;
   /** With `end`, a field that didn't have focus gets its caret after its text, as `type` needs. */
@@ -168,6 +179,8 @@ export interface Page {
   domQuiet(tabId: number, input: { quiet: number; cap: number }): Promise<boolean>;
   viewport(tabId: number): Promise<Size>;
   iframes(tabId: number): Promise<{ frameId: number; sources: string[] }[]>;
+  /** The main frame's URL, title, text and which of `selectors` it has, for wall detection. */
+  probe(tabId: number, selectors: string[]): Promise<Probe>;
   strip(
     tabId: number,
     frameId: number,

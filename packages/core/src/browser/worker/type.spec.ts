@@ -84,7 +84,13 @@ describe('type (sidekick-17 req. 1-7)', () => {
     expect(log).not.toContain('page.selectContents');
     expect(log.indexOf('page.inspect')).toBeLessThan(log.indexOf('page.focus'));
     expect(log.indexOf('page.scrollTo')).toBeLessThan(log.indexOf('page.focus'));
-    expect(log.at(-2)).toBe('page.domQuiet');
+
+    expect(log.slice(log.indexOf('page.domQuiet'))).toEqual([
+      'page.domQuiet',
+      'tabs.get',
+      'page.probe',
+      'tabs.frames',
+    ]);
   });
 
   it('presses Enter after the text with submit', async () => {
