@@ -122,3 +122,52 @@ describe('around the PR #33 fixes', () => {
     expect(redactor.redactText('got frag_tok_ABCDEF123456')).toBe('got [redacted]');
   });
 });
+
+describe('re-check of the PR #33 fix round', () => {
+  it('does not remember a short status code from a response body', () => {
+    const redactor = new SecretRedactor();
+    const first: NetworkEntry = {
+      ...entry('https://a.test/status'),
+      response: {
+        status: 200,
+        statusText: 'OK',
+        headers: [],
+        body: { size: 31, mimeType: 'application/json', text: '{"code":"1000","msg":"success"}' },
+      },
+    };
+
+    protectEntry(first, redactor);
+
+    const stored = redactKnown(
+      protectEntry(entry('https://a.test/list?limit=1000'), redactor),
+      redactor,
+    );
+
+    expect(stored.request.url).toBe('https://a.test/list?limit=1000');
+    expect(redactor.redactText('1000 rows')).toBe('1000 rows');
+  });
+
+  it('hides camelCase credential names', () => {
+    const redactor = new SecretRedactor();
+    const body = redactor.protectBody(
+      JSON.stringify({
+        otpCode: '778899',
+        authKey: 'k3yk3yk3y',
+        oauthVerifier: 'verif1234',
+        author: 'Jane',
+      }),
+      'application/json',
+    );
+
+    expect(JSON.parse(body ?? '{}')).toEqual({
+      otpCode: '[redacted]',
+      authKey: '[redacted]',
+      oauthVerifier: '[redacted]',
+      author: 'Jane',
+    });
+
+    expect(redactor.protectUrl('https://a.test/?otpCode=778899&authKey=k3yk3yk3y')).toBe(
+      'https://a.test/?otpCode=[redacted]&authKey=[redacted]',
+    );
+  });
+});

@@ -32,10 +32,14 @@ export interface NetworkEntry {
   failure?: string;
 }
 
-function protectBody(body: CapturedBody | undefined, redactor: SecretRedactor) {
+function protectBody(
+  body: CapturedBody | undefined,
+  redactor: SecretRedactor,
+  from: 'request' | 'response',
+) {
   if (!body?.text) return body;
 
-  const text = redactor.protectBody(body.text, body.mimeType);
+  const text = redactor.protectBody(body.text, body.mimeType, from);
 
   return text === undefined
     ? { size: body.size, mimeType: body.mimeType, omitted: 'unparsed' as const }
@@ -45,8 +49,8 @@ function protectBody(body: CapturedBody | undefined, redactor: SecretRedactor) {
 /** Hides credentials by name: secret headers, cookies, URL fields, token-like paths and body fields. */
 export function protectEntry(entry: NetworkEntry, redactor: SecretRedactor): NetworkEntry {
   const { request, response } = entry;
-  const requestBody = protectBody(request.body, redactor);
-  const responseBody = protectBody(response?.body, redactor);
+  const requestBody = protectBody(request.body, redactor, 'request');
+  const responseBody = protectBody(response?.body, redactor, 'response');
 
   return {
     ...entry,

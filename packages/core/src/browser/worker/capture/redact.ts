@@ -1,12 +1,14 @@
 import {
   decode,
   isPlainFragment,
+  isSecretName,
   protectPathSegments,
   protectSearchParams,
   SECRET_NAME,
+  words,
 } from './redact-url';
 
-export { looksLikeToken, SECRET_NAME } from './redact-url';
+export { isSecretName, looksLikeToken, SECRET_NAME } from './redact-url';
 
 /** What a hidden credential is replaced with. */
 export const REDACTED = '[redacted]';
@@ -76,7 +78,7 @@ function restore(value: string) {
 
 function jsonField(key: string, inherited: JsonField, type: unknown, value: unknown): JsonField {
   if (inherited === 'secret') return 'secret';
-  if (!SECRET_NAME.test(key)) return inherited;
+  if (!isSecretName(key)) return inherited;
   if (key !== 'code') return 'secret';
   if (type === 'codeListing' && Array.isArray(value)) return 'codeListing';
   if (type === 'codeVoice' && typeof value === 'string') return 'codeVoice';
@@ -94,6 +96,7 @@ export class SecretRedactor {
   private readonly known = new Set<string>();
   private readonly namedFields = new Set<string>();
   private readonly always = new Set<string>();
+  private oneTime = true;
 
   protectHeaders(headers: readonly Header[]): Header[] {
     return headers.map(({ name, value }) => ({
@@ -135,8 +138,26 @@ export class SecretRedactor {
     return `${result}#${restore(this.protectFragment(raw.slice(hash + 1)))}`;
   }
 
-  /** The body with secret fields hidden, or `undefined` when it can't be parsed safely. */
-  protectBody(body: string, contentType: string | undefined): string | undefined {
+  /**
+   * The body with secret fields hidden, or `undefined` when it can't be parsed safely. Short
+   * one-time values, such as a typed PIN, are remembered only from what the page sends, since a
+   * response's `code` is usually a status.
+   */
+  protectBody(
+    body: string,
+    contentType: string | undefined,
+    from: 'request' | 'response' = 'request',
+  ): string | undefined {
+    this.oneTime = from === 'request';
+
+    try {
+      return this.protectParsedBody(body, contentType);
+    } finally {
+      this.oneTime = true;
+    }
+  }
+
+  private protectParsedBody(body: string, contentType: string | undefined) {
     const type = contentType?.toLowerCase() ?? '';
 
     if (type.includes('json')) {
@@ -221,7 +242,8 @@ export class SecretRedactor {
     if (!value) return value;
     if (!remember) return SENTINEL;
 
-    const oneTime = value.length >= MIN_ONE_TIME_LENGTH && ONE_TIME_FIELD.test(field);
+    const oneTime =
+      value.length >= MIN_ONE_TIME_LENGTH && this.oneTime && ONE_TIME_FIELD.test(words(field));
 
     if (oneTime) this.always.add(value);
     if (oneTime || value.length >= MIN_KNOWN_LENGTH) this.known.add(value);
@@ -383,7 +405,7 @@ export class SecretRedactor {
 
       const value = part.slice(start, end);
 
-      if (!value || !SECRET_NAME.test(name)) continue;
+      if (!value || !isSecretName(name)) continue;
 
       parts[index] = `${part.slice(0, start)}${this.scrub(value, name)}${part.slice(end)}`;
     }

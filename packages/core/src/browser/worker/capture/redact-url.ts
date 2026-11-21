@@ -2,6 +2,16 @@
 export const SECRET_NAME =
   /authori[sz]ation|(?:^|[-_.])o?auth(?:$|[-_.])|cookie|credential|csrf|xsrf|token|secret|session|password|passwd|pwd|passcode|(?:^|[-_.])t?otp(?:$|[-_.])|(?:^|[-_.])pin(?:$|[-_.])|(?:^|[-_.])code(?:$|[-_.])|(?:api|access|refresh)[-_.]?key|signature|(?:^|[-_.])sig(?:$|[-_.])/i;
 
+/** A name with its camelCase words split by `_`, so `otpCode` is matched like `otp_code`. */
+export function words(name: string) {
+  return name.replace(/([a-z\d])([A-Z])/g, '$1_$2');
+}
+
+/** Whether a header, field or cookie name says its value is a credential. */
+export function isSecretName(name: string) {
+  return SECRET_NAME.test(words(name));
+}
+
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /** Whether a URL path segment looks like a credential: a JWT, long hex, or long high-entropy base64. */
@@ -53,7 +63,7 @@ export function protectSearchParams(
   const result = new URLSearchParams();
 
   for (const [name, value] of params) {
-    result.append(name, value && SECRET_NAME.test(name) ? protect(name, value) : value);
+    result.append(name, value && isSecretName(name) ? protect(name, value) : value);
   }
 
   return result;
