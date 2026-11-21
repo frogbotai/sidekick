@@ -18,6 +18,7 @@ import {
   permissionModes,
   registerBuiltinAgents,
   registerBuiltinModes,
+  registerBuiltinSearchProviders,
   restrictStorageToTrustedContexts,
   serve,
   type Server,
@@ -25,7 +26,7 @@ import {
   sidekickProtocol,
   tools,
 } from '@frogbotai/sidekick-core';
-import { listenForConnect } from '@frogbotai/sidekick-core/frogbot';
+import { listenForConnect, registerFrogbotSearch } from '@frogbotai/sidekick-core/frogbot';
 import { defineBackground } from 'wxt/utils/define-background';
 
 import { answerTestRequests } from '../testTools';
@@ -78,6 +79,8 @@ export default defineBackground(() => {
 
   registerBuiltinAgents();
   registerBuiltinModes();
+  registerBuiltinSearchProviders();
+  registerFrogbotSearch();
 
   let server: Server<typeof sidekickProtocol> | undefined;
 

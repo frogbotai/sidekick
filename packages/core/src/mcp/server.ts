@@ -26,6 +26,8 @@ export interface McpServerOptions {
   /** The connection's run, started on its first browser call. */
   run: () => Promise<{ id: string }>;
   version: string;
+  /** The connection's own tools, as `status` and `settings`: listed beside the worker's, never in a run. */
+  extra?: ToolDefinition[];
 }
 
 const DATA_URI = /^data:([^;,]+);base64,(.*)$/s;
@@ -84,21 +86,24 @@ export function createMcpServer({
   client,
   run,
   version,
+  extra = [],
 }: McpServerOptions) {
   const server = new Server(
     { name: 'sidekick', title: 'FrogBot Sidekick', version },
     { capabilities: { tools: { listChanged: true } } },
   );
 
+  const own = new Map(extra.map((tool) => [tool.id, tool]));
+
   server.setRequestHandler('tools/list', () => ({
-    tools: tools
-      .list()
+    tools: [...tools.list().filter((tool) => !own.has(tool.id)), ...extra]
       .toSorted((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
       .map(listingOf),
   }));
 
   server.setRequestHandler('tools/call', async (request, ctx) => {
     const callID = `${connectionID}:${String(ctx.mcpReq.id)}`;
+    const tool = own.get(request.params.name);
     const token = ctx.mcpReq._meta?.progressToken;
     let progress = 0;
 
@@ -128,7 +133,7 @@ export function createMcpServer({
             tool: request.params.name,
             input: request.params.arguments ?? {},
           },
-          { run, signal: ctx.mcpReq.signal },
+          tool ? { tool, signal: ctx.mcpReq.signal } : { run, signal: ctx.mcpReq.signal },
         ),
       );
     } catch (error) {

@@ -7,6 +7,7 @@ import type { ToolCaller } from '../tool/bridge';
 import type { ToolDefinition } from '../tool/tool';
 import { findPairing } from './pairings';
 import { createMcpServer, KEEPALIVE } from './server';
+import { connectionTools } from './tools';
 import { type Socket, socketTransport } from './transport';
 
 /** How long a dial waits for the helper's hub to answer. */
@@ -65,7 +66,7 @@ export type McpConnectResult = Awaited<ReturnType<McpHandlers['mcp.connect']>>;
 export interface McpHostOptions {
   tools: Pick<Registry<ToolDefinition>, 'list' | 'subscribe'>;
   caller: ToolCaller;
-  worker: Pick<BrowserWorker, 'clientRun' | 'endClient'>;
+  worker: Pick<BrowserWorker, 'clientRun' | 'endClient' | 'clientGroup'>;
   /** The last-focused normal window, where a connection's later runs open their tab. */
   lastWindow: () => Promise<number | undefined>;
   version: string;
@@ -167,6 +168,7 @@ export function createMcpHost(options: McpHostOptions): McpHost {
       version,
       connectionID: connection.id,
       client: { id: pairing.id, name: pairing.name },
+      extra: connectionTools({ connectionID: connection.id, pairing, worker, version }),
       run: async () => {
         const run = await worker.clientRun({
           connectionID: connection.id,

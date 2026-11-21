@@ -86,10 +86,17 @@ export type ToolOutcome =
   | { error: { code: ToolErrorCode; message: string; detail?: ToolErrorDetail } };
 
 export interface ToolCaller {
-  /** Runs a worker tool in the run `run` gives; `signal` cancels it, as `cancel` does. */
+  /**
+   * Runs a worker tool in the run `run` gives; `signal` cancels it, as `cancel` does. `tool` is the
+   * resolved tool when the caller has its own, as an MCP connection's `status`.
+   */
   call: (
     call: ToolCall,
-    options?: { run?: () => Promise<{ id: string } | undefined>; signal?: AbortSignal },
+    options?: {
+      run?: () => Promise<{ id: string } | undefined>;
+      signal?: AbortSignal;
+      tool?: ToolDefinition;
+    },
   ) => Promise<ToolOutcome>;
   /** Aborts a call in flight and drops its asks. */
   cancel: (callID: string) => void;
@@ -105,8 +112,8 @@ export function createToolCaller({
   const calls = new Map<string, AbortController>();
 
   return {
-    call: async ({ tool: name, input, ...call }, { run, signal } = {}) => {
-      const tool = tools.get(name);
+    call: async ({ tool: name, input, ...call }, { run, signal, tool: own } = {}) => {
+      const tool = own ?? tools.get(name);
 
       if (!tool) throw new Error(`No worker tool named ${name}`);
 

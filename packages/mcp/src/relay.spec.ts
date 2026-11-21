@@ -7,11 +7,14 @@ import {
   CONNECT_TIMEOUT,
   createRelay,
   type Message,
+  NO_CHROME,
   NO_CONNECTION,
   NO_TOKEN,
   NOT_CONNECTED,
+  NOT_WOKEN,
   type RelaySocket,
 } from './relay.js';
+import { OLD_EXTENSION } from './status.js';
 
 const INIT_RESULT = {
   protocolVersion: '2025-11-25',
@@ -55,14 +58,18 @@ function workerSocket() {
   return socket;
 }
 
-function setup({ cache = memoryCache(), hasToken = true } = {}) {
+function setup({
+  cache = memoryCache(),
+  hasToken = true,
+  wake = vi.fn(() => Promise.resolve()),
+} = {}) {
   const toClient: Message[] = [];
-  const wake = vi.fn(() => Promise.resolve());
   const relay = createRelay({
     cache,
     send: (message) => void toClient.push(message),
     wake,
     hasToken,
+    helperVersion: '0.1.0',
   });
 
   return { relay, toClient, wake, cache };
@@ -305,5 +312,135 @@ describe('the relay', () => {
 
     expect(toClient.at(-1)).toMatchObject({ id: 1, result: { isError: true } });
     expect(second.sent[0]).toMatchObject({ method: 'initialize' });
+  });
+});
+
+const call = (id: number, name: string): Message => ({
+  jsonrpc: '2.0',
+  id,
+  method: 'tools/call',
+  params: { name, arguments: {} },
+});
+
+function textOf(message: Message | undefined) {
+  const result = message?.result as { isError?: boolean; content: { text: string }[] };
+
+  return { isError: result.isError ?? false, value: JSON.parse(result.content[0]?.text ?? '') };
+}
+
+function statusOf(toClient: Message[], id: number) {
+  return textOf(toClient.find((message) => message.id === id)).value as Record<string, unknown>;
+}
+
+describe('status and settings while disconnected', () => {
+  it('answers status without a token at once, with no wake', async () => {
+    const { relay, toClient, wake } = setup({ hasToken: false });
+
+    relay.fromClient(call(1, 'status'));
+    await flush();
+
+    expect(wake).not.toHaveBeenCalled();
+
+    expect(statusOf(toClient, 1)).toEqual({
+      connected: false,
+      pairingState: 'no_token',
+      nextStep: NO_TOKEN,
+      helperVersion: '0.1.0',
+    });
+  });
+
+  it('says a browser call connects Sidekick before any wake', async () => {
+    const { relay, toClient, wake } = setup();
+
+    relay.fromClient(call(1, 'status'));
+    await flush();
+
+    expect(wake).not.toHaveBeenCalled();
+    expect(statusOf(toClient, 1)).toMatchObject({ pairingState: 'token_set', nextStep: NOT_WOKEN });
+  });
+
+  it('gives the next step for a failed wake, a timed-out wake and a dropped socket', async () => {
+    const failing = setup({ wake: vi.fn(() => Promise.reject(new Error('no chrome'))) });
+
+    failing.relay.fromClient(call(1, 'snapshot'));
+    await flush();
+    failing.relay.fromClient(call(2, 'status'));
+    await flush();
+
+    expect(statusOf(failing.toClient, 2).nextStep).toBe(NO_CHROME);
+
+    await vi.advanceTimersByTimeAsync(CONNECT_TIMEOUT);
+    failing.relay.fromClient(call(3, 'status'));
+    await flush();
+
+    expect(statusOf(failing.toClient, 3).nextStep).toBe(NO_CHROME);
+
+    const silent = setup();
+
+    silent.relay.fromClient(call(1, 'snapshot'));
+    await flush();
+    await vi.advanceTimersByTimeAsync(CONNECT_TIMEOUT);
+    silent.relay.fromClient(call(2, 'status'));
+    await flush();
+
+    expect(statusOf(silent.toClient, 2).nextStep).toBe(NO_CONNECTION);
+
+    const dropped = setup();
+    const socket = workerSocket();
+
+    dropped.relay.attach(socket);
+    socket.drop();
+    dropped.relay.fromClient(call(1, 'status'));
+    await flush();
+
+    expect(statusOf(dropped.toClient, 1).nextStep).toBe(NOT_CONNECTED);
+    expect(dropped.wake).not.toHaveBeenCalled();
+  });
+
+  it('fails settings at once with the same next step', async () => {
+    const { relay, toClient, wake } = setup({ hasToken: false });
+
+    relay.fromClient(call(1, 'settings'));
+    await flush();
+
+    expect(wake).not.toHaveBeenCalled();
+
+    expect(toClient).toEqual([
+      {
+        jsonrpc: '2.0',
+        id: 1,
+        result: { isError: true, content: [{ type: 'text', text: NO_TOKEN }] },
+      },
+    ]);
+  });
+
+  it('forwards status and settings to a live socket, adding the versions to status', () => {
+    const { relay, toClient } = setup();
+    const socket = workerSocket();
+
+    relay.attach(socket);
+    relay.fromClient(call(1, 'status'));
+    relay.fromClient(call(2, 'settings'));
+    relay.fromClient(call(3, 'status'));
+
+    expect(socket.sent.map((message) => message.id)).toEqual([1, 2, 3]);
+
+    const status = (extensionVersion: string) => ({
+      content: [{ type: 'text', text: JSON.stringify({ connected: true, extensionVersion }) }],
+    });
+
+    socket.reply({ jsonrpc: '2.0', id: 1, result: status('0.9.0') });
+    socket.reply({ jsonrpc: '2.0', id: 2, result: { content: [{ type: 'text', text: '{}' }] } });
+    socket.reply({ jsonrpc: '2.0', id: 3, result: status('0.8.2') });
+
+    expect(statusOf(toClient, 1)).toEqual({
+      connected: true,
+      extensionVersion: '0.9.0',
+      helperVersion: '0.1.0',
+      versionMismatch: false,
+    });
+
+    expect(statusOf(toClient, 2)).toEqual({});
+    expect(statusOf(toClient, 3)).toMatchObject({ versionMismatch: true, nextStep: OLD_EXTENSION });
   });
 });
