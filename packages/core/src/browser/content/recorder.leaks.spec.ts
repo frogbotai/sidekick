@@ -133,6 +133,17 @@ describe('recorder privacy (sidekick-21, PR #38 review)', () => {
     expect(JSON.stringify(steps())).not.toMatch(/Elm|918273/);
   });
 
+  it('keeps a redacted value out of the name an aria-labelledby wrapper gives it', async () => {
+    document.body.innerHTML = `<div id="wrap">Code <textarea id="otp" aria-labelledby="wrap" autocomplete="one-time-code"></textarea></div>`;
+
+    const steps = await recording();
+
+    byId('otp').textContent = '918273';
+    type(byId('otp'), '918273');
+
+    expect(steps()).toEqual([expect.objectContaining({ name: 'Code', redacted: true })]);
+  });
+
   it('keeps fills of two different fields that share a duplicated id', async () => {
     document.body.innerHTML = `
       <form aria-label="Sign in"><input id="email" aria-label="Sign-in name"></form>

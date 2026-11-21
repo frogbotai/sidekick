@@ -146,7 +146,11 @@ function labelled(element: Element) {
 
   return ids
     .split(/\s+/)
-    .map((id) => scope.getElementById(id)?.textContent ?? '')
+    .map((id) => {
+      const label = scope.getElementById(id);
+
+      return label ? textWithoutControls(label) : '';
+    })
     .join(' ');
 }
 
@@ -159,10 +163,10 @@ function labels(element: Element) {
     return '';
   }
 
-  return Array.from(element.labels ?? [], labelText).join(' ');
+  return Array.from(element.labels ?? [], textWithoutControls).join(' ');
 }
 
-function labelText(label: HTMLLabelElement) {
+function textWithoutControls(label: Element) {
   const copy = label.cloneNode(true);
 
   if (!(copy instanceof Element)) return '';
