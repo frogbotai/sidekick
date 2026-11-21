@@ -245,4 +245,23 @@ describe('a dialog left open', () => {
 
     expect(result()?.value).toMatchObject({ error: { code: 'timeout' } });
   });
+
+  it('an action that ends on a dialog skips the wall probe, which the blocked page can’t answer', async () => {
+    const probe = vi.fn(NEVER);
+    const setup = await setupBrowser({ page: { probe } });
+    const { cdp } = setup;
+
+    cdp.replies.set('Input.dispatchMouseEvent', (params, tabId) => {
+      if (params.type === 'mouseReleased') cdp.openDialog(tabId, ALERT);
+
+      return {};
+    });
+
+    const clicked = settledWithin(callerOf(setup)('click', { tab_id: 1, ref: 'f0e1' }));
+
+    await vi.advanceTimersByTimeAsync(500);
+
+    expect(clicked()?.value).toMatchObject({ ok: { output: { dialog: ALERT } } });
+    expect(probe).not.toHaveBeenCalled();
+  });
 });
