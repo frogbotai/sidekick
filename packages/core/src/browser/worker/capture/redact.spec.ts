@@ -142,7 +142,7 @@ describe('URLs (sidekick-18 req. 6.3)', () => {
 
     expect(
       redactor.protectUrl('https://api.test/v1/items?access_token=xyz&page=2#id_token=abc&tab=1'),
-    ).toBe(`https://api.test/v1/items?access_token=${REDACTED}&page=2#id_token=${REDACTED}&tab=1`);
+    ).toBe(`https://api.test/v1/items?access_token=${REDACTED}&page=2#${REDACTED}`);
 
     expect(redactor.protectUrl('/relative?session=1')).toBe(`/relative?session=${REDACTED}`);
 
@@ -194,7 +194,7 @@ describe('URLs (sidekick-18 req. 6.3)', () => {
 
     expect(
       redactor.protectUrl('https://app.test/#/reset?token=Zk9pQ2xRb3dUa2VuX3NlY3JldA&x=1'),
-    ).toBe(`https://app.test/#/reset?token=${REDACTED}&x=1`);
+    ).toBe(`https://app.test/#/reset?${REDACTED}`);
 
     expect(redactor.redactText('Zk9pQ2xRb3dUa2VuX3NlY3JldA')).toBe(REDACTED);
   });
@@ -280,12 +280,16 @@ describe('bodies (sidekick-18 req. 6.4)', () => {
     );
   });
 
-  it('hides a PIN at any length', () => {
+  it('hides a PIN, and remembers it when it was sent as text', () => {
     const redactor = new SecretRedactor();
 
-    expect(redactor.protectBody(JSON.stringify({ pin: 1234, keep: 'x' }), 'application/json')).toBe(
+    expect(redactor.protectBody(JSON.stringify({ pin: 5678, keep: 'x' }), 'application/json')).toBe(
       `{"pin":"${REDACTED}","keep":"x"}`,
     );
+
+    expect(redactor.redactText('your pin is 5678')).toBe('your pin is 5678');
+
+    redactor.protectBody(JSON.stringify({ pin: '1234' }), 'application/json');
 
     expect(redactor.redactText('your pin is 1234')).toBe(`your pin is ${REDACTED}`);
   });
@@ -398,8 +402,8 @@ describe('remembered values (sidekick-18 req. 6, 7)', () => {
     );
 
     expect(redactor.redactText('order 1423 at 4:42')).toBe('order 1423 at 4:42');
-    expect(redactor.redactText('42')).toBe(REDACTED);
-    expect(redactor.redactScalar(42)).toBe(REDACTED);
+    expect(redactor.redactText('42')).toBe('42');
+    expect(redactor.redactScalar(42)).toBe(42);
     expect(redactor.redactScalar(true)).toBe(true);
   });
 

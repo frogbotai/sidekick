@@ -1,6 +1,16 @@
 /** Names of headers, fields and cookies whose values are credentials. */
 export const SECRET_NAME =
-  /auth(?:orization)?|cookie|credential|csrf|xsrf|token|secret|session|password|passwd|pwd|passcode|otp|(?:^|[-_.])pin(?:$|[-_.])|(?:^|[-_.])code(?:$|[-_.])|(?:api|access|refresh)[-_.]?key|signature|(?:^|[-_.])sig(?:$|[-_.])/i;
+  /authori[sz]ation|(?:^|[-_.])o?auth(?:$|[-_.])|cookie|credential|csrf|xsrf|token|secret|session|password|passwd|pwd|passcode|(?:^|[-_.])t?otp(?:$|[-_.])|(?:^|[-_.])pin(?:$|[-_.])|(?:^|[-_.])code(?:$|[-_.])|(?:api|access|refresh)[-_.]?key|signature|(?:^|[-_.])sig(?:$|[-_.])/i;
+
+/** A name with its camelCase words split by `_`, so `otpCode` is matched like `otp_code`. */
+export function words(name: string) {
+  return name.replace(/([a-z\d])([A-Z])/g, '$1_$2');
+}
+
+/** Whether a header, field or cookie name says its value is a credential. */
+export function isSecretName(name: string) {
+  return SECRET_NAME.test(words(name));
+}
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -53,44 +63,15 @@ export function protectSearchParams(
   const result = new URLSearchParams();
 
   for (const [name, value] of params) {
-    result.append(name, value && SECRET_NAME.test(name) ? protect(name, value) : value);
+    result.append(name, value && isSecretName(name) ? protect(name, value) : value);
   }
 
   return result;
 }
 
-/**
- * Replaces secret-named `name=value` pairs in a URL fragment, including the query of a hash route
- * such as `#/reset?token=…`, leaving route and anchor text.
- */
-export function protectFragment(
-  fragment: string,
-  protect: (name: string, value: string) => string,
-): string {
-  const query = fragment.indexOf('?');
+/** Whether a URL fragment is a plain route or anchor: no `=` and no token-like part, after decoding. */
+export function isPlainFragment(fragment: string): boolean {
+  const decoded = decode(fragment);
 
-  if (query >= 0) {
-    const params = new URLSearchParams(fragment.slice(query + 1));
-
-    return `${protectFragment(fragment.slice(0, query), protect)}?${protectSearchParams(params, protect).toString()}`;
-  }
-
-  return fragment
-    .split('&')
-    .map((part) => {
-      const separator = part.indexOf('=');
-
-      if (separator < 1) return part;
-
-      const entry = new URLSearchParams(part).entries().next().value;
-
-      if (!entry) return part;
-
-      const [name, value] = entry;
-
-      if (!/^[\w.-]+$/.test(name) || !SECRET_NAME.test(name) || !value) return part;
-
-      return `${part.slice(0, separator + 1)}${protect(name, value)}`;
-    })
-    .join('&');
+  return !decoded.includes('=') && !decoded.split(/[/?&#;]/).some(looksLikeToken);
 }

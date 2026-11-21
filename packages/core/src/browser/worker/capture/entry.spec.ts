@@ -107,7 +107,7 @@ describe('a stored network entry (sidekick-18 req. 6, 7)', () => {
     for (const secret of Object.values(secrets)) expect(stored).not.toContain(secret);
 
     expect(json?.request.url).toBe(
-      `https://app.test/api/${REDACTED}/save?access_token=${REDACTED}#id_token=${REDACTED}`,
+      `https://app.test/api/${REDACTED}/save?access_token=${REDACTED}#${REDACTED}`,
     );
 
     expect(responseJson(json)).toEqual({ error: 'Title is required', echo: REDACTED });
@@ -197,7 +197,7 @@ describe('a stored network entry (sidekick-18 req. 6, 7)', () => {
     ]);
 
     expect(stored?.request.url).toBe(
-      `https://docs.example.com/echo?api_key=${REDACTED}#signature=${REDACTED}`,
+      `https://docs.example.com/echo?api_key=${REDACTED}#${REDACTED}`,
     );
 
     expect(responseJson(stored)).toEqual({
