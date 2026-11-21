@@ -73,6 +73,7 @@ export const TOOL_ERROR_CODES = [
   'not_in_group',
   'unsupported_page',
   'invalid_target',
+  'invalid_input',
   'input_mismatch',
   'not_editable',
   'dialog_open',

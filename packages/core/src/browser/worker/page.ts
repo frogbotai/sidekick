@@ -359,6 +359,11 @@ export function chromePage({ tabs, inject, refs = memoryRefStore() }: ChromePage
 
       return call(tabId, frameId, 'page.selectOptions', { ...input, values }, { ref });
     },
+    setFiles: async (tabId, ref, files) => {
+      const { frameId, input } = byRef(tabId, ref);
+
+      return call(tabId, frameId, 'page.setFiles', { ...input, files }, { ref });
+    },
     scrollStart: async (tabId, { ref, direction, amount }) => {
       if (ref !== undefined) {
         const { frameId, input } = byRef(tabId, ref);

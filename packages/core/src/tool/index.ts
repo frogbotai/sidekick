@@ -1,3 +1,5 @@
+export type { AttachmentLookup } from './attachment';
+export { attachedFile, withAttachments } from './attachment';
 export type {
   BridgeCall,
   BridgeHandlers,

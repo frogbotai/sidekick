@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Job application</title>
+  </head>
+  <body>
+    <main>
+      <h1>Job application</h1>
+      <label>Full name <input id="name" /></label>
+      <label>Resume <input id="resume" type="file" /></label>
+      <p id="chosen">No file chosen</p>
+    </main>
+    <script>
+      window.changes = 0;
+
+      document.getElementById('resume').addEventListener('change', (event) => {
+        window.changes += 1;
+        document.getElementById('chosen').textContent = Array.from(event.target.files)
+          .map((file) => file.name)
+          .join(', ');
+      });
+    </script>
+  </body>
+</html>

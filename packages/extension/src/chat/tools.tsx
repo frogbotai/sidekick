@@ -319,6 +319,23 @@ export const TOOL_LINES: Record<string, (call: ToolCall) => ToolLine> = {
       failed: 'Read the dialog',
     };
   },
+  upload: ({ input, metadata }) => {
+    const names = (Array.isArray(input.files) ? input.files : []).flatMap((file) => {
+      const name = text(record(file).name) ?? text(record(file).attachment);
+
+      return name ? [name] : [];
+    });
+
+    const what = names.length === 1 ? `“${short(names[0] ?? '')}”` : plural(names.length, 'file');
+
+    return {
+      icon: 'upload',
+      running: `Attaching ${what}`,
+      done: `Attached ${what}`,
+      failed: `Attach ${what}`,
+      subtitle: text(metadata.target),
+    };
+  },
   web_search: ({ input, output }) => {
     const query = `“${short(text(input.query) ?? '')}”`;
     const results = Array.isArray(output.results) ? output.results.map(record) : [];

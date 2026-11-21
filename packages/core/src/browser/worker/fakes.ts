@@ -1,5 +1,5 @@
 import type { PermissionRequest, ToolContext, ToolMetadata } from '../../tool/tool';
-import type { Cdp, CdpEvent, Commit, Page, Size, TabInfo, Tabs } from './types';
+import type { Cdp, CdpEvent, Commit, FileData, Page, Size, TabInfo, Tabs } from './types';
 
 export type Log = string[];
 
@@ -212,6 +212,7 @@ export function fakePage(log: Log, overrides: Partial<Page> = {}): Page {
     })),
     checkState: later(() => ({ role: 'checkbox', checked: false, disabled: false })),
     selectOptions: later((_tabId: number, _ref: string, values: string[]) => values),
+    setFiles: later((_tabId: number, _ref: string, files: FileData[]) => files.length),
     scrollStart: later(() => ({
       token: 't1',
       container: 'document',

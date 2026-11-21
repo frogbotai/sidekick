@@ -188,6 +188,18 @@ const CASES: [string, Done, string, string][] = [
   ['dialog', { input: { action: 'accept' } }, 'Accepting the dialog', 'Accepted the dialog'],
   ['dialog', { input: { action: 'dismiss' } }, 'Dismissing the dialog', 'Dismissed the dialog'],
   [
+    'upload',
+    { input: { files: [{ name: 'resume.pdf', mimeType: 'application/pdf', data: 'AA==' }] } },
+    'Attaching “resume.pdf”',
+    'Attached “resume.pdf”',
+  ],
+  [
+    'upload',
+    { input: { files: [{ attachment: 'a.png' }, { attachment: 'b.png' }] } },
+    'Attaching 2 files',
+    'Attached 2 files',
+  ],
+  [
     'web_search',
     { input: { query: 'chrome 142' }, output: { results: [{ url: 'https://a.test/' }] } },
     'Searching “chrome 142”',
@@ -222,6 +234,7 @@ describe('tool cards', () => {
         'press',
         'drag',
         'dialog',
+        'upload',
         'web_search',
         'webfetch',
       ].toSorted(),

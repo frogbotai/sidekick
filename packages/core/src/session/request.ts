@@ -49,7 +49,8 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-function dataURL(uri: string) {
+/** A base64 `data:` URL's media type and data; `undefined` for anything else. */
+export function dataURL(uri: string) {
   const match = /^data:([^;,]+)?(;base64)?,(.*)$/s.exec(uri);
 
   if (!match?.[2]) return undefined;

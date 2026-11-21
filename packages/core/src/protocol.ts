@@ -240,6 +240,14 @@ export const frameProtocol = defineProtocol({
       input: z.object({ ref, doc, values: z.array(z.string()) }),
       output: outcome(z.array(z.string())),
     },
+    'page.setFiles': {
+      input: z.object({
+        ref,
+        doc,
+        files: z.array(z.object({ name: z.string(), mimeType: z.string(), data: z.string() })),
+      }),
+      output: outcome(z.int().check(z.nonnegative())),
+    },
     'page.scrollStart': {
       input: z.object({
         ref: z.optional(ref),
