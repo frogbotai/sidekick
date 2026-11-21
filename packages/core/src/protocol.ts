@@ -196,6 +196,10 @@ export const frameProtocol = defineProtocol({
         }),
       ),
     },
+    'page.text': {
+      input: z.object({ ref: z.optional(ref), doc, max_chars: z.int().check(z.positive()) }),
+      output: outcome(z.object({ title: z.string(), text: z.string(), truncated: z.boolean() })),
+    },
     'page.inspect': {
       input: byRef,
       output: outcome(
@@ -265,6 +269,20 @@ export const frameProtocol = defineProtocol({
     },
     'page.viewport': { input: z.object({}), output: outcome(size) },
     'page.iframes': { input: z.object({}), output: outcome(z.array(z.string())) },
+    'page.probe': {
+      input: z.object({ selectors: z.array(z.string()) }),
+      output: outcome(
+        z.object({
+          url: z.string(),
+          title: z.string(),
+          text: z.string(),
+          textLength: z.number(),
+          scriptSrcs: z.array(z.string()),
+          selectors: z.array(z.string()),
+          visibleSelectors: z.array(z.string()),
+        }),
+      ),
+    },
     'page.strip': {
       input: z.object({ reported: z.array(z.string()), surplus: z.int().check(z.positive()) }),
       output: outcome(z.array(z.string())),
