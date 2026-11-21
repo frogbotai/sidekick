@@ -38,6 +38,19 @@ export const dialog = z.object({
   defaultValue: z.string().describe('A prompt’s prefilled text; empty for the other types.'),
 });
 
+export const challenge = z
+  .object({
+    vendor: z.string(),
+    kind: z.enum(['non-interactive', 'interactive', 'block']),
+    status: z.enum(['cleared', 'blocked']),
+    recommendation: z.enum(['continue', 'handoff', 'stop']),
+    message: z.string(),
+  })
+  .optional()
+  .describe(
+    'Only when the page is a captcha, bot check or block page. handoff: stop and ask the person to solve it in this tab. stop: the site refused the visit; don’t retry or reload. continue: a check cleared by itself.',
+  );
+
 export const action = z.object({
   url: z.string(),
   navigated: z
@@ -57,6 +70,7 @@ export const action = z.object({
     .describe(
       'The dialog waiting on the tab when the action ended. Answer it with the dialog tool before anything else on this tab.',
     ),
+  challenge,
 });
 
 export const tab = z.object({

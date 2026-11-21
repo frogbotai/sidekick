@@ -1,3 +1,5 @@
+import type { Probe } from './challenge';
+
 export interface Point {
   x: number;
   y: number;
@@ -176,6 +178,8 @@ export interface Page {
   domQuiet(tabId: number, input: { quiet: number; cap: number }): Promise<boolean>;
   viewport(tabId: number): Promise<Size>;
   iframes(tabId: number): Promise<{ frameId: number; sources: string[] }[]>;
+  /** The main frame's URL, title, text and which of `selectors` it has, for wall detection. */
+  probe(tabId: number, selectors: string[]): Promise<Probe>;
   strip(
     tabId: number,
     frameId: number,
