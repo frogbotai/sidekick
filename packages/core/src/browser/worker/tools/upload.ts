@@ -78,7 +78,7 @@ export function uploadTools(env: BrowserEnv) {
     defineTool({
       id: 'upload',
       description:
-        'Attach files to a file input (<input type=file>), by ref, then fire its input and change events. Each file is base64 with its name and type, or { attachment } naming a file the user attached in this chat. At most 5 MiB per call.',
+        'Attach files to a file input, by the ref of the input, its label or its upload button (the input itself is often hidden), then fire its input and change events. Each file is base64 with its name and type, or { attachment } naming a file the user attached in this chat. At most 5 MiB per call.',
       input: z.object({
         tab_id: tabId,
         ref,

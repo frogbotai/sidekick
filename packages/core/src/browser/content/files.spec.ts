@@ -98,11 +98,25 @@ describe('setting files on a file input (16 req. 9–11)', () => {
     expect(inputNamed('Photo').files?.[0]?.name).toBe('photo.png');
   });
 
-  it('refuses a button with two file inputs beside it, as it can’t tell which', async () => {
-    document.body.innerHTML = [
-      '<div><button type="button">Upload</button>',
-      '<input type="file" hidden aria-label="A"><input type="file" hidden aria-label="B"></div>',
-    ].join('');
+  it.each([
+    [
+      'a button with two file inputs beside it',
+      '<div><button type="button">Upload</button><input type="file" hidden aria-label="A"><input type="file" hidden aria-label="B"></div>',
+    ],
+    [
+      'a text field beside the page’s only file input',
+      '<div><input aria-label="Upload"><input type="file" hidden aria-label="A"></div>',
+    ],
+    [
+      'a label for a text field beside a file input',
+      '<div><label for="t">Upload</label><input id="t"><input type="file" hidden aria-label="A"></div>',
+    ],
+    [
+      'a button far from the file input',
+      '<div><input type="file" hidden aria-label="A"><div><div><div><div><button type="button">Upload</button></div></div></div></div></div>',
+    ],
+  ])('refuses %s, setting nothing', async (_case, html) => {
+    document.body.innerHTML = html;
 
     const { handlers, text } = setup();
     const ref = refOf(await text(), 'Upload');

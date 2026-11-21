@@ -27,12 +27,10 @@ export function attachedFile(
 }
 
 function isAttachment(value: object): value is { attachment: string } {
-  return (
-    'attachment' in value && typeof value.attachment === 'string' && Object.keys(value).length === 1
-  );
+  return 'attachment' in value && typeof value.attachment === 'string';
 }
 
-/** `input` with every `{ attachment: name }` replaced by that chat file's `{ name, mimeType, data }`. */
+/** `input` with every object naming `{ attachment }` replaced by that chat file's `{ name, mimeType, data }`. */
 export async function withAttachments(input: unknown, find: AttachmentLookup): Promise<unknown> {
   if (Array.isArray(input)) return Promise.all(input.map((item) => withAttachments(item, find)));
 
