@@ -412,9 +412,74 @@ describe('status and settings while disconnected', () => {
       {
         jsonrpc: '2.0',
         id: 1,
-        result: { isError: true, content: [{ type: 'text', text: NO_TOKEN }] },
+        result: {
+          isError: true,
+          content: [{ type: 'text', text: JSON.stringify({ nextStep: NO_TOKEN }) }],
+        },
       },
     ]);
+  });
+
+  it('answers a status queued on a socket that closes before it is ready, without a wake', async () => {
+    const { relay, toClient, wake } = setup({
+      cache: memoryCache({ protocolVersion: '2025-11-25', initialize: INIT_RESULT }),
+    });
+
+    relay.fromClient(initialize);
+    await flush();
+
+    const socket = workerSocket();
+
+    relay.attach(socket);
+    relay.fromClient(call(5, 'status'));
+    socket.close();
+    await vi.advanceTimersByTimeAsync(1000);
+
+    expect(wake).not.toHaveBeenCalled();
+    expect(statusOf(toClient, 5)).toMatchObject({ connected: false, nextStep: NOT_CONNECTED });
+  });
+
+  it('gives queued browser calls the same open-Chrome wording status gives for a failed wake', async () => {
+    const { relay, toClient } = setup({ wake: vi.fn(() => Promise.reject(new Error('ENOENT'))) });
+
+    relay.fromClient(call(1, 'snapshot'));
+    await flush();
+    relay.fromClient(call(2, 'status'));
+    await flush();
+
+    expect(statusOf(toClient, 2).nextStep).toBe(NO_CHROME);
+
+    const snapshot = toClient.find((message) => message.id === 1)?.result as {
+      content: { text: string }[];
+    };
+
+    expect(snapshot.content[0]?.text).toBe(NO_CHROME);
+  });
+
+  it('doesn’t report a failed wake while a newer wake is still in progress', async () => {
+    let rejectFirst: (error: Error) => void = () => undefined;
+    const wake = vi
+      .fn<() => Promise<void>>()
+      .mockImplementationOnce(
+        () =>
+          new Promise((_resolve, reject) => {
+            rejectFirst = reject;
+          }),
+      )
+      .mockImplementation(() => new Promise(() => undefined));
+
+    const { relay, toClient } = setup({ wake });
+
+    relay.fromClient(call(1, 'snapshot'));
+    await flush();
+    await vi.advanceTimersByTimeAsync(CONNECT_TIMEOUT);
+    relay.fromClient(call(2, 'snapshot'));
+    await flush();
+    rejectFirst(new Error('late'));
+    await flush();
+    relay.fromClient(call(3, 'status'));
+
+    expect(statusOf(toClient, 3).nextStep).toBe(NO_CONNECTION);
   });
 
   it('forwards status and settings to a live socket, adding the versions to status', () => {

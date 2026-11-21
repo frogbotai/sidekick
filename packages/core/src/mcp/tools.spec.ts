@@ -172,6 +172,23 @@ describe('the settings tool', () => {
     expect(await theme.get()).toBe('system');
   });
 
+  it('refuses a __proto__ key beside an allowed one by name and changes nothing', async () => {
+    const { call } = await connect();
+
+    const result = await call(
+      'settings',
+      JSON.parse('{"set":{"__proto__":{"permissionMode":"auto"},"theme":"dark"}}') as Record<
+        string,
+        unknown
+      >,
+    );
+
+    expect(result.isError).toBe(true);
+    expect(result.text).toContain('__proto__: unknown setting');
+    expect(await theme.get()).toBe('system');
+    expect(await permissionMode.get()).toBe('build');
+  });
+
   it('lists every bad value at once and changes nothing', async () => {
     const { call } = await connect();
 
