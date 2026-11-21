@@ -174,6 +174,7 @@ export function fakePage(log: Log, overrides: Partial<Page> = {}): Page {
       redacted: 0,
       truncated: false,
     })),
+    text: later(() => ({ title: 'Example', text: '# Example\n\nHello.', truncated: false })),
     inspect: later(() => ({
       frameId: 0,
       frameOrigin: 'https://example.com',
