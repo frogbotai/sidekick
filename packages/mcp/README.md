@@ -13,9 +13,9 @@ It adds Sidekick to the agents' user configs: OpenCode, Claude Code, Codex and C
 | Flag                  | What it does                                                      |
 | --------------------- | ----------------------------------------------------------------- |
 | `-a, --agent <name>…` | Only these: `opencode`, `claude-code`, `codex`, `cursor`, or `*`. |
-| `-y, --yes`           | No picker: the calling agent, else every installed agent.         |
+| `-y, --yes`           | No picker: the calling agent only; nothing without one.           |
 
-Edits keep comments, formatting and every other server. Before its first change to a file, `install` copies it to `<file>.sidekick-backup`. A file it can't parse is left alone and reported, and the command exits 1. An entry named `sidekick` that it didn't write is kept as is.
+Edits keep comments, formatting and every other server. Before it changes a file, `install` copies it to `<file>.sidekick-backup`, and `uninstall` puts those bytes back when nothing else changed. A file it can't parse is left alone and reported, and the command exits 1. An entry named `sidekick` that it didn't write is kept as is.
 
 `npx -y @frogbotai/sidekick-mcp uninstall` removes the entries `install` wrote, and leaves any you changed. `npx -y @frogbotai/sidekick-mcp status` shows each agent and the pairing key, and writes nothing.
 

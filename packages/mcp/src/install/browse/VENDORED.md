@@ -7,7 +7,7 @@ Changes from the original:
 - One entry shape per call (`ConfigEntry`), so the agent table lives in `../agents.ts`.
 - JSON and TOML only: none of the agents Sidekick writes to uses YAML yet.
 - A JSON insertion keeps the formatting of every other line, and an uninstall restores the original bytes.
-- The first write to a file copies it to `<file>.sidekick-backup`, once.
+- Each install copies the file to `<file>.sidekick-backup` first, and an uninstall puts those bytes back when the file holds only what the install added. A link to a missing file writes the file it names.
 - A file that doesn't parse returns `invalid` instead of throwing.
 
 ```
