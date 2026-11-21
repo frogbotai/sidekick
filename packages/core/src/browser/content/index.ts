@@ -13,11 +13,13 @@ import {
 } from './fields';
 import { frameSources, stripFrames } from './frames';
 import { createIndicator, type Indicator } from './indicator';
+import { probePage } from './probe';
 import { domQuiet } from './quiet';
 import { createRefs, navigated } from './refs';
 import { fingerprintOf, isRedacted } from './roles';
 import { frameBox, scrollBegin, scrollFallback, scrollFinish, scrollToElement } from './scroll';
 import { snapshotFrame } from './snapshot';
+import { readText } from './text';
 
 export type PageHandlers = Omit<Handlers<(typeof frameProtocol)['methods']>, 'frame.ping'>;
 
@@ -116,6 +118,13 @@ export function createContent({
 
         return { ...snapshot, doc, next: refs.next() };
       }),
+    'page.text': ({ ref, doc: expected, max_chars }) =>
+      guard(() =>
+        readText({
+          root: ref === undefined ? undefined : resolve(ref, expected),
+          maxChars: max_chars,
+        }),
+      ),
     'page.inspect': ({ ref, doc: expected }) =>
       guard(() => {
         const element = resolve(ref, expected);
@@ -176,6 +185,7 @@ export function createContent({
     'page.domQuiet': ({ quiet, cap }) => guard(() => domQuiet(quiet, cap)),
     'page.viewport': () => guard(() => ({ width: innerWidth, height: innerHeight })),
     'page.iframes': () => guard(frameSources),
+    'page.probe': ({ selectors }) => guard(() => probePage(selectors)),
     'page.strip': ({ reported, surplus }) => guard(() => stripFrames(reported, surplus)),
     'page.indicator': (state) =>
       guard(async () => {

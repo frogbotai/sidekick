@@ -1,5 +1,5 @@
 import { readFile } from 'node:fs/promises';
-import { createServer } from 'node:http';
+import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import path from 'node:path';
 
@@ -41,10 +41,22 @@ function fileFor(pathname: string) {
   return name.startsWith('bundles/') ? path.join(BUNDLES, name.slice(8)) : path.join(PAGES, name);
 }
 
+function listen(server: Server, host: string) {
+  return new Promise<void>((resolve, reject) => {
+    server.once('error', reject);
+
+    server.listen(0, host, () => {
+      server.off('error', reject);
+      resolve();
+    });
+  });
+}
+
 /**
  * Serves `e2e/fixtures` and the editor bundle on one port, reached as `localhost` and `127.0.0.1`
- * (two origins); `/redirect?to=<url>` answers 302, and `/redirect?other=<path>` redirects to that
- * path on `127.0.0.1`.
+ * (two origins), and on IPv4 alone where the machine has no IPv6, as some cloud containers don't;
+ * `/redirect?to=<url>` answers 302, and `/redirect?other=<path>` redirects to that path on
+ * `127.0.0.1`.
  */
 export default async function setup() {
   await buildEditors();
@@ -79,7 +91,11 @@ export default async function setup() {
     );
   });
 
-  await new Promise<void>((resolve) => server.listen(0, '::', resolve));
+  await listen(server, '::').catch((error: NodeJS.ErrnoException) => {
+    if (error.code !== 'EAFNOSUPPORT') throw error;
+
+    return listen(server, '127.0.0.1');
+  });
 
   const { port } = server.address() as AddressInfo;
 
