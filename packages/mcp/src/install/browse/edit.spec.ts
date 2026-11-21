@@ -225,7 +225,7 @@ describe('writes', () => {
     expect(JSON.parse(read(entry.file))).toEqual({ mcpServers: { sidekick: value } });
   });
 
-  it('backs up once before the first write, and keeps the mode', () => {
+  it('backs up before an install, keeps that backup on uninstall, and keeps the mode', () => {
     const before = '{ "mcpServers": {} }\n';
     const entry = json(file('mcp.json', before));
 

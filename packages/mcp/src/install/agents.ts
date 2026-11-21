@@ -47,21 +47,20 @@ export function agentName(id: string): AgentName | undefined {
   return Object.hasOwn(ALIASES, id) ? ALIASES[id] : undefined;
 }
 
-/** The agent running this command, from the markers its shell sets. A plain terminal is none. */
+/**
+ * The agent running this command, from the markers its shell sets. A plain terminal is none.
+ * Claude Code's markers come last, because an agent started from a Claude Code shell inherits them.
+ */
 export function callingAgent(env: NodeJS.ProcessEnv): AgentName | undefined {
-  if (env.CLAUDECODE === '1' || env.CLAUDE_CODE_ENTRYPOINT) return 'claude-code';
-
   if (env.CODEX_THREAD_ID) return 'codex';
-
-  if (env.CURSOR_AGENT) return 'cursor';
-
-  const named = agentName(env.AI_AGENT?.split('@')[0] ?? '') ?? agentName(env.AGENT ?? '');
-
-  if (named) return named;
 
   if (env.OPENCODE === '1' || env.OPENCODE_SESSION_ID) return 'opencode';
 
-  return undefined;
+  if (env.CURSOR_AGENT) return 'cursor';
+
+  if (env.CLAUDECODE === '1' || env.CLAUDE_CODE_ENTRYPOINT) return 'claude-code';
+
+  return agentName(env.AI_AGENT?.split('@')[0] ?? '') ?? agentName(env.AGENT ?? '');
 }
 
 /** Whether `binary` is on `PATH`, with Windows' extensions. */

@@ -13,9 +13,9 @@ It adds Sidekick to the agents' user configs: OpenCode, Claude Code, Codex and C
 | Flag                  | What it does                                                      |
 | --------------------- | ----------------------------------------------------------------- |
 | `-a, --agent <name>…` | Only these: `opencode`, `claude-code`, `codex`, `cursor`, or `*`. |
-| `-y, --yes`           | No picker: only the calling agent; with none, nothing.            |
+| `-y, --yes`           | No picker: the calling agent only; nothing without one.           |
 
-Edits keep comments, formatting and every other server. Before its first change to a file, `install` copies it to `<file>.sidekick-backup`. A file it can't parse is left alone and reported, and the command exits 1. An entry named `sidekick` that it didn't write is kept as is.
+Edits keep comments, formatting and every other server. Before it changes a file, `install` copies it to `<file>.sidekick-backup`, and `uninstall` puts those bytes back when nothing else changed. A file it can't parse is left alone and reported, and the command exits 1. An entry named `sidekick` that it didn't write is kept as is.
 
 Then `install` pairs this computer with Sidekick. It opens a page in Chrome that names the computer and the agents, with an **Approve** button. One click there writes this computer's key to `~/.config/sidekick/pairing.json` (`%APPDATA%\sidekick\pairing.json` on Windows), readable only by you, so no agent config holds a secret. The request works once and expires after 10 minutes. If Chrome can't open, or Sidekick's page doesn't load within 30 seconds, the configs are still written: run `install` again to pair. Settings lists the pairing under **Connected agents**, named after the computer, where you can revoke it. After revoking it there, run `uninstall`, then `install`, to pair again.
 

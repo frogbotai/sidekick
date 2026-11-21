@@ -153,10 +153,11 @@ function insertJson(before: string, keys: readonly string[], value: unknown) {
     trail = ',';
   }
 
-  const rest = before.slice(offset);
+  const comment = lead ? (/^[ \t]*\/\/[^\n]*?(?=\r?\n)/.exec(before.slice(offset))?.[0] ?? '') : '';
+  const rest = before.slice(offset + comment.length);
   const close = /^[ \t]*(?:\/\/[^\n]*)?\r?\n/.test(rest) ? '' : `\n${unit.repeat(depth)}`;
 
-  return `${before.slice(0, edit.offset)}${before.slice(edit.offset + edit.length, offset)}${lead}\n${indent}${body}${trail}${close}${rest}`;
+  return `${before.slice(0, edit.offset)}${before.slice(edit.offset + edit.length, offset)}${lead}${comment}\n${indent}${body}${trail}${close}${rest}`;
 }
 
 function collapseEmpty(text: string, keys: readonly string[]) {
@@ -220,17 +221,23 @@ function removeJson(before: string, keys: readonly string[], dropParent: boolean
   return dropped === undefined ? collapsed : collapseEmpty(dropped, parentKeys);
 }
 
-function backupLacksParent(entry: ConfigEntry) {
-  try {
-    const parsed = parseConfig(
-      fs.readFileSync(`${entry.file}${BACKUP_SUFFIX}`, 'utf8'),
-      entry.format,
-    );
+const parseable = (text: string, format: ConfigFormat) =>
+  format === 'json' && !text.trim() ? '{}' : text;
 
-    return parsed.ok && lookup(parsed.config, entry.path.slice(0, -1)).value === undefined;
+function readBackup(entry: ConfigEntry) {
+  try {
+    return fs.readFileSync(`${entry.file}${BACKUP_SUFFIX}`, 'utf8');
   } catch {
-    return false;
+    return undefined;
   }
+}
+
+function lacksParent(entry: ConfigEntry, text: string | undefined) {
+  if (text === undefined) return false;
+
+  const parsed = parseConfig(parseable(text, entry.format), entry.format);
+
+  return parsed.ok && lookup(parsed.config, entry.path.slice(0, -1)).value === undefined;
 }
 
 function tomlBlock(entry: ConfigEntry) {
@@ -276,7 +283,7 @@ function removeToml(before: string, block: string, keys: readonly string[]) {
   if (!range) return undefined;
 
   const { start, end } = range;
-  const from = start >= 2 && before.slice(start - 2, start) === '\n\n' ? start - 1 : start;
+  const from = /(?:^|[^\n])\n\n$/.test(before.slice(0, start)) ? start - 1 : start;
 
   return `${before.slice(0, from)}${before.slice(end)}`;
 }
@@ -313,13 +320,27 @@ function withoutEmptyParent(config: unknown, keys: readonly string[]) {
   return copy;
 }
 
-function backupOnce(file: string) {
+function replace(file: string, text: string, mode: number) {
+  const temporary = path.join(
+    path.dirname(file),
+    `.${path.basename(file)}.${process.pid}.${randomUUID()}.tmp`,
+  );
+
+  try {
+    fs.writeFileSync(temporary, text, { mode, flag: 'wx' });
+    fs.chmodSync(temporary, mode);
+    fs.renameSync(temporary, file);
+  } finally {
+    fs.rmSync(temporary, { force: true });
+  }
+}
+
+function backUp(file: string, before: string, refresh: boolean) {
   const backup = `${file}${BACKUP_SUFFIX}`;
 
-  if (fs.existsSync(backup)) return undefined;
+  if (!refresh && fs.existsSync(backup)) return undefined;
 
-  fs.copyFileSync(file, backup, fs.constants.COPYFILE_EXCL);
-  fs.chmodSync(backup, fs.statSync(file).mode & 0o777);
+  replace(backup, before, fs.statSync(file).mode & 0o777);
 
   return backup;
 }
@@ -331,19 +352,39 @@ function writeAtomic(file: string, before: string | undefined, after: string) {
     throw new Error(`${file} changed while Sidekick was editing it; try again`);
   }
 
-  const mode = before === undefined ? 0o600 : fs.statSync(file).mode & 0o777;
-  const temporary = path.join(
-    path.dirname(file),
-    `.${path.basename(file)}.${process.pid}.${randomUUID()}.tmp`,
-  );
+  replace(file, after, before === undefined ? 0o600 : fs.statSync(file).mode & 0o777);
+}
 
-  try {
-    fs.writeFileSync(temporary, after, { mode, flag: 'wx' });
-    fs.chmodSync(temporary, mode);
-    fs.renameSync(temporary, file);
-  } finally {
-    fs.rmSync(temporary, { force: true });
+function linkTarget(file: string) {
+  let current = file;
+
+  for (let hops = 0; hops < 40; hops += 1) {
+    if (!fs.lstatSync(current, { throwIfNoEntry: false })?.isSymbolicLink()) return current;
+
+    current = path.resolve(path.dirname(current), fs.readlinkSync(current));
   }
+
+  throw new Error(`${file} is a loop of symbolic links`);
+}
+
+function added(entry: ConfigEntry, text: string) {
+  if (entry.format === 'toml') return insertToml(text, tomlBlock(entry));
+
+  const blank = !text.trim();
+
+  return `${insertJson(blank ? '{}' : text, entry.path, entry.value)}${blank ? '\n' : ''}`;
+}
+
+function removed(entry: ConfigEntry, text: string) {
+  const original = readBackup(entry);
+
+  if (original !== undefined && inspect(entry, parseable(original, entry.format)) === 'absent') {
+    if (added(entry, original) === text) return original;
+  }
+
+  if (entry.format === 'toml') return removeToml(text, tomlBlock(entry), entry.path);
+
+  return removeJson(text, entry.path, lacksParent(entry, original));
 }
 
 /**
@@ -351,15 +392,14 @@ function writeAtomic(file: string, before: string | undefined, after: string) {
  * other server. It never changes an entry it didn't write, and leaves a file it can't parse alone.
  */
 export function editConfig(target: ConfigEntry, remove = false): EditResult {
-  const exists = fs.existsSync(target.file);
+  const entry = { ...target, file: linkTarget(target.file) };
+  const exists = fs.existsSync(entry.file);
 
   if (!exists && remove) return { result: 'unchanged' };
 
-  const entry = exists ? { ...target, file: fs.realpathSync(target.file) } : target;
   const before = exists ? fs.readFileSync(entry.file, 'utf8') : undefined;
-  const blank = entry.format === 'json' && !before?.trim();
-  const text = blank ? '{}' : (before ?? '');
-  const state = inspect(entry, text);
+  const text = before ?? '';
+  const state = inspect(entry, parseable(text, entry.format));
 
   if (state === 'invalid') return { result: 'invalid' };
 
@@ -367,20 +407,10 @@ export function editConfig(target: ConfigEntry, remove = false): EditResult {
 
   if (remove ? state === 'absent' : state === 'owned') return { result: 'unchanged' };
 
-  let after: string | undefined;
-
-  if (entry.format === 'toml') {
-    const block = tomlBlock(entry);
-
-    after = remove ? removeToml(text, block, entry.path) : insertToml(text, block);
-  } else {
-    after = remove
-      ? removeJson(text, entry.path, backupLacksParent(entry))
-      : `${insertJson(text, entry.path, entry.value)}${blank ? '\n' : ''}`;
-  }
-
-  const parsedBefore = parseConfig(text, entry.format);
-  const parsedAfter = after === undefined ? undefined : parseConfig(after, entry.format);
+  const after = remove ? removed(entry, text) : added(entry, text);
+  const parsedBefore = parseConfig(parseable(text, entry.format), entry.format);
+  const parsedAfter =
+    after === undefined ? undefined : parseConfig(parseable(after, entry.format), entry.format);
 
   if (
     after === undefined ||
@@ -394,7 +424,7 @@ export function editConfig(target: ConfigEntry, remove = false): EditResult {
     return { result: 'refused' };
   }
 
-  const backup = exists ? backupOnce(entry.file) : undefined;
+  const backup = before === undefined ? undefined : backUp(entry.file, before, !remove);
 
   writeAtomic(entry.file, before, after);
 
