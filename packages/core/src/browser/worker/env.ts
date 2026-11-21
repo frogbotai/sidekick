@@ -7,8 +7,7 @@ import { detect } from './detect';
 import type { Run, Runs } from './runs';
 import type { Sessions } from './sessions';
 import type { Settler } from './settle';
-import type { Cdp, Images, Page, Point, RefInfo, Size, TabInfo, Tabs } from './types';
-import type { Cdp, Page, Point, Rect, RefInfo, Size, TabInfo, Tabs } from './types';
+import type { Cdp, Images, Page, Point, Rect, RefInfo, Size, TabInfo, Tabs } from './types';
 
 /** Screenshot pixels to viewport CSS pixels for one tab (271 D3). */
 export interface ScreenMap {

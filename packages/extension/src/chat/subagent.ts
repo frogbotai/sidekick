@@ -1,7 +1,13 @@
 import type { AssistantTool, SessionMessage } from '@frogbotai/sidekick-core';
 
-const READS = new Set(['snapshot', 'screenshot', 'screenshot_diff', 'scroll', 'scroll_to']);
-const READS = new Set(['snapshot', 'page_text', 'screenshot', 'scroll', 'scroll_to']);
+const READS = new Set([
+  'snapshot',
+  'page_text',
+  'screenshot',
+  'screenshot_diff',
+  'scroll',
+  'scroll_to',
+]);
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;

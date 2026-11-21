@@ -107,6 +107,8 @@ const CASES: [string, Done, string, string][] = [
     { input: { baseline: 'before' }, output: { changed_pixels: 0 } },
     'Comparing screenshots',
     'No change since “before”',
+  ],
+  [
     'screenshot',
     { input: { region: { x: 0, y: 0, width: 10, height: 10 } }, output: { width: 10 } },
     'Zooming in',

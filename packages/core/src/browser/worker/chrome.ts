@@ -1,5 +1,15 @@
-import type { Capture, Cdp, CdpEvent, Commit, Images, Rgba, Size, TabInfo, Tabs } from './types';
-import type { Capture, Cdp, CdpEvent, Commit, Rect, Size, TabInfo, Tabs } from './types';
+import type {
+  Capture,
+  Cdp,
+  CdpEvent,
+  Commit,
+  Images,
+  Rect,
+  Rgba,
+  Size,
+  TabInfo,
+  Tabs,
+} from './types';
 
 const PROTOCOL_VERSION = '1.3';
 
