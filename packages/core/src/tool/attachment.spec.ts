@@ -48,8 +48,41 @@ describe('chat attachments for upload (16 req. 9)', () => {
     });
 
     expect(attachedFile(MESSAGES, 'photo.png')?.mimeType).toBe('image/png');
-    expect(attachedFile(MESSAGES, 'remote.png')).toBeUndefined();
     expect(attachedFile(MESSAGES, 'missing.pdf')).toBeUndefined();
+  });
+
+  it('stops at the newest file by that name, even when its data: URL carries a charset', () => {
+    const messages = [
+      user('m1', [file('notes.txt', 'b2xk', 'text/plain')]),
+      user('m2', [
+        {
+          type: 'file',
+          mediaType: 'text/plain',
+          url: 'data:text/plain;charset=utf-8;base64,bmV3',
+          filename: 'notes.txt',
+        },
+      ]),
+    ];
+
+    expect(attachedFile(messages, 'notes.txt')?.data).toBe('bmV3');
+  });
+
+  it('fails, saying why, when the newest file by that name isn’t stored in the chat', () => {
+    const messages = [user('m1', [file('remote.png', 'b2xk', 'image/png')]), ...MESSAGES.slice(2)];
+
+    expect(() => attachedFile(messages, 'remote.png')).toThrow(/send the file as base64/);
+  });
+
+  it('resolves pasted text, the panel’s attachment, as a text file by its name', () => {
+    const messages = [
+      user('m1', [{ type: 'data-paste', data: { text: 'héllo', filename: 'Pasted text.txt' } }]),
+    ];
+
+    expect(attachedFile(messages, 'Pasted text.txt')).toEqual({
+      name: 'Pasted text.txt',
+      mimeType: 'text/plain',
+      data: 'aMOpbGxv',
+    });
   });
 
   it('replaces each { attachment } and leaves base64 files and other fields alone', async () => {

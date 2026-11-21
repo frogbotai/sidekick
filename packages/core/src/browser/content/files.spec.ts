@@ -98,6 +98,33 @@ describe('setting files on a file input (16 req. 9–11)', () => {
     expect(inputNamed('Photo').files?.[0]?.name).toBe('photo.png');
   });
 
+  it.each(['button', 'submit', 'image', 'reset'])(
+    'reaches the one file input beside an <input type=%s> upload button',
+    async (type) => {
+      document.body.innerHTML = `<div class="dropzone"><input type="${type}" value="Choose file" aria-label="Choose file"><input type="file" hidden aria-label="A"></div>`;
+
+      const { handlers, text } = setup();
+      const ref = refOf(await text(), 'Choose file');
+
+      expect(unwrap(await handlers['page.setFiles']({ ref, files: [RESUME] }))).toBe(1);
+      expect(inputNamed('A').files?.[0]?.name).toBe('resume.pdf');
+    },
+  );
+
+  it('refuses a file input inside a disabled fieldset, setting nothing', async () => {
+    document.body.innerHTML =
+      '<form><fieldset disabled><input type="file" aria-label="Resume"></fieldset></form>';
+
+    const { handlers, text } = setup();
+    const ref = refOf(await text(), 'Resume');
+    const error = await failure(
+      (async () => unwrap(await handlers['page.setFiles']({ ref, files: [RESUME] })))(),
+    );
+
+    expect(error instanceof ToolError && error.code).toBe('invalid_target');
+    expect(inputNamed('Resume').files?.length ?? 0).toBe(0);
+  });
+
   it.each([
     [
       'a button with two file inputs beside it',

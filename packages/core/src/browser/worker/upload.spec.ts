@@ -104,6 +104,15 @@ describe('upload (16 req. 9–11)', () => {
     expect(log).toEqual([]);
   });
 
+  it('says to send less when over 5 MiB, not to attach the files, which hit the same cap', async () => {
+    const { tool, ctx } = await setupBrowser();
+    const files = [{ ...RESUME, data: base64Of(MAX_UPLOAD_BYTES + 1) }];
+    const error = await failure(tool('upload').execute({ tab_id: 1, ref: 'f0e1', files }, ctx));
+
+    expect(messageOf(error)).toContain('Send fewer or smaller files');
+    expect(messageOf(error)).not.toMatch(/attach/i);
+  });
+
   it('takes exactly 5 MiB', async () => {
     const { tool, ctx } = await setupBrowser();
 
