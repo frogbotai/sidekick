@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { Cache, Cached } from './cache.js';
-import { createRelay, type Message, type RelaySocket } from './relay.js';
+import { CONNECT_TIMEOUT, createRelay, type Message, type RelaySocket } from './relay.js';
 import { OLD_EXTENSION } from './status.js';
 
 function memoryCache(initial: Cached = {}): Cache {
@@ -149,5 +149,34 @@ describe('status against an extension without the status tool', () => {
       versionMismatch: true,
       nextStep: OLD_EXTENSION,
     });
+  });
+});
+
+describe('a wake that fails late', () => {
+  it('leaves requests waiting on a newer wake alone', async () => {
+    let rejectFirst: (error: Error) => void = () => undefined;
+    const wake = vi
+      .fn<() => Promise<void>>()
+      .mockImplementationOnce(() => new Promise((_resolve, reject) => (rejectFirst = reject)))
+      .mockImplementation(() => new Promise(() => undefined));
+
+    const { relay, toClient } = setup(true, wake);
+    const snapshot = (id: number): Message => ({
+      jsonrpc: '2.0',
+      id,
+      method: 'tools/call',
+      params: { name: 'snapshot' },
+    });
+
+    relay.fromClient(snapshot(1));
+    await flush();
+    await vi.advanceTimersByTimeAsync(CONNECT_TIMEOUT);
+    relay.fromClient(snapshot(2));
+    await flush();
+    rejectFirst(new Error('late'));
+    await flush();
+
+    expect(wake).toHaveBeenCalledTimes(2);
+    expect(toClient.map((message) => message.id)).toEqual([1]);
   });
 });

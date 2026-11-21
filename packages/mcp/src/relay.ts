@@ -173,21 +173,20 @@ export function createRelay({
       return;
     }
 
-    let failed = false;
-
-    waiting = setTimeout(() => {
+    const timer = setTimeout(() => {
       waiting = undefined;
-      last = failed ? 'wake_failed' : 'timed_out';
+      last = 'timed_out';
       giveUp(NO_CONNECTION);
     }, timeout);
 
+    waiting = timer;
+
     void wake().catch(() => {
-      failed = true;
       last = 'wake_failed';
 
-      if (socket) return;
+      if (socket || waiting !== timer) return;
 
-      clearTimeout(waiting);
+      clearTimeout(timer);
       waiting = undefined;
       giveUp(NO_CONNECTION);
     });
