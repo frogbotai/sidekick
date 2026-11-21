@@ -10,6 +10,7 @@ export const PERMISSION_ACTIONS = [
   'websearch',
   'webfetch',
   'subagent',
+  'handoff',
 ] as const;
 
 export type PermissionAction = (typeof PERMISSION_ACTIONS)[number];

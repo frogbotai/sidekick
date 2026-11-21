@@ -2,6 +2,7 @@ import { contentProtocol, type frameProtocol } from '../../protocol';
 import { callWorker } from '../../rpc/content';
 import type { Handlers } from '../../rpc/define';
 import { ToolError, type ToolErrorCode, type ToolErrorDetail } from '../../tool/tool';
+import type { HandoffCard } from '../worker/types';
 import { assignFrames, type Identify, listenForFrames } from './dom';
 import {
   checkState,
@@ -37,17 +38,22 @@ async function guard<T>(run: () => T | Promise<T>): Promise<Outcome<T>> {
 export interface ContentOptions {
   /** Whether this frame shows the indicator: the top frame only. */
   top?: boolean;
-  /** Asks the worker whether this tab is in a run and which frame this is, and tells it about a trusted Stop. */
+  /**
+   * Asks the worker whether this tab is in a run or waits on a handoff, and which frame this is,
+   * and tells it about a trusted Stop or Continue.
+   */
   worker?: {
-    visible: () => Promise<boolean>;
+    state: () => Promise<{ visible: boolean; handoff?: HandoffCard }>;
     stop: () => Promise<void>;
+    resolve: (id: string) => Promise<void>;
     identify: Identify;
   };
 }
 
 const chromeWorker: NonNullable<ContentOptions['worker']> = {
-  visible: async () => (await callWorker(contentProtocol, 'indicator.state', {})).visible,
+  state: () => callWorker(contentProtocol, 'indicator.state', {}),
   stop: async () => void (await callWorker(contentProtocol, 'indicator.stop', {})),
+  resolve: async (id) => void (await callWorker(contentProtocol, 'handoff.continue', { id })),
   identify: () => callWorker(contentProtocol, 'frame.identify', {}),
 };
 
@@ -70,15 +76,22 @@ export function createContent({
   };
 
   const showIndicator = () => {
-    indicator ??= createIndicator(() => void worker.stop().catch(() => undefined));
+    indicator ??= createIndicator({
+      onStop: () => void worker.stop().catch(() => undefined),
+      onContinue: (id) => void worker.resolve(id).catch(() => undefined),
+    });
 
     return indicator;
   };
 
   if (top) {
     void worker
-      .visible()
-      .then((visible) => visible && showIndicator().set({ visible: true }))
+      .state()
+      .then(({ visible, handoff }) => {
+        if (visible) showIndicator().set({ visible: true });
+
+        if (handoff) showIndicator().handoff(handoff);
+      })
       .catch(() => undefined);
   }
 
@@ -169,6 +182,12 @@ export function createContent({
         return null;
       }),
     'page.stopAt': ({ point }) => guard(() => top && indicator?.covers(point) === true),
+    'page.handoff': ({ card }) =>
+      guard(() => {
+        if (top && (card || indicator)) showIndicator().handoff(card);
+
+        return null;
+      }),
   };
 
   return { handlers, indicator: () => indicator };

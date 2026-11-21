@@ -211,6 +211,7 @@ export function fakePage(log: Log, overrides: Partial<Page> = {}): Page {
     strip: later(() => []),
     indicator: later(() => undefined),
     stopAt: later(() => false),
+    handoff: later(() => undefined),
     ...overrides,
   };
 
@@ -225,6 +226,10 @@ export interface FakeTabs extends Tabs {
   navigation: 'commit' | 'none' | { error: string };
   commit: (commit: Partial<Commit> & { tabId: number }) => void;
   failNavigation: (tabId: number, error: string) => void;
+  /** Closes a tab as the user would, telling `onRemoved`. */
+  remove: (tabId: number) => void;
+  /** Each tab's badge text, as `badge` set it last. */
+  badges: Map<number, string>;
 }
 
 export function fakeTabs(log: Log, initial: TabInfo[]): FakeTabs {
@@ -233,6 +238,8 @@ export function fakeTabs(log: Log, initial: TabInfo[]): FakeTabs {
   const groupsRemoved = emitter<[number]>();
   const commits = emitter<[Commit]>();
   const errors = emitter<[{ tabId: number; error: string }]>();
+  const removed = emitter<[number]>();
+  const badges = new Map<number, string>();
   let nextGroup = 100;
   let nextTab = 1000;
 
@@ -309,6 +316,13 @@ export function fakeTabs(log: Log, initial: TabInfo[]): FakeTabs {
     onGroupRemoved: groupsRemoved.add,
     onCommitted: commits.add,
     onNavigationError: errors.add,
+    onRemoved: removed.add,
+    badge: later((tabId: number, text: string) => void badges.set(tabId, text)),
+    badges,
+    remove: (tabId) => {
+      tabs.delete(tabId);
+      removed.emit(tabId);
+    },
     commit: ({ tabId, url, sameDocument = false }) =>
       commits.emit({ tabId, url: url ?? tab(tabId).url, sameDocument }),
     failNavigation: (tabId, error) => errors.emit({ tabId, error }),

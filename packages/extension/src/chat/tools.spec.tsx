@@ -75,6 +75,18 @@ const CASES: [string, Done, string, string][] = [
   ],
   ['tabs_close', { input: { tab_id: 2 }, output: { tabs: [] } }, 'Closing tab', 'Closed a tab'],
   [
+    'handoff',
+    { input: { tab_id: 2, message: 'Sign in' }, output: { status: 'resolved' } },
+    'Waiting for you',
+    'You continued',
+  ],
+  [
+    'handoff',
+    { input: { tab_id: 2, message: 'Sign in' }, output: { status: 'timeout' } },
+    'Waiting for you',
+    'Stopped waiting for you',
+  ],
+  [
     'navigate',
     { input: { url: 'https://mdn.test/' }, output: { url: 'https://mdn.test/' } },
     'Opening mdn.test',
@@ -207,6 +219,7 @@ describe('tool cards', () => {
         'select',
         'press',
         'drag',
+        'handoff',
         'web_search',
         'webfetch',
       ].toSorted(),

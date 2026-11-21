@@ -93,6 +93,10 @@ const scrollStart = z.object({
 
 const scrollEnd = z.object({ moved: z.number(), at_end: z.boolean() });
 
+const handoffCard = z.object({ id, message: z.string() });
+
+const handoffAsk = z.object({ id, message: z.string(), tabId, sessionID: z.optional(id) });
+
 export const sidekickProtocol = defineProtocol({
   methods: {
     'tab.ping': {
@@ -158,6 +162,11 @@ export const sidekickProtocol = defineProtocol({
       ]),
     },
     'mcp.disconnect': { input: z.object({ pairingID: id }), output: z.object({}) },
+    'handoff.list': {
+      input: z.object({ sessionID: z.optional(id) }),
+      output: z.array(handoffAsk),
+    },
+    'handoff.continue': { input: z.object({ id }), output: z.object({}) },
   },
   events: {
     'run.stopped': z.object({
@@ -169,6 +178,8 @@ export const sidekickProtocol = defineProtocol({
     'permission.asked': permissionAsk,
     'permission.replied': z.object({ id, sessionID: id }),
     'tool.progress': z.object({ callID: id, metadata: z.record(z.string(), z.string()) }),
+    'handoff.asked': handoffAsk,
+    'handoff.ended': z.object({ id, sessionID: z.optional(id) }),
   },
 });
 
@@ -274,14 +285,22 @@ export const frameProtocol = defineProtocol({
       output: outcome(z.null()),
     },
     'page.stopAt': { input: z.object({ point }), output: outcome(z.boolean()) },
+    'page.handoff': {
+      input: z.object({ card: z.nullable(handoffCard) }),
+      output: outcome(z.null()),
+    },
   },
 });
 
 /** What a content script may ask the worker: only about its own tab, which the worker reads from `sender.tab`. */
 export const contentProtocol = defineProtocol({
   methods: {
-    'indicator.state': { input: z.object({}), output: z.object({ visible: z.boolean() }) },
+    'indicator.state': {
+      input: z.object({}),
+      output: z.object({ visible: z.boolean(), handoff: z.optional(handoffCard) }),
+    },
     'indicator.stop': { input: z.object({}), output: z.object({}) },
+    'handoff.continue': { input: z.object({ id }), output: z.object({}) },
     'frame.identify': { input: z.object({}), output: z.object({ frameId, key: z.string() }) },
   },
 });

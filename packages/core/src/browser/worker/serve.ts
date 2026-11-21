@@ -23,7 +23,10 @@ export interface ClientRunCall {
 }
 
 export interface BrowserWorker {
-  handlers: Pick<Handlers<SidekickMethods>, 'run.start' | 'run.stop' | 'run.end'>;
+  handlers: Pick<
+    Handlers<SidekickMethods>,
+    'run.start' | 'run.stop' | 'run.end' | 'handoff.list' | 'handoff.continue'
+  >;
   /**
    * The run a chat's browser calls act in (278 D1): its own while it lasts, else a new one from
    * the active tab of the panel's window. Its indicator shows again for each message.
@@ -43,10 +46,10 @@ export interface BrowserWorker {
 
 /**
  * The worker's side of runs for the panel, MCP and content scripts: `run.*` methods and events,
- * one run per chat, the indicator in each run's tabs, and the indicator's Stop.
+ * one run per chat, the indicator in each run's tabs, the indicator's Stop, and handoffs' Continue.
  */
 export function createBrowserWorker({ env }: BrowserRuntime): BrowserWorker {
-  const { runs, tabs, page, sessions } = env;
+  const { runs, tabs, page, sessions, handoffs } = env;
   const shown = new Map<string, Set<number>>();
   const hidden = new Set<string>();
   const bySession = new Map<string, string>();
@@ -157,6 +160,12 @@ export function createBrowserWorker({ env }: BrowserRuntime): BrowserWorker {
 
         return {};
       },
+      'handoff.list': ({ sessionID }) => handoffs.list(sessionID),
+      'handoff.continue': ({ id }) => {
+        handoffs.resolve(id);
+
+        return {};
+      },
     },
     sessionRun: async ({ sessionID, windowId }) => {
       const known = bySession.get(sessionID);
@@ -205,8 +214,17 @@ export function createBrowserWorker({ env }: BrowserRuntime): BrowserWorker {
       'frame.identify': () => ({ frameId, key: page.key }),
       'indicator.state': async () => {
         const run = await runFor(tabId);
+        const pending = frameId === 0 ? handoffs.pending(tabId) : undefined;
 
-        return { visible: run !== undefined && !hidden.has(run.id) };
+        return {
+          visible: run !== undefined && !hidden.has(run.id),
+          ...(pending ? { handoff: { id: pending.id, message: pending.message } } : {}),
+        };
+      },
+      'handoff.continue': ({ id }) => {
+        if (frameId === 0) handoffs.resolve(id, tabId);
+
+        return {};
       },
       'indicator.stop': async () => {
         const run = await runFor(tabId);
@@ -221,6 +239,8 @@ export function createBrowserWorker({ env }: BrowserRuntime): BrowserWorker {
       unsubscribers.push(
         runs.onStopped((event) => server.emit('run.stopped', event)),
         sessions.onStripped((event) => server.emit('page.stripped', event)),
+        handoffs.onAsked((ask) => server.emit('handoff.asked', ask)),
+        handoffs.onEnded((event) => server.emit('handoff.ended', event)),
       );
     },
     dispose: () => {

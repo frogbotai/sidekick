@@ -184,6 +184,22 @@ export const TOOL_LINES: Record<string, (call: ToolCall) => ToolLine> = {
       failed: 'Read page',
     };
   },
+  handoff: ({ input, output }) => {
+    const done =
+      output.status === 'resolved'
+        ? 'You continued'
+        : output.status === 'timeout'
+          ? 'Stopped waiting for you'
+          : 'Handoff cancelled';
+
+    return {
+      icon: 'user-shield',
+      running: 'Waiting for you',
+      done,
+      failed: 'Hand over the tab',
+      subtitle: text(input.message),
+    };
+  },
   screenshot: ({ output }) => {
     const src = screenshotOf(output);
 

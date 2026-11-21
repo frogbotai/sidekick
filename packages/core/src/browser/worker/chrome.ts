@@ -177,5 +177,7 @@ export function chromeTabs(): Tabs {
       listen(chrome.webNavigation.onErrorOccurred, ({ tabId, frameId, error }) => {
         if (frameId === 0) listener({ tabId, error });
       }),
+    onRemoved: (listener) => listen(chrome.tabs.onRemoved, (tabId) => listener(tabId)),
+    badge: (tabId, text) => chrome.action.setBadgeText({ tabId, text }),
   };
 }

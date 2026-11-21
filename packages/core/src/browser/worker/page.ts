@@ -429,5 +429,8 @@ export function chromePage({ tabs, inject, refs = memoryRefStore() }: ChromePage
       await call(tabId, 0, 'page.indicator', state);
     },
     stopAt: (tabId, point) => call(tabId, 0, 'page.stopAt', { point }),
+    handoff: async (tabId, card) => {
+      await call(tabId, 0, 'page.handoff', { card });
+    },
   };
 }

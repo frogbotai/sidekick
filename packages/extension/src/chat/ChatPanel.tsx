@@ -23,6 +23,7 @@ import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } fro
 import { useAgents } from '../agents/useAgents';
 import { useComposerCommands } from '../commands/useComposerCommands';
 import { PendingFormCard, usePendingForm } from '../form/PendingFormCard';
+import { HandoffCard, useHandoff } from '../handoff/HandoffCard';
 import { PanelNav } from '../nav/PanelNav';
 import { type PanelPage, pathOf, routeOf } from '../nav/paths';
 import { ModeSelect } from '../permission/ModeSelect';
@@ -104,7 +105,7 @@ export function ChatPanel({
   navOpen,
   onPage,
 }: ChatPanelProps) {
-  const { engine, chat, permissions } = sessions;
+  const { engine, chat, permissions, handoffs } = sessions;
   const [chatId, setChatId] = useState<ChatId | undefined>(chat.current);
   const [pick, setPick] = useState<string>();
   const [modePick, setModePick] = useState<string>();
@@ -124,6 +125,7 @@ export function ChatPanel({
   );
 
   const ask = usePermissionAsk(permissions, open ?? chat.current(), parentOf);
+  const handoff = useHandoff(handoffs, open ?? chat.current());
   const mode = modePick ?? (open ? BUILD_MODE : (lastMode ?? BUILD_MODE));
   const modeRef = useRef(mode);
 
@@ -284,6 +286,12 @@ export function ChatPanel({
       key={ask.id}
       ask={ask}
       onReply={(reply, message) => void permissions.reply(ask.id, reply, message)}
+    />
+  ) : handoff ? (
+    <HandoffCard
+      key={handoff.id}
+      ask={handoff}
+      onContinue={() => void handoffs.resolve(handoff.id)}
     />
   ) : null;
 
