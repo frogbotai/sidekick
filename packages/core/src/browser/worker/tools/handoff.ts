@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { defineTool } from '../../../tool/tool';
 import { type BrowserEnv, getTab, notInGroup, runOf } from '../env';
 import { HANDOFF_TIMEOUT } from '../handoff';
-import { byTab, tabId } from './schema';
+import { tabId } from './schema';
 
 export const HANDOFF_MESSAGE_LIMIT = 300;
 
@@ -13,8 +13,8 @@ export function handoffTools(env: BrowserEnv) {
       id: 'handoff',
       description: [
         'Hand the tab to the user for something only they should do: sign in, a 2FA code, a passkey, a captcha, or confirming a payment. Never type passwords, codes or card numbers yourself.',
-        'The tab comes to the front with a card showing your message and a Continue button, and this call waits until the user clicks Continue. While it waits, no other tool can use the tab.',
-        'resolved: take a new snapshot before acting, since the page has likely changed. timeout: ask the user in chat before handing off again. cancelled: the run was stopped or the tab closed.',
+        'The tab comes to the front with a card showing your message and a Continue button, and this call waits until the user clicks Continue. Other tools on the tab wait until the handoff ends.',
+        'resolved: take a new snapshot before acting, since the page has likely changed. timeout: ask the user in chat before handing off again. cancelled: the run was stopped, or the tab closed or crashed.',
       ].join(' '),
       input: z.object({
         tab_id: tabId,
@@ -35,21 +35,18 @@ export function handoffTools(env: BrowserEnv) {
       output: z.object({
         status: z.enum(['resolved', 'timeout', 'cancelled']),
         reason: z
-          .enum(['stopped', 'tab_closed'])
+          .enum(['stopped', 'tab_closed', 'crashed'])
           .optional()
-          .describe('cancelled only: the run was stopped, or the tab closed.'),
+          .describe('cancelled only: the run was stopped, the tab closed, or its page crashed.'),
       }),
       permission: 'handoff',
-      lock: byTab,
       execute: async ({ tab_id, message, timeout_ms }, ctx) => {
         const { run, signal } = runOf(env, ctx);
         const tab = await getTab(env, tab_id, signal);
 
         if (!env.runs.owns(run, tab)) throw notInGroup(tab_id);
 
-        await env.tabs.activate(tab_id).catch(() => undefined);
-
-        const output = await env.handoffs.wait({
+        const output = env.handoffs.wait({
           tabId: tab_id,
           message,
           timeout: timeout_ms ?? HANDOFF_TIMEOUT,
@@ -57,7 +54,9 @@ export function handoffTools(env: BrowserEnv) {
           ...(run.sessionID ? { sessionID: run.sessionID } : {}),
         });
 
-        return { output };
+        await env.tabs.activate(tab_id).catch(() => undefined);
+
+        return { output: await output };
       },
     }),
   ];

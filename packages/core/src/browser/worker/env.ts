@@ -72,6 +72,7 @@ export function runOf(env: BrowserEnv, ctx: ToolContext) {
   return { run, signal };
 }
 
+/** Starts a tab call: waits out a handoff on the tab (sidekick-13 req. 6), then checks the run and permission. */
 export async function enter(
   env: BrowserEnv,
   ctx: ToolContext,
@@ -80,7 +81,12 @@ export async function enter(
   resource?: string,
 ): Promise<Act> {
   const { run, signal } = runOf(env, ctx);
-  const tab = await getTab(env, tabId, signal);
+  let tab = await getTab(env, tabId, signal);
+
+  if (env.handoffs.pending(tabId)) {
+    await env.handoffs.idle(tabId, signal);
+    tab = await getTab(env, tabId, signal);
+  }
 
   if (!env.runs.owns(run, tab)) throw notInGroup(tabId);
 

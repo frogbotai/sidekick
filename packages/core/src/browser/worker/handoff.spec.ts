@@ -1,9 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { createToolCaller } from '../../tool/bridge';
 import { ToolError } from '../../tool/tool';
 import { fakePage, fakeTabs, later, type Log } from './fakes';
-import { createHandoffs, HANDOFF_TIMEOUT } from './handoff';
-import { OUTSIDE_TAB, setupBrowser, START_TAB } from './harness';
+import { createHandoffs, HANDOFF_HEARTBEAT, HANDOFF_MISSES, HANDOFF_TIMEOUT } from './handoff';
+import { drain, OUTSIDE_TAB, setupBrowser, START_TAB } from './harness';
 import { createBrowserWorker } from './serve';
 import type { HandoffCard } from './types';
 
@@ -149,7 +150,7 @@ describe('the handoff tool', () => {
     const handoff = tool('handoff');
 
     expect(handoff.permission).toBe('handoff');
-    expect(handoff.lock?.({ tab_id: 1, message: 'Sign in' })).toBe('tab:1');
+    expect(handoff.lock).toBeUndefined();
 
     tabs.tabs.set(1, { ...START_TAB, active: false, groupId: tabs.tabs.get(1)?.groupId ?? -1 });
 
@@ -201,6 +202,118 @@ describe('the handoff tool', () => {
     await expect(result).resolves.toEqual({
       output: { status: 'cancelled', reason: 'stopped' },
     });
+  });
+});
+
+describe('handoffs through the tool caller', () => {
+  async function caller() {
+    const setup = await setupBrowser();
+    const byId = new Map(setup.runtime.tools.map((tool) => [tool.id, tool]));
+    const tools = createToolCaller({
+      tools: { get: (id) => byId.get(id), list: () => [...byId.values()] },
+      permission: {
+        assert: () => Promise.resolve(),
+        reply: () => Promise.resolve(),
+        list: () => [],
+        cancel: () => undefined,
+      },
+    });
+
+    const call = (callID: string, tool: string, input: Record<string, unknown>) =>
+      tools.call(
+        { sessionID: 's', messageID: 'm', callID, agent: 'build', tool, input },
+        { run: () => Promise.resolve({ id: setup.run.id }) },
+      );
+
+    return { ...setup, call };
+  }
+
+  it('ends the first handoff on a tab as timeout when a second one is called (req. 7)', async () => {
+    const { runtime, call } = await caller();
+    const { handoffs } = runtime.env;
+    const first = call('first', 'handoff', { tab_id: 1, message: 'first' });
+
+    await vi.waitFor(() => expect(handoffs.pending(1)?.message).toBe('first'));
+
+    const second = call('second', 'handoff', { tab_id: 1, message: 'second' });
+
+    await expect(first).resolves.toEqual({ ok: { output: { status: 'timeout' } } });
+
+    await vi.waitFor(() => expect(handoffs.pending(1)?.message).toBe('second'));
+
+    handoffs.resolve(handoffs.pending(1)?.id ?? '');
+
+    await expect(second).resolves.toEqual({ ok: { output: { status: 'resolved' } } });
+  });
+
+  it('serves no snapshot of the tab until the handoff ends, even one called with it (req. 6)', async () => {
+    const { runtime, call, log } = await caller();
+    const { handoffs } = runtime.env;
+    const handoff = call('hand', 'handoff', { tab_id: 1, message: 'Sign in' });
+    const snapshot = call('snap', 'snapshot', { tab_id: 1 });
+
+    await vi.waitFor(() => expect(handoffs.pending(1)).toBeDefined());
+    await vi.advanceTimersByTimeAsync(1_000);
+
+    expect(log).not.toContain('page.snapshot');
+
+    handoffs.resolve(handoffs.pending(1)?.id ?? '');
+    await handoff;
+    await drain(snapshot);
+
+    expect(log).toContain('page.snapshot');
+  });
+});
+
+describe('a crashed tab', () => {
+  function crashing() {
+    const log: Log = [];
+    let answering = true;
+    const page = fakePage(log, {
+      handoff: () =>
+        answering ? Promise.resolve() : Promise.reject(new Error('No receiving end')),
+    });
+
+    const tabs = fakeTabs(log, [START_TAB]);
+    const handoffs = createHandoffs({ tabs, page });
+    const result = handoffs.wait({
+      tabId: 1,
+      message: 'Sign in',
+      timeout: HANDOFF_TIMEOUT,
+      signal: new AbortController().signal,
+    });
+
+    return { handoffs, tabs, result, crash: () => (answering = false) };
+  }
+
+  it('ends as cancelled when the page stops answering with no navigation under way (req. 3)', async () => {
+    const { result, crash } = crashing();
+
+    await vi.advanceTimersByTimeAsync(HANDOFF_HEARTBEAT);
+    crash();
+    await vi.advanceTimersByTimeAsync(HANDOFF_HEARTBEAT * HANDOFF_MISSES);
+
+    await expect(result).resolves.toEqual({ status: 'cancelled', reason: 'crashed' });
+  });
+
+  it('keeps waiting through a navigation, which also silences the page for a while', async () => {
+    const { handoffs, tabs, crash } = crashing();
+    const tab = tabs.tabs.get(1);
+
+    if (!tab) throw new Error('No tab');
+
+    crash();
+    tab.pendingUrl = 'https://example.com/login';
+    await vi.advanceTimersByTimeAsync(HANDOFF_HEARTBEAT * (HANDOFF_MISSES + 2));
+
+    expect(handoffs.pending(1)).toBeDefined();
+
+    delete tab.pendingUrl;
+    await vi.advanceTimersByTimeAsync(HANDOFF_HEARTBEAT * (HANDOFF_MISSES - 1));
+    tabs.commit({ tabId: 1 });
+    await vi.advanceTimersByTimeAsync(HANDOFF_HEARTBEAT * (HANDOFF_MISSES - 1));
+
+    expect(handoffs.pending(1)).toBeDefined();
   });
 });
 

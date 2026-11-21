@@ -1,6 +1,7 @@
 import { CONNECTED, type HandoffAsk } from '@frogbotai/sidekick-core';
 import { describe, expect, it } from 'vitest';
 
+import { handoffFor } from './HandoffCard';
 import { createHandoffRequests } from './requests';
 
 const ask = (id: string): HandoffAsk => ({ id, message: 'Sign in', tabId: 7, sessionID: 'ses_1' });
@@ -63,5 +64,17 @@ describe('handoff requests', () => {
 
     expect(requests.list()).toEqual([]);
     expect(calls).toEqual([{ id: 'a' }]);
+  });
+});
+
+describe('the panel’s handoff', () => {
+  const mcp: HandoffAsk = { id: 'm', message: 'Sign in', tabId: 9 };
+  const other: HandoffAsk = { ...ask('o'), sessionID: 'ses_2' };
+
+  it('is the open chat’s first, else an MCP client’s, never another chat’s', () => {
+    expect(handoffFor([other, mcp, ask('a')], 'ses_1')).toEqual(ask('a'));
+    expect(handoffFor([other, mcp], 'ses_1')).toEqual(mcp);
+    expect(handoffFor([other], 'ses_1')).toBeUndefined();
+    expect(handoffFor([other, mcp], undefined)).toEqual(mcp);
   });
 });

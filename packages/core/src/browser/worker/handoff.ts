@@ -1,3 +1,4 @@
+import { race } from './abort';
 import type { HandoffCard, Page, Tabs } from './types';
 
 /** How long a handoff waits by default, and at most (sidekick-13 D2). */
@@ -5,11 +6,17 @@ export const HANDOFF_TIMEOUT = 600_000;
 
 export const HANDOFF_BADGE = 'WAIT';
 
+/** How often a waiting handoff checks its card is still on the page. */
+export const HANDOFF_HEARTBEAT = 5_000;
+
+/** Missed checks, with no navigation under way, after which the tab counts as crashed. */
+export const HANDOFF_MISSES = 3;
+
 /** How a handoff ended: Continue, its deadline, or the run or tab going away. */
 export type HandoffEnd =
   | { status: 'resolved' }
   | { status: 'timeout' }
-  | { status: 'cancelled'; reason: 'stopped' | 'tab_closed' };
+  | { status: 'cancelled'; reason: 'stopped' | 'tab_closed' | 'crashed' };
 
 /** A waiting handoff, as the panel and the page's card show it. */
 export interface HandoffAsk extends HandoffCard {
@@ -34,6 +41,8 @@ export interface Handoffs {
   resolve(id: string, tabId?: number): boolean;
   /** The handoff waiting on a tab, for a new document's card. */
   pending(tabId: number): HandoffAsk | undefined;
+  /** Settles once no handoff waits on the tab; rejects `stopped` when `signal` aborts first. */
+  idle(tabId: number, signal: AbortSignal): Promise<void>;
   list(sessionID?: string): HandoffAsk[];
   onAsked(listener: (ask: HandoffAsk) => void): () => void;
   onEnded(listener: (event: { id: string; sessionID?: string }) => void): () => void;
@@ -43,6 +52,7 @@ export interface Handoffs {
 interface Waiting {
   ask: HandoffAsk;
   end: (result: HandoffEnd) => void;
+  misses: number;
 }
 
 function listeners<A>() {
@@ -63,7 +73,9 @@ function listeners<A>() {
 /**
  * After browse's handoff registry: a second handoff on a tab ends the first as `timeout`, and
  * every end removes the card and clears the badge. Chrome drops a tab's badge text when it
- * navigates, so each commit on a waiting tab sets it again.
+ * navigates, so each commit on a waiting tab sets it again. Chrome has no crash event without
+ * the debugger, so a tab whose page stops answering, with no navigation under way, ends as
+ * `crashed`.
  */
 export function createHandoffs({ tabs, page }: { tabs: Tabs; page: Page }): Handoffs {
   const waiting = new Map<number, Waiting>();
@@ -81,9 +93,36 @@ export function createHandoffs({ tabs, page }: { tabs: Tabs; page: Page }): Hand
       waiting.get(tabId)?.end({ status: 'cancelled', reason: 'tab_closed' }),
     ),
     tabs.onCommitted(({ tabId }) => {
-      if (waiting.has(tabId)) badge(tabId, HANDOFF_BADGE);
+      const entry = waiting.get(tabId);
+
+      if (!entry) return;
+
+      entry.misses = 0;
+      badge(tabId, HANDOFF_BADGE);
     }),
   ];
+
+  const check = async (entry: Waiting) => {
+    const { tabId, id, message } = entry.ask;
+    const answered = await page.handoff(tabId, { id, message }).then(
+      () => true,
+      () => false,
+    );
+
+    if (answered) {
+      entry.misses = 0;
+
+      return;
+    }
+
+    const tab = await tabs.get(tabId).catch(() => undefined);
+
+    if (tab?.pendingUrl) return;
+
+    entry.misses += 1;
+
+    if (entry.misses >= HANDOFF_MISSES) entry.end({ status: 'cancelled', reason: 'crashed' });
+  };
 
   const wait = ({ tabId, message, timeout, signal, sessionID }: HandoffWait) =>
     new Promise<HandoffEnd>((settle) => {
@@ -102,16 +141,27 @@ export function createHandoffs({ tabs, page }: { tabs: Tabs; page: Page }): Hand
         ...(sessionID ? { sessionID } : {}),
       };
 
+      let checking = false;
+
       const onAbort = () => entry.end({ status: 'cancelled', reason: 'stopped' });
       const timer = setTimeout(() => entry.end({ status: 'timeout' }), timeout);
 
+      const heartbeat = setInterval(() => {
+        if (checking) return;
+
+        checking = true;
+        void check(entry).finally(() => (checking = false));
+      }, HANDOFF_HEARTBEAT);
+
       const entry: Waiting = {
         ask,
+        misses: 0,
         end: (result) => {
           if (waiting.get(tabId) !== entry) return;
 
           waiting.delete(tabId);
           clearTimeout(timer);
+          clearInterval(heartbeat);
           signal.removeEventListener('abort', onAbort);
           card(tabId, null);
           badge(tabId, '');
@@ -139,6 +189,24 @@ export function createHandoffs({ tabs, page }: { tabs: Tabs; page: Page }): Hand
       return true;
     },
     pending: (tabId) => waiting.get(tabId)?.ask,
+    idle: (tabId, signal) =>
+      race(
+        new Promise<void>((done) => {
+          if (!waiting.has(tabId)) {
+            done();
+
+            return;
+          }
+
+          const stop = ended.add(() => {
+            if (waiting.has(tabId)) return;
+
+            stop();
+            done();
+          });
+        }),
+        signal,
+      ),
     list: (sessionID) =>
       [...waiting.values()]
         .map(({ ask }) => ask)

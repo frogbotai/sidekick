@@ -78,7 +78,7 @@ export interface Tabs {
   onCommitted(listener: (commit: Commit) => void): () => void;
   /** Main-frame navigation errors only, with Chrome's text, like `net::ERR_NAME_NOT_RESOLVED`. */
   onNavigationError(listener: (failure: { tabId: number; error: string }) => void): () => void;
-  /** A tab closed, or its renderer went away with it. */
+  /** A tab closed. */
   onRemoved(listener: (tabId: number) => void): () => void;
   /** Sets one tab's toolbar badge text; empty clears it. */
   badge(tabId: number, text: string): Promise<void>;

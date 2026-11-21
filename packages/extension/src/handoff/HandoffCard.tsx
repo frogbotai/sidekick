@@ -27,9 +27,17 @@ export function HandoffCard({ ask, onContinue }: HandoffCardProps) {
   );
 }
 
-/** The open chat's oldest waiting handoff. */
-export function useHandoff(requests: HandoffRequests, sessionID: string | undefined) {
-  const asks = useSyncExternalStore(requests.subscribe, requests.list);
+/**
+ * The open chat's oldest waiting handoff, else an MCP client's, which has no chat: the panel is
+ * the person's way to Continue when the page's card can't be clicked.
+ */
+export function handoffFor(asks: readonly HandoffAsk[], sessionID: string | undefined) {
+  return (
+    (sessionID === undefined ? undefined : asks.find((ask) => ask.sessionID === sessionID)) ??
+    asks.find((ask) => ask.sessionID === undefined)
+  );
+}
 
-  return sessionID === undefined ? undefined : asks.find((ask) => ask.sessionID === sessionID);
+export function useHandoff(requests: HandoffRequests, sessionID: string | undefined) {
+  return handoffFor(useSyncExternalStore(requests.subscribe, requests.list), sessionID);
 }

@@ -65,8 +65,9 @@ export interface IndicatorActions {
  * The agent's cursor, page overlay, Stop button and handoff card, in a closed shadow root on
  * `<html>`. The overlay is the old Sidekick's: a dim tint inside a 6px frame whose colours turn
  * round the page. Stop and Continue accept only trusted clicks, the host comes back if the page
- * removes it while a run or handoff is on, and the card rises back above a page's own popovers
- * and dialogs.
+ * removes it while a run or handoff is on, and the card rises back above a page's own popovers.
+ * A modal dialog makes the rest of the page inert, top layer included, so while one is open the
+ * host moves inside it.
  */
 export function createIndicator({ onStop, onContinue }: IndicatorActions): Indicator {
   const host = document.createElement('div');
@@ -133,39 +134,57 @@ export function createIndicator({ onStop, onContinue }: IndicatorActions): Indic
     card.showPopover();
   };
 
-  const onToggle = (event: Event) => {
-    if (event.target !== card && (event as ToggleEvent).newState === 'open') raise();
-  };
+  const modal = () =>
+    waiting
+      ? [...document.querySelectorAll('dialog[open]')].findLast((dialog) =>
+          dialog.matches(':modal'),
+        )
+      : undefined;
 
   const restore = new MutationObserver(() => {
-    if ((shown || waiting) && !host.isConnected) {
-      document.documentElement.append(host);
-      raise();
-    }
+    if (place()) raise();
   });
 
-  const attach = () => {
-    const wanted = shown || waiting !== null;
-
-    if (wanted && !host.isConnected) {
-      document.documentElement.append(host);
-      restore.observe(document.documentElement, { childList: true });
-    } else if (!wanted && host.isConnected) {
+  function place() {
+    if (!shown && !waiting) {
       restore.disconnect();
       host.remove();
+
+      return false;
     }
+
+    const parent = modal() ?? document.documentElement;
+
+    if (host.parentNode === parent) return false;
+
+    parent.append(host);
+    restore.disconnect();
+    restore.observe(document.documentElement, { childList: true });
+
+    if (parent !== document.documentElement) restore.observe(parent, { childList: true });
+
+    return true;
+  }
+
+  const onToggle = (event: Event) => {
+    if (event.target === card) return;
+
+    if (place() || (event as ToggleEvent).newState === 'open') raise();
   };
 
   return {
     set: ({ visible, cursor: point }) => {
       if (visible !== undefined && visible !== shown) {
         shown = visible;
-        attach();
+
+        if (place()) raise();
       }
 
       if (point) cursor.style.transform = `translate(${point.x - 3}px, ${point.y - 2}px)`;
     },
     handoff: (next) => {
+      const same = next !== null && waiting?.id === next.id;
+
       if (!next && waiting) {
         document.removeEventListener('toggle', onToggle, true);
 
@@ -179,8 +198,7 @@ export function createIndicator({ onStop, onContinue }: IndicatorActions): Indic
 
       if (next) message.textContent = next.message;
 
-      attach();
-      raise();
+      if (place() || !same) raise();
     },
     visible: () => shown && host.isConnected,
     covers: ({ x, y }) => {

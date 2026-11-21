@@ -14,7 +14,10 @@ import {
 const MODEL = 'openai/gpt-6-luna';
 
 const CARD = `(() => {
-  const card = ${INDICATOR}?.querySelector('.handoff');
+  const card = [...document.querySelectorAll('*')]
+    .map((element) => chrome.dom.openOrClosedShadowRoot(element))
+    .find((root) => root?.querySelector('.handoff'))
+    ?.querySelector('.handoff');
 
   if (!card) return null;
 
@@ -164,4 +167,39 @@ test('the panel agent hands the tab over: card and WAIT until a trusted Continue
   await expect.poll(async () => ((await evaluate(CARD)) as Card | null)?.open ?? false).toBe(false);
   await expect.poll(() => badge(context, tabId)).toBe('');
   await expect(dock).toHaveCount(0);
+});
+
+test('Continue works over a modal dialog the page opens, which makes the rest of the page inert', async ({
+  context,
+  extensionId,
+  origin,
+  sidekick,
+}) => {
+  const page = await context.newPage();
+
+  await page.goto(`${origin()}/labelled.html`);
+
+  const evaluate = await isolatedWorld(context, page, extensionId);
+  const run = await sidekick.start(page);
+  const reply = run.reply('handoff', { message: 'Sign in in the dialog, then Continue' });
+
+  await expect.poll(() => evaluate(CARD), { timeout: 20_000 }).toMatchObject({ open: true });
+
+  await page.evaluate(() => {
+    const dialog = document.createElement('dialog');
+
+    dialog.textContent = 'Sign in';
+    document.body.append(dialog);
+    dialog.showModal();
+  });
+
+  await expect.poll(() => evaluate(CARD)).toMatchObject({ open: true });
+
+  const card = (await evaluate(CARD)) as Card;
+
+  await page.bringToFront();
+  await page.mouse.click(card.x, card.y);
+
+  expect(await reply).toMatchObject({ ok: { status: 'resolved' } });
+  expect(await page.evaluate(() => document.querySelector('dialog')?.open)).toBe(true);
 });
