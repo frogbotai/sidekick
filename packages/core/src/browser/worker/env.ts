@@ -3,15 +3,19 @@ import { ToolError, UNTRUSTED } from '../../tool/tool';
 import { originOf } from '../../tool/url';
 import { checkpoint, race, stopped } from './abort';
 import type { Recordings } from './recordings';
+import type { Challenge } from './challenge';
+import { detect } from './detect';
 import type { Run, Runs } from './runs';
 import type { Sessions } from './sessions';
 import type { Settler } from './settle';
-import type { Cdp, Page, Point, RefInfo, Size, TabInfo, Tabs } from './types';
+import type { Cdp, Page, Point, Rect, RefInfo, Size, TabInfo, Tabs } from './types';
 
 /** Screenshot pixels to viewport CSS pixels for one tab (271 D3). */
 export interface ScreenMap {
   offset: Point;
   scale: Point;
+  /** The screenshot's size in its own pixels, which a `region` must fall inside. */
+  image: Size;
   /** The tab's `documents` count when the capture started; x/y fail `stale_screenshot` once it moves on. */
   document: number;
 }
@@ -212,11 +216,7 @@ export function documentOf(env: BrowserEnv, tabId: number) {
   return env.documents.get(tabId) ?? 0;
 }
 
-export function fromScreenshot(env: BrowserEnv, tabId: number, point: Point): Point {
-  const map = env.screens.get(tabId);
-
-  if (!map) return point;
-
+function current(env: BrowserEnv, tabId: number, map: ScreenMap) {
   if (map.document < documentOf(env, tabId)) {
     throw new ToolError(
       'stale_screenshot',
@@ -224,13 +224,64 @@ export function fromScreenshot(env: BrowserEnv, tabId: number, point: Point): Po
     );
   }
 
+  return map;
+}
+
+export function fromScreenshot(env: BrowserEnv, tabId: number, point: Point): Point {
+  const found = env.screens.get(tabId);
+
+  if (!found) return point;
+
+  const map = current(env, tabId, found);
+  const { width, height } = map.image;
+
+  if (point.x < 0 || point.y < 0 || point.x > width || point.y > height) {
+    throw new ToolError(
+      'invalid_target',
+      `(${point.x}, ${point.y}) is outside your last screenshot, which is ${width}×${height}. Pick a point inside it.`,
+    );
+  }
+
   return { x: map.offset.x + point.x * map.scale.x, y: map.offset.y + point.y * map.scale.y };
+}
+
+/** A region of the tab's last screenshot, cut to the image, in viewport CSS pixels. */
+export function fromScreenshotRect(env: BrowserEnv, tabId: number, region: Rect): Rect {
+  const found = env.screens.get(tabId);
+
+  if (!found) {
+    throw new ToolError(
+      'stale_screenshot',
+      'A region is in pixels of your last screenshot. Take a screenshot first.',
+    );
+  }
+
+  const map = current(env, tabId, found);
+  const left = Math.max(0, region.x);
+  const top = Math.max(0, region.y);
+  const right = Math.min(map.image.width, region.x + region.width);
+  const bottom = Math.min(map.image.height, region.y + region.height);
+
+  if (region.width <= 0 || region.height <= 0 || right <= left || bottom <= top) {
+    throw new ToolError(
+      'invalid_target',
+      `The region is outside your last screenshot, which is ${map.image.width}×${map.image.height}. Pick an area inside it.`,
+    );
+  }
+
+  return {
+    x: map.offset.x + left * map.scale.x,
+    y: map.offset.y + top * map.scale.y,
+    width: (right - left) * map.scale.x,
+    height: (bottom - top) * map.scale.y,
+  };
 }
 
 export function screenMap(clip: Point & Size, image: Size, document: number): ScreenMap {
   return {
     offset: { x: clip.x, y: clip.y },
     scale: { x: clip.width / image.width, y: clip.height / image.height },
+    image: { width: image.width, height: image.height },
     document,
   };
 }
@@ -289,12 +340,18 @@ export interface ActionOutput {
   url: string;
   navigated: boolean;
   settled: boolean;
+  /** Only when the action ended on a captcha, bot check or block page. */
+  challenge?: Challenge;
 }
 
+/** The action's result, after checking whether it ended on a wall (D2). */
 export async function finish(act: Act, settled: boolean): Promise<ActionOutput> {
-  const tab = await getTab(act.env, act.tabId, act.signal);
+  const landed = await getTab(act.env, act.tabId, act.signal);
+  const challenge = await detect(act.env, act.tabId, landed.url, act.signal);
+  const tab = challenge ? await getTab(act.env, act.tabId, act.signal) : landed;
+  const output = { url: tab.url, navigated: tab.url !== act.tab.url, settled };
 
-  return { url: tab.url, navigated: tab.url !== act.tab.url, settled };
+  return challenge ? { ...output, challenge } : output;
 }
 
 export function untrusted<O>(output: O, content: ToolResult['content'] = []): ToolResult<O> {
