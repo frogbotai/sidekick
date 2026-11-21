@@ -152,10 +152,7 @@ export function findTool(options: FindToolOptions) {
 
     return {
       output: { matches: text, count: matches.length, truncated: outline.truncated },
-      content: [
-        { type: 'text' as const, text: UNTRUSTED },
-        { type: 'text' as const, text },
-      ],
+      content: [{ type: 'text' as const, text: UNTRUSTED }],
     };
   };
 

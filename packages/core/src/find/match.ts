@@ -2,10 +2,10 @@
 export const FIND_MAX_MATCHES = 10;
 
 /** Each match's reason is cut to this many characters. */
-export const FIND_REASON_MAX_LENGTH = 120;
+export const FIND_REASON_MAX_LENGTH = 60;
 
 /** Each match's element line is cut to this many characters, before its ref. */
-export const FIND_ELEMENT_MAX_LENGTH = 160;
+export const FIND_ELEMENT_MAX_LENGTH = 100;
 
 const ELEMENT = /^\s*- (.*?)\s*\[(f\d+e\d+)\]\s*$/;
 
@@ -15,7 +15,9 @@ const NEXT_REF = /^[\s\],[]*(?:and\s+)?\[?(f\d+e\d+)\b/;
 
 const NONE = /^\s*none\b/i;
 
-const LEAD = /^[\s\]—–:,.-]+/;
+const LEAD = /^[\s\]`*—–:,.-]+/;
+
+const REASON_REF = /\[?\b(f\d+e\d+)\b\]?/g;
 
 function clip(text: string, max: number) {
   return text.length <= max ? text : `${text.slice(0, max - 1)}…`;
@@ -37,7 +39,7 @@ export function outlineElements(outline: string) {
 /**
  * The matcher's `<ref> — <reason>` lines as `role "name" [ref] — reason`, keeping only refs the
  * outline has, once each, and at most `FIND_MAX_MATCHES`. Only the refs that open a line count, and
- * the rest is its reason. A line that starts with `none` adds nothing.
+ * the rest is its reason, with refs the outline lacks replaced by `…`. A line that starts with `none` adds nothing.
  */
 export function parseMatches(reply: string, outline: string) {
   const elements = outlineElements(outline);
@@ -59,7 +61,13 @@ export function parseMatches(reply: string, outline: string) {
       rest = rest.slice(next[0].length);
     }
 
-    const reason = clip(rest.replace(LEAD, '').trim(), FIND_REASON_MAX_LENGTH);
+    const reason = clip(
+      rest
+        .replace(LEAD, '')
+        .replace(REASON_REF, (found, ref: string) => (elements.has(ref) ? found : '…'))
+        .trim(),
+      FIND_REASON_MAX_LENGTH,
+    );
 
     for (const ref of refs) {
       const element = elements.get(ref);
