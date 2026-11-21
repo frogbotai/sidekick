@@ -46,6 +46,19 @@ const fail = defineTool({
   },
 });
 
+const crash = defineTool({
+  id: 'crash',
+  description: 'Fails with a plain Error, as a Chrome API rejection does.',
+  input: z.object({}),
+  output: z.object({}),
+  permission: 'tabs',
+  execute: () => {
+    log.push('crash');
+
+    return Promise.reject(new Error('No tab with id: 7.'));
+  },
+});
+
 const type = defineTool({
   id: 'type',
   description: 'Asks to type on a site.',
@@ -115,7 +128,7 @@ function setup() {
   });
 
   tools.register('builtin', (draft) => {
-    for (const tool of [echo, fail, type, wait, big]) draft.add(tool);
+    for (const tool of [echo, fail, crash, type, wait, big]) draft.add(tool);
 
     draft.add(batchTool({ tools, locks }));
   });
@@ -212,6 +225,33 @@ describe('batch', () => {
     });
   });
 
+  it('reports a step that throws a plain Error as the failed step, keeping the steps that ran', async () => {
+    const { call } = setup();
+
+    const outcome = await call([
+      { tool: 'echo', input: { name: 'a' } },
+      { tool: 'crash' },
+      { tool: 'echo', input: { name: 'b' } },
+    ]);
+
+    expect(log).toEqual(['a', 'crash']);
+
+    expect(outcome).toMatchObject({
+      ok: {
+        output: {
+          steps: [{ tool: 'echo', output: { name: 'a' } }],
+          failed: {
+            index: 1,
+            tool: 'crash',
+            code: 'request_failed',
+            message: 'No tab with id: 7.',
+          },
+          skipped: 1,
+        },
+      },
+    });
+  });
+
   it.each([
     ['an unknown tool', { tool: 'nope' }, 'invalid_target', 'Step 2: No worker tool named nope'],
     ['a nested batch', { tool: BATCH, input: { calls: [] } }, 'invalid_target', 'Step 2: A batch'],
@@ -272,6 +312,28 @@ describe('batch', () => {
     await expect(next).resolves.toMatchObject({
       ok: { output: { failed: { code: 'cancelled' } } },
     });
+  });
+
+  it('asks on every step on a sensitive site, as single calls do, where “once” covers one step', async () => {
+    const { asked, permission, call } = setup();
+
+    const pending = call([
+      { tool: 'type', input: { site: 'paypal.com' } },
+      { tool: 'type', input: { site: 'paypal.com' } },
+      { tool: 'type', input: { site: 'paypal.com' } },
+    ]);
+
+    for (let step = 0; step < 3; step++) {
+      await flush();
+
+      expect(asked).toHaveLength(step + 1);
+      expect(asked[step]).toMatchObject({ site: 'paypal.com', always: false });
+
+      await permission.reply({ id: asked[step]?.id ?? '', reply: 'once' });
+    }
+
+    await expect(pending).resolves.toMatchObject({ ok: { output: { steps: [{}, {}, {}] } } });
+    expect(log).toEqual(['type paypal.com', 'type paypal.com', 'type paypal.com']);
   });
 
   it('ends with the step’s error when the user declines it, as the step alone does, so the turn stops', async () => {
