@@ -118,6 +118,10 @@ function capped(ran: { tool: string; output: unknown; content: ToolContent[] }[]
   return { steps, content };
 }
 
+function messageOf(error: unknown) {
+  return error instanceof Error ? error.message : String(error);
+}
+
 function cancelled() {
   return new ToolError('cancelled', 'The tool call was cancelled.');
 }
@@ -162,15 +166,28 @@ export function batchTool({ tools, locks }: BatchToolOptions) {
         await progress?.({ step: String(index + 1), of: String(ready.length), tool: tool.id });
 
         try {
-          const result = await runTool(tool, parsed, shared, locks);
+          const result = await runTool(
+            tool,
+            parsed,
+            {
+              ...shared,
+              permission: {
+                assert: (request) => ctx.permission.assert({ ...request, step: index }),
+              },
+            },
+            locks,
+          );
 
           ran.push({ tool: tool.id, output: result.output, content: result.content ?? [] });
         } catch (error) {
           if (ctx.signal.aborted) throw cancelled();
 
-          if (!(error instanceof ToolError) || error.code === 'declined') throw error;
+          if (error instanceof ToolError && error.code === 'declined') throw error;
 
-          failed = { index, tool: tool.id, code: error.code, message: error.message };
+          failed =
+            error instanceof ToolError
+              ? { index, tool: tool.id, code: error.code, message: error.message }
+              : { index, tool: tool.id, code: 'request_failed', message: messageOf(error) };
 
           break;
         }

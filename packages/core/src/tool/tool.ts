@@ -19,6 +19,8 @@ export interface PermissionRequest {
   action: PermissionAction;
   resource: string;
   frameOrigin?: string;
+  /** The batch step asking, so a once grant on a sensitive site covers that step alone. */
+  step?: number;
 }
 
 /** What a tool reports while it runs, kept on its tool part: `subagent` reports its child's `sessionID`. */
