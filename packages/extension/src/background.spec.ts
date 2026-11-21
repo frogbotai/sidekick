@@ -87,6 +87,10 @@ describe('background', () => {
 
     expect(tools.list()).toHaveLength(17);
     expect(tools.get('batch')?.permission).toBe('input');
+  it('registers the 17 browser tools as built-ins', () => {
+    start();
+
+    expect(tools.list()).toHaveLength(17);
     expect(tools.errors()).toEqual([]);
   });
 

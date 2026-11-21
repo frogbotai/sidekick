@@ -13,3 +13,4 @@ coverage
 *.crx
 .idea
 .frogbot
+node-compile-cache/
