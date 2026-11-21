@@ -1,12 +1,46 @@
 import type { FileData } from '../browser/worker/types';
 import { dataURL } from '../session/request';
-import type { SessionMessage } from '../session/schema';
+import type { SessionMessage, UserPart } from '../session/schema';
 import { ToolError } from './tool';
 
 /** Finds a file to resolve `{ attachment }` by name; `undefined` when the chat has none by that name. */
 export type AttachmentLookup = (filename: string) => Promise<FileData | undefined>;
 
-/** The newest file the user attached in `messages` named `filename`, as base64. */
+function base64Text(text: string) {
+  return btoa(
+    Array.from(new TextEncoder().encode(text), (byte) => String.fromCharCode(byte)).join(''),
+  );
+}
+
+function fileOf(part: UserPart, filename: string): FileData | undefined {
+  if (part.type === 'data-paste') {
+    return { name: filename, mimeType: 'text/plain', data: base64Text(part.data.text) };
+  }
+
+  if (part.type !== 'file') return undefined;
+
+  const inline = dataURL(part.url);
+
+  if (!inline) {
+    throw new ToolError(
+      'invalid_input',
+      `“${filename}” isn’t stored in this chat, so it can’t be uploaded. Send the file as base64.`,
+    );
+  }
+
+  return { name: filename, mimeType: inline.mediaType, data: inline.data };
+}
+
+function nameOf(part: UserPart) {
+  if (part.type === 'data-paste') return part.data.filename;
+
+  return part.type === 'file' ? part.filename : undefined;
+}
+
+/**
+ * The newest file the user attached or pasted in `messages` named `filename`, as base64. It fails
+ * when that file isn't stored in the chat, rather than falling back to an older one.
+ */
 export function attachedFile(
   messages: readonly SessionMessage[],
   filename: string,
@@ -14,13 +48,9 @@ export function attachedFile(
   for (const message of [...messages].reverse()) {
     if (message.type !== 'user') continue;
 
-    for (const part of [...message.parts].reverse()) {
-      if (part.type !== 'file' || part.filename !== filename) continue;
+    const part = [...message.parts].reverse().find((each) => nameOf(each) === filename);
 
-      const inline = dataURL(part.url);
-
-      if (inline) return { name: filename, mimeType: inline.mediaType, data: inline.data };
-    }
+    if (part) return fileOf(part, filename);
   }
 
   return undefined;

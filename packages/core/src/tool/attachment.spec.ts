@@ -70,7 +70,7 @@ describe('chat attachments for upload (16 req. 9)', () => {
   it('fails, saying why, when the newest file by that name isn’t stored in the chat', () => {
     const messages = [user('m1', [file('remote.png', 'b2xk', 'image/png')]), ...MESSAGES.slice(2)];
 
-    expect(() => attachedFile(messages, 'remote.png')).toThrow(/send the file as base64/);
+    expect(() => attachedFile(messages, 'remote.png')).toThrow(/Send the file as base64/);
   });
 
   it('resolves pasted text, the panel’s attachment, as a text file by its name', () => {

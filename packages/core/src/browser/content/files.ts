@@ -11,7 +11,9 @@ function bytesOf(data: string) {
 }
 
 const FILE_INPUT = 'input[type=file]';
-const FIELD = 'input, select, textarea, [contenteditable]';
+const FIELD =
+  'input:not([type=button], [type=submit], [type=image], [type=reset]), select, textarea, [contenteditable]';
+
 const MAX_DEPTH = 3;
 
 function isFileInput(element: Element | null | undefined): element is HTMLInputElement {
@@ -58,7 +60,7 @@ export function setFiles(target: Element, ref: string, files: FileData[]) {
     );
   }
 
-  if (element.disabled) {
+  if (element.matches(':disabled') || element.closest('fieldset[disabled]')) {
     throw new ToolError('invalid_target', `${ref} is disabled. Look for what enables it.`);
   }
 

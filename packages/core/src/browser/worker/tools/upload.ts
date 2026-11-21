@@ -25,7 +25,7 @@ const attached = z.object({
   attachment: z
     .string()
     .min(1)
-    .describe('The name of a file the user attached in this chat, as the chat shows it.'),
+    .describe('The name of a file the user attached or pasted in this chat, as the chat shows it.'),
 });
 
 function invalid(message: string) {
@@ -66,7 +66,7 @@ export function uploadFiles(files: (z.infer<typeof sent> | z.infer<typeof attach
     const mib = (total / 1024 / 1024).toFixed(1);
 
     throw invalid(
-      `The files total ${mib} MiB; one upload takes at most 5 MiB. Send fewer or smaller files, or ask the user to attach them.`,
+      `The files total ${mib} MiB; one upload takes at most 5 MiB. Send fewer or smaller files.`,
     );
   }
 
@@ -78,7 +78,7 @@ export function uploadTools(env: BrowserEnv) {
     defineTool({
       id: 'upload',
       description:
-        'Attach files to a file input, by the ref of the input, its label or its upload button (the input itself is often hidden), then fire its input and change events. Each file is base64 with its name and type, or { attachment } naming a file the user attached in this chat. At most 5 MiB per call.',
+        'Attach files to a file input, by the ref of the input, its label or its upload button (the input itself is often hidden), then fire its input and change events. Each file is base64 with its name and type, or { attachment } naming a file the user attached or pasted in this chat. At most 5 MiB per call.',
       input: z.object({
         tab_id: tabId,
         ref,
