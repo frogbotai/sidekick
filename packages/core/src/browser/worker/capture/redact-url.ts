@@ -4,7 +4,7 @@ export const SECRET_NAME =
 
 /** A name with its camelCase words split by `_`, so `otpCode` is matched like `otp_code`. */
 export function words(name: string) {
-  return name.replace(/([a-z\d])([A-Z])/g, '$1_$2');
+  return name.replace(/([a-z\d])([A-Z])/g, '$1_$2').replace(/([A-Z]+)([A-Z][a-z])/g, '$1_$2');
 }
 
 /** Whether a header, field or cookie name says its value is a credential. */
