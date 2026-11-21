@@ -2,9 +2,9 @@ import type { PermissionAction, ToolContext, ToolMetadata, ToolResult } from '..
 import { ToolError, UNTRUSTED } from '../../tool/tool';
 import { originOf } from '../../tool/url';
 import { checkpoint, race, stopped } from './abort';
-import type { Recordings } from './recordings';
 import type { Challenge } from './challenge';
 import { detect } from './detect';
+import type { Recordings } from './recordings';
 import type { Run, Runs } from './runs';
 import type { Sessions } from './sessions';
 import type { Settler } from './settle';
