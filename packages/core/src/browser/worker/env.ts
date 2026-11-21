@@ -84,7 +84,8 @@ export async function enter(
   let tab = await getTab(env, tabId, signal);
 
   if (env.handoffs.pending(tabId)) {
-    await env.handoffs.idle(tabId, signal);
+    while (env.handoffs.pending(tabId)) await env.handoffs.idle(tabId, signal);
+
     tab = await getTab(env, tabId, signal);
   }
 

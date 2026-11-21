@@ -1,3 +1,4 @@
+import { ToolError } from '../../tool/tool';
 import { race } from './abort';
 import type { HandoffCard, Page, Tabs } from './types';
 
@@ -74,8 +75,8 @@ function listeners<A>() {
  * After browse's handoff registry: a second handoff on a tab ends the first as `timeout`, and
  * every end removes the card and clears the badge. Chrome drops a tab's badge text when it
  * navigates, so each commit on a waiting tab sets it again. Chrome has no crash event without
- * the debugger, so a tab whose page stops answering, with no navigation under way, ends as
- * `crashed`.
+ * the debugger, so a tab whose page can't be reached, with no navigation under way, ends as
+ * `crashed`. A page that answers late is alive, only blocked, say by an `alert()`.
  */
 export function createHandoffs({ tabs, page }: { tabs: Tabs; page: Page }): Handoffs {
   const waiting = new Map<number, Waiting>();
@@ -104,12 +105,13 @@ export function createHandoffs({ tabs, page }: { tabs: Tabs; page: Page }): Hand
 
   const check = async (entry: Waiting) => {
     const { tabId, id, message } = entry.ask;
-    const answered = await page.handoff(tabId, { id, message }).then(
-      () => true,
-      () => false,
+    const outcome = await page.handoff(tabId, { id, message }).then(
+      () => 'answered' as const,
+      (error: unknown) =>
+        error instanceof ToolError && error.code === 'timeout' ? ('blocked' as const) : 'gone',
     );
 
-    if (answered) {
+    if (outcome !== 'gone') {
       entry.misses = 0;
 
       return;

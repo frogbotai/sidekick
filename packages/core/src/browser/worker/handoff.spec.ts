@@ -263,15 +263,40 @@ describe('handoffs through the tool caller', () => {
 
     expect(log).toContain('page.snapshot');
   });
+
+  it('keeps a waiting snapshot waiting when a second handoff replaces the first (req. 6)', async () => {
+    const { runtime, call, log } = await caller();
+    const { handoffs } = runtime.env;
+
+    void call('a', 'handoff', { tab_id: 1, message: 'first' });
+    await vi.waitFor(() => expect(handoffs.pending(1)?.message).toBe('first'));
+
+    const snapshot = call('snap', 'snapshot', { tab_id: 1 });
+
+    await vi.advanceTimersByTimeAsync(1_000);
+
+    const second = call('b', 'handoff', { tab_id: 1, message: 'second' });
+
+    await vi.waitFor(() => expect(handoffs.pending(1)?.message).toBe('second'));
+    await vi.advanceTimersByTimeAsync(1_000);
+
+    expect(log).not.toContain('page.snapshot');
+
+    handoffs.resolve(handoffs.pending(1)?.id ?? '');
+    await second;
+    await drain(snapshot);
+
+    expect(log).toContain('page.snapshot');
+  });
 });
 
 describe('a crashed tab', () => {
   function crashing() {
     const log: Log = [];
     let answering = true;
+    let failure: Error = new Error('No receiving end');
     const page = fakePage(log, {
-      handoff: () =>
-        answering ? Promise.resolve() : Promise.reject(new Error('No receiving end')),
+      handoff: () => (answering ? Promise.resolve() : Promise.reject(failure)),
     });
 
     const tabs = fakeTabs(log, [START_TAB]);
@@ -283,7 +308,16 @@ describe('a crashed tab', () => {
       signal: new AbortController().signal,
     });
 
-    return { handoffs, tabs, result, crash: () => (answering = false) };
+    return {
+      handoffs,
+      tabs,
+      result,
+      crash: () => (answering = false),
+      block: () => {
+        answering = false;
+        failure = new ToolError('timeout', 'The page didn’t answer in time.');
+      },
+    };
   }
 
   it('ends as cancelled when the page stops answering with no navigation under way (req. 3)', async () => {
@@ -294,6 +328,15 @@ describe('a crashed tab', () => {
     await vi.advanceTimersByTimeAsync(HANDOFF_HEARTBEAT * HANDOFF_MISSES);
 
     await expect(result).resolves.toEqual({ status: 'cancelled', reason: 'crashed' });
+  });
+
+  it('keeps waiting while an alert blocks the page, which answers late but is alive', async () => {
+    const { handoffs, block } = crashing();
+
+    block();
+    await vi.advanceTimersByTimeAsync(HANDOFF_HEARTBEAT * (HANDOFF_MISSES + 2));
+
+    expect(handoffs.pending(1)).toBeDefined();
   });
 
   it('keeps waiting through a navigation, which also silences the page for a while', async () => {
