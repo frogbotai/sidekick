@@ -421,4 +421,11 @@ export const INDICATOR = `[...document.documentElement.children]
   .map((element) => chrome.dom.openOrClosedShadowRoot(element))
   .find((root) => root?.querySelector('.stop'))`;
 
+/** An isolated-world expression for the indicator overlay's computed opacity, or `null` before it shows. */
+export const OVERLAY_OPACITY = `(() => {
+  const overlay = ${INDICATOR}?.querySelector('.overlay');
+
+  return overlay ? getComputedStyle(overlay).opacity : null;
+})()`;
+
 export { expect } from '@playwright/test';

@@ -22,6 +22,17 @@ export const MAX_CHARS_CAP = 100_000;
 
 export const MIN_CHARS = 1_000;
 
+const maxChars = z
+  .number()
+  .int()
+  .positive()
+  .optional()
+  .describe('At most this many characters, from 1,000 to 100,000; 30,000 when left out.');
+
+function clampChars(max: number | undefined) {
+  return Math.min(Math.max(max ?? MAX_CHARS, MIN_CHARS), MAX_CHARS_CAP);
+}
+
 async function attachForScroll(act: Act) {
   try {
     await act.env.sessions.ensure(act.tabId, act.signal);
@@ -71,12 +82,7 @@ export function readTools(env: BrowserEnv) {
         tab_id: tabId,
         scope: z.enum(['viewport', 'page']).optional(),
         ref: ref.optional().describe('Read only this element’s subtree, not the page.'),
-        max_chars: z
-          .number()
-          .int()
-          .positive()
-          .optional()
-          .describe('At most this many characters, from 1,000 to 100,000; 30,000 when left out.'),
+        max_chars: maxChars,
       }),
       output: z.object({
         url: z.string(),
@@ -96,7 +102,7 @@ export function readTools(env: BrowserEnv) {
           env.page.snapshot(tab_id, {
             scope: scope ?? 'viewport',
             ref: subtree,
-            max_chars: Math.min(Math.max(max_chars ?? MAX_CHARS, MIN_CHARS), MAX_CHARS_CAP),
+            max_chars: clampChars(max_chars),
           }),
         );
 
@@ -112,20 +118,67 @@ export function readTools(env: BrowserEnv) {
       },
     }),
     defineTool({
-      id: 'screenshot',
+      id: 'page_text',
       description:
-        'Capture the visible part of a tab, or one element. click, hover and drag accept x and y in this image’s pixels. While Sidekick runs, the image also shows Sidekick’s own indicator, which isn’t part of the page: a dim tint with a coloured glow at the edges, a green arrow where the pointer last was, and a red “Stop Sidekick” button at the bottom centre; never click that button.',
+        'Read the page’s main text as markdown, to read or summarise it; use snapshot to act. Top frame only, unless ref points inside a frame.',
       input: z.object({
         tab_id: tabId,
-        scale: z.number().min(0.1).max(1).optional(),
+        ref: ref.optional().describe('Read this element’s text instead of the main content.'),
+        max_chars: maxChars,
+      }),
+      output: z.object({
+        url: z.string(),
+        title: z.string(),
+        text: z.string(),
+        truncated: z.boolean(),
+      }),
+      permission: 'read',
+      lock: byTab,
+      execute: async ({ tab_id, ref: element, max_chars }, ctx) => {
+        const act = await enter(env, ctx, tab_id, 'read');
+
+        if (element !== undefined) await inspect(act, element);
+
+        const page = await onPage(act, () =>
+          env.page.text(tab_id, { ref: element, max_chars: clampChars(max_chars) }),
+        );
+
+        const read = await getTab(env, tab_id, act.signal);
+
+        return untrusted({
+          url: read.url,
+          title: page.title,
+          text: page.text,
+          truncated: page.truncated,
+        });
+      },
+    }),
+    defineTool({
+      id: 'screenshot',
+      description:
+        'Capture the visible part of a tab, or one element. Pass region (pixels of your last screenshot) and a scale up to 4 to look closely at small text; without a debugger attached, a region is only cropped, not sharpened. click, hover and drag accept x and y in this image’s pixels. While Sidekick runs, the image also shows Sidekick’s own indicator, which isn’t part of the page: a dim tint with a coloured glow at the edges, a green arrow where the pointer last was, and a red “Stop Sidekick” button at the bottom centre; never click that button.',
+      input: z.object({
+        tab_id: tabId,
+        scale: z
+          .number()
+          .min(0.1)
+          .max(4)
+          .optional()
+          .describe(
+            'Image pixels per CSS pixel; 1 when left out. Images stay within 2,000 pixels.',
+          ),
         ref: ref.optional(),
+        region: z
+          .object({ x: z.number(), y: z.number(), width: z.number(), height: z.number() })
+          .optional()
+          .describe('An area of your last screenshot of this tab, in its pixels.'),
       }),
       output: z.object({ url: z.string(), width: z.number(), height: z.number() }),
       permission: 'read',
       lock: byTab,
-      execute: async ({ tab_id, scale, ref: element }, ctx) => {
+      execute: async ({ tab_id, scale, ref: element, region }, ctx) => {
         const act = await enter(env, ctx, tab_id, 'read');
-        const capture = await screenshot(act, { scale: scale ?? 1, ref: element });
+        const capture = await screenshot(act, { scale: scale ?? 1, ref: element, region });
         const read = await getTab(env, tab_id, act.signal);
 
         return untrusted({ url: read.url, width: capture.width, height: capture.height }, [

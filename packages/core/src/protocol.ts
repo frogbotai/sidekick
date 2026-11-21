@@ -196,6 +196,10 @@ export const frameProtocol = defineProtocol({
         }),
       ),
     },
+    'page.text': {
+      input: z.object({ ref: z.optional(ref), doc, max_chars: z.int().check(z.positive()) }),
+      output: outcome(z.object({ title: z.string(), text: z.string(), truncated: z.boolean() })),
+    },
     'page.inspect': {
       input: byRef,
       output: outcome(
