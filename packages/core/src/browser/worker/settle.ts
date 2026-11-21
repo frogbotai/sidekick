@@ -1,6 +1,6 @@
 import { ToolError } from '../../tool/tool';
 import { race } from './abort';
-import type { Dialogs } from './dialogs';
+import { dialogOpen, type Dialogs } from './dialogs';
 import type { Sessions } from './sessions';
 import type { Cdp, CdpEvent, Page, Tabs } from './types';
 
@@ -26,12 +26,15 @@ export interface SettleOptions {
    * without one, and fails `request_failed` on a main-frame error.
    */
   commit?: boolean;
+  /** The action answers the dialog that is open, so it runs anyway. */
+  answers?: boolean;
 }
 
 /**
  * Tracks requests from before `action` runs, then resolves `true` when the tab settled within the
  * caps. A dialog that opens on the tab ends it at once with `false`, and aborts the signal `action`
- * was given, so the action stops before its next step.
+ * was given, so the action stops before its next step. A dialog already open fails `dialog_open`
+ * without running `action`, unless the action answers it.
  */
 export interface Settler {
   settle(
@@ -229,6 +232,10 @@ export function createSettler({
 
   return {
     settle: async (tabId, signal, action, options = {}) => {
+      const pending = dialogs.get(tabId);
+
+      if (pending && !options.answers) throw dialogOpen(pending);
+
       const interrupt = new AbortController();
       const dialog = dialogs.opened(tabId);
       const body = settle(tabId, AbortSignal.any([signal, interrupt.signal]), action, options);

@@ -3,7 +3,7 @@ import { ToolError, UNTRUSTED } from '../../tool/tool';
 import { originOf } from '../../tool/url';
 import { checkpoint, race, stopped } from './abort';
 import { type Aftermath, diff, type Watch, watch } from './aftermath';
-import type { Dialog, Dialogs } from './dialogs';
+import { dialogOpen, type Dialogs } from './dialogs';
 import type { Run, Runs } from './runs';
 import type { Sessions } from './sessions';
 import type { SettleOptions, Settler } from './settle';
@@ -73,15 +73,6 @@ export function runOf(env: BrowserEnv, ctx: ToolContext) {
   return { run, signal };
 }
 
-/** A dialog blocks the page's scripts, so a call that needs the page fails at once instead of timing out. */
-export function dialogOpen(dialog: Dialog) {
-  return new ToolError(
-    'dialog_open',
-    `A ${dialog.type} dialog is open on this tab. Answer it with the dialog tool (accept or dismiss) first; don’t repeat the action that opened it.`,
-    { ...dialog },
-  );
-}
-
 export interface EnterOptions {
   /** The origin to ask about, when it isn't the tab's, as for `navigate`'s target. */
   resource?: string;
@@ -116,8 +107,29 @@ export async function enter(
   return act;
 }
 
+/**
+ * Runs a page call that a dialog would block. It fails `dialog_open` at once when one is open, or
+ * as soon as one opens, so a blocked page never holds the tab's lock.
+ */
+export async function onPage<T>(act: Act, call: () => Promise<T>): Promise<T> {
+  const { dialogs } = act.env;
+  const pending = dialogs.get(act.tabId);
+
+  if (pending) throw dialogOpen(pending);
+
+  const opened = dialogs.opened(act.tabId);
+
+  try {
+    const blocked = opened.promise.then((dialog) => Promise.reject(dialogOpen(dialog)));
+
+    return await race(Promise.race([call(), blocked]), act.signal);
+  } finally {
+    opened.stop();
+  }
+}
+
 export async function inspect(act: Act, ref: string): Promise<RefInfo> {
-  const info = await race(act.env.page.inspect(act.tabId, ref), act.signal);
+  const info = await onPage(act, () => act.env.page.inspect(act.tabId, ref));
 
   if (info.frameOrigin !== act.origin) {
     await race(
@@ -162,7 +174,7 @@ export async function inspectTarget(act: Act, ref: string, key = 'target') {
 
 /** The focused field for `fill` without a ref: `not_editable` when nothing editable has focus. */
 export async function focusedField(act: Act) {
-  const field = await race(act.env.page.focused(act.tabId), act.signal);
+  const field = await onPage(act, () => act.env.page.focused(act.tabId));
 
   if (!field.editable) {
     throw new ToolError(
@@ -188,7 +200,12 @@ export async function focusedField(act: Act) {
   return field;
 }
 
+/** Before input: the tab is still in the group, on the same site, and no dialog blocks it. */
 export async function recheck(act: Act) {
+  const pending = act.env.dialogs.get(act.tabId);
+
+  if (pending) throw dialogOpen(pending);
+
   const tab = await getTab(act.env, act.tabId, act.signal);
 
   if (!act.env.runs.owns(act.run, tab)) throw notInGroup(act.tabId);
@@ -291,9 +308,11 @@ export async function aim(
 
 /** Refuses a screenshot point on Sidekick's Stop button; a frame that can't answer has no Stop. */
 export async function offStop(act: Act, point: Point): Promise<Point> {
-  const onStop = await race(act.env.page.stopAt(act.tabId, point), act.signal).catch(
+  const onStop = await onPage(act, () => act.env.page.stopAt(act.tabId, point)).catch(
     (error: unknown) => {
-      if (act.signal.aborted) throw error;
+      if (act.signal.aborted || (error instanceof ToolError && error.code === 'dialog_open')) {
+        throw error;
+      }
 
       return false;
     },

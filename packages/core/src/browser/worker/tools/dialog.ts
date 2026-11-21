@@ -42,22 +42,26 @@ export function dialogTools(env: BrowserEnv) {
 
         if (!pending) throw noDialog();
 
-        const output = await settleAfter(act, async (during) => {
-          try {
-            await send(during, 'Page.handleJavaScriptDialog', {
-              accept: answer === 'accept',
-              ...(promptText === undefined ? {} : { promptText }),
-            });
-          } catch (error) {
-            if (!/no dialog is showing/i.test(messageOf(error))) throw error;
+        const output = await settleAfter(
+          act,
+          async (during) => {
+            try {
+              await send(during, 'Page.handleJavaScriptDialog', {
+                accept: answer === 'accept',
+                ...(promptText === undefined ? {} : { promptText }),
+              });
+            } catch (error) {
+              if (!/no dialog is showing/i.test(messageOf(error))) throw error;
+
+              env.dialogs.clear(tab_id, pending);
+
+              throw noDialog();
+            }
 
             env.dialogs.clear(tab_id, pending);
-
-            throw noDialog();
-          }
-
-          env.dialogs.clear(tab_id, pending);
-        });
+          },
+          { answers: true },
+        );
 
         return untrusted(output);
       },

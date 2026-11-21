@@ -72,3 +72,43 @@ test('reports a popup, a # change and dialogs from a click or a focus, and answe
 
   expect(await run.call('dialog', { action: 'get' })).toMatchObject({ dialog: null });
 });
+
+test('a dialog left open past the idle detach can still be answered, and select re-attaches', async ({
+  context,
+  origin,
+  sidekick,
+}) => {
+  test.setTimeout(120_000);
+
+  const page = await context.newPage();
+
+  page.on('dialog', () => undefined);
+  await page.goto(`${origin()}/aftermath.html`);
+
+  const run = await sidekick.start(page);
+  const { snapshot } = await run.call<SnapshotOutput>('snapshot');
+  const asked = await run.call<ActionOutput>('click', { ref: refFor(snapshot, 'Delete order') });
+
+  expect(asked.dialog).toMatchObject({ type: 'confirm' });
+
+  await page.waitForTimeout(23_000);
+
+  const answering = Date.now();
+
+  expect(await run.call('dialog', { action: 'accept' })).toMatchObject({ dialog: null });
+  expect(Date.now() - answering).toBeLessThan(5_000);
+  expect(await page.evaluate(() => window.answers)).toEqual([true]);
+
+  await page.waitForTimeout(23_000);
+
+  const selecting = Date.now();
+  const selected = await run.call<ActionOutput>('select', {
+    ref: refFor(snapshot, 'Plan'),
+    values: ['pro'],
+  });
+
+  expect(Date.now() - selecting).toBeLessThan(5_000);
+  expect(selected.dialog).toMatchObject({ type: 'alert', message: 'Plan changed' });
+
+  await run.call('dialog', { action: 'accept' });
+});

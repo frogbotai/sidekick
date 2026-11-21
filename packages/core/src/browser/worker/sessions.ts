@@ -35,6 +35,8 @@ export interface SessionsOptions {
   tabs: Tabs;
   page: Page;
   idleMs?: number;
+  /** Keeps a tab attached past the idle time, as while a dialog waits on it. */
+  keep?: (tabId: number) => boolean;
 }
 
 function blocked(reason: 'policy' | 'devtools_open' | 'restricted_url', message: string) {
@@ -84,6 +86,7 @@ export function createSessions({
   tabs,
   page,
   idleMs = IDLE_DETACH_MS,
+  keep = () => false,
 }: SessionsOptions): Sessions {
   const sessions = new Map<
     number,
@@ -105,6 +108,12 @@ export function createSessions({
     clearTimeout(session.timer);
 
     session.timer = setTimeout(() => {
+      if (keep(tabId)) {
+        touch(tabId);
+
+        return;
+      }
+
       drop(tabId);
       void cdp.detach(tabId).catch(() => undefined);
     }, idleMs);
@@ -143,8 +152,9 @@ export function createSessions({
       });
     }
 
-    await cdp.send(tabId, 'Network.enable', {});
-    await cdp.send(tabId, 'Page.enable', {});
+    for (const method of ['Network.enable', 'Page.enable']) {
+      await race(cdp.send(tabId, method, {}), NEVER, { ms: COMMAND_TIMEOUT_MS, what: method });
+    }
   };
 
   const ensure = async (tabId: number, signal = NEVER) => {

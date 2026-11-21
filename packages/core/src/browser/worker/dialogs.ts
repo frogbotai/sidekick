@@ -1,5 +1,6 @@
 import { z } from 'zod';
 
+import { ToolError } from '../../tool/tool';
 import type { Cdp, Tabs } from './types';
 
 export const DIALOG_TYPES = ['alert', 'confirm', 'prompt', 'beforeunload'] as const;
@@ -21,6 +22,15 @@ export interface Dialogs {
   /** Forgets `dialog` once answered, unless another one has replaced it. */
   clear(tabId: number, dialog: Dialog): void;
   dispose(): void;
+}
+
+/** A dialog blocks the page's scripts, so a call that needs the page fails at once instead of timing out. */
+export function dialogOpen(dialog: Dialog) {
+  return new ToolError(
+    'dialog_open',
+    `A ${dialog.type} dialog is open on this tab. Answer it with the dialog tool (accept or dismiss) first; don’t repeat the action that opened it.`,
+    { ...dialog },
+  );
 }
 
 const opening = z.object({
