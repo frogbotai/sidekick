@@ -45,6 +45,8 @@ describe('input order (req. 13)', () => {
       'cdp.Input.dispatchMouseEvent',
       'page.domQuiet',
       'tabs.get',
+      'page.probe',
+      'tabs.frames',
     ]);
 
     expect(output.output).toEqual({
@@ -179,6 +181,8 @@ describe('fill (req. 14, 329 D1 B)', () => {
       'cdp.Input.insertText',
       'page.domQuiet',
       'tabs.get',
+      'page.probe',
+      'tabs.frames',
     ]);
 
     expect(inputs(cdp.sent)).toEqual([

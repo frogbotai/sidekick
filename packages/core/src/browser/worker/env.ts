@@ -3,6 +3,8 @@ import { ToolError, UNTRUSTED } from '../../tool/tool';
 import { originOf } from '../../tool/url';
 import { checkpoint, race, stopped } from './abort';
 import { type Aftermath, diff, type Watch, watch } from './aftermath';
+import type { Challenge } from './challenge';
+import { detect } from './detect';
 import { dialogOpen, type Dialogs } from './dialogs';
 import type { Run, Runs } from './runs';
 import type { Sessions } from './sessions';
@@ -384,16 +386,25 @@ export async function cursor(act: Act, point: Point) {
 export interface ActionOutput extends Aftermath {
   url: string;
   settled: boolean;
+  /** Only when the action ended on a captcha, bot check or block page. */
+  challenge?: Challenge;
 }
 
-/** The action result: the tab's URL and what changed since `watched` began (nothing without it). */
+/**
+ * The action result: the tab's URL, what changed since `watched` began (nothing without it), and
+ * whether it ended on a wall (D2). A page a dialog blocks can't be probed, so it isn't.
+ */
 export async function finish(act: Act, settled: boolean, watched?: Watch): Promise<ActionOutput> {
   const { env, tabId } = act;
-  const tab = await getTab(env, tabId, act.signal);
+  const landed = await getTab(env, tabId, act.signal);
+  const blocked = env.dialogs.get(tabId);
+  const challenge = blocked ? undefined : await detect(env, tabId, landed.url, act.signal);
+  const tab = challenge ? await getTab(env, tabId, act.signal) : landed;
   const dialog = env.dialogs.get(tabId);
   const after = await diff({ tabs: env.tabs, watched, documents: documentOf(env, tabId), dialog });
+  const output = { url: tab.url, settled, ...after };
 
-  return { url: tab.url, settled, ...after };
+  return challenge ? { ...output, challenge } : output;
 }
 
 /** Starts watching the tab, for `finish`; stop it when the call ends. */
