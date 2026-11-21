@@ -57,8 +57,7 @@ function bad(id: string, input: z.ZodType = z.object({})): ToolDefinition {
 }
 
 describe('browser tools in the tools registry', () => {
-  it('registers all 18, and sends a bad id or schema to errors()', async () => {
-  it('registers all 16, and sends a bad id or schema to errors()', async () => {
+  it('registers all 19, and sends a bad id or schema to errors()', async () => {
     const { runtime } = await setupBrowser();
 
     disposers.push(
