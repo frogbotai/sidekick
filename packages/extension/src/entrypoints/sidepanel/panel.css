@@ -42,9 +42,29 @@ body,
 .sidekick-panel__bar {
   display: flex;
   flex: none;
+  gap: 8px;
   align-items: center;
   height: 64px;
-  padding-inline: 64px 16px;
+  padding-inline: 16px;
+}
+
+.sidekick-panel__nav-toggle {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  color: var(--color-text);
+  cursor: pointer;
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+}
+
+.sidekick-panel__nav-toggle:hover {
+  background: var(--color-bg-hover);
 }
 
 .sidekick-panel__title {
@@ -100,12 +120,6 @@ body,
   min-height: 100%;
   padding-top: 1rem;
   background: var(--color-bg);
-}
-
-@media (min-width: 768px) {
-  .sidekick-panel__bar {
-    padding-inline-start: 16px;
-  }
 }
 
 .sidekick-connect {

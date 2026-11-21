@@ -7,6 +7,7 @@ import {
   type Act,
   type BrowserEnv,
   enter,
+  fromScreenshotRect,
   getTab,
   inspect,
   inspectTarget,
@@ -25,6 +26,17 @@ export const MAX_CHARS_CAP = 100_000;
 export const MIN_CHARS = 1_000;
 
 const baselineName = z.string().trim().min(1).max(64);
+
+const maxChars = z
+  .number()
+  .int()
+  .positive()
+  .optional()
+  .describe('At most this many characters, from 1,000 to 100,000; 30,000 when left out.');
+
+function clampChars(max: number | undefined) {
+  return Math.min(Math.max(max ?? MAX_CHARS, MIN_CHARS), MAX_CHARS_CAP);
+}
 
 async function attachForScroll(act: Act) {
   try {
@@ -88,12 +100,7 @@ export function readTools(env: BrowserEnv) {
         tab_id: tabId,
         scope: z.enum(['viewport', 'page']).optional(),
         ref: ref.optional().describe('Read only this element’s subtree, not the page.'),
-        max_chars: z
-          .number()
-          .int()
-          .positive()
-          .optional()
-          .describe('At most this many characters, from 1,000 to 100,000; 30,000 when left out.'),
+        max_chars: maxChars,
       }),
       output: z.object({
         url: z.string(),
@@ -113,7 +120,7 @@ export function readTools(env: BrowserEnv) {
           env.page.snapshot(tab_id, {
             scope: scope ?? 'viewport',
             ref: subtree,
-            max_chars: Math.min(Math.max(max_chars ?? MAX_CHARS, MIN_CHARS), MAX_CHARS_CAP),
+            max_chars: clampChars(max_chars),
           }),
           act.signal,
         );
@@ -130,13 +137,61 @@ export function readTools(env: BrowserEnv) {
       },
     }),
     defineTool({
-      id: 'screenshot',
+      id: 'page_text',
       description:
-        'Capture the visible part of a tab, or one element. click, hover and drag accept x and y in this image’s pixels. Give a name to keep it as a baseline for screenshot_diff; a named capture leaves out Sidekick’s indicator. Otherwise, while Sidekick runs, the image also shows Sidekick’s own indicator, which isn’t part of the page: a dim tint with a coloured glow at the edges, a green arrow where the pointer last was, and a red “Stop Sidekick” button at the bottom centre; never click that button.',
+        'Read the page’s main text as markdown, to read or summarise it; use snapshot to act. Top frame only, unless ref points inside a frame.',
       input: z.object({
         tab_id: tabId,
-        scale: z.number().min(0.1).max(1).optional(),
+        ref: ref.optional().describe('Read this element’s text instead of the main content.'),
+        max_chars: maxChars,
+      }),
+      output: z.object({
+        url: z.string(),
+        title: z.string(),
+        text: z.string(),
+        truncated: z.boolean(),
+      }),
+      permission: 'read',
+      lock: byTab,
+      execute: async ({ tab_id, ref: element, max_chars }, ctx) => {
+        const act = await enter(env, ctx, tab_id, 'read');
+
+        if (element !== undefined) await inspect(act, element);
+
+        const page = await race(
+          env.page.text(tab_id, { ref: element, max_chars: clampChars(max_chars) }),
+          act.signal,
+        );
+
+        const read = await getTab(env, tab_id, act.signal);
+
+        return untrusted({
+          url: read.url,
+          title: page.title,
+          text: page.text,
+          truncated: page.truncated,
+        });
+      },
+    }),
+    defineTool({
+      id: 'screenshot',
+      description:
+        'Capture the visible part of a tab, or one element. Pass region (pixels of your last screenshot) and a scale up to 4 to look closely at small text; without a debugger attached, a region is only cropped, not sharpened. click, hover and drag accept x and y in this image’s pixels. Give a name to keep it as a baseline for screenshot_diff; a named capture leaves out Sidekick’s indicator. Otherwise, while Sidekick runs, the image also shows Sidekick’s own indicator, which isn’t part of the page: a dim tint with a coloured glow at the edges, a green arrow where the pointer last was, and a red “Stop Sidekick” button at the bottom centre; never click that button.',
+      input: z.object({
+        tab_id: tabId,
+        scale: z
+          .number()
+          .min(0.1)
+          .max(4)
+          .optional()
+          .describe(
+            'Image pixels per CSS pixel; 1 when left out. Images stay within 2,000 pixels.',
+          ),
         ref: ref.optional(),
+        region: z
+          .object({ x: z.number(), y: z.number(), width: z.number(), height: z.number() })
+          .optional()
+          .describe('An area of your last screenshot of this tab, in its pixels.'),
         name: baselineName
           .optional()
           .describe('Keep this capture as a baseline under this name, for screenshot_diff.'),
@@ -144,14 +199,21 @@ export function readTools(env: BrowserEnv) {
       output: z.object({ url: z.string(), width: z.number(), height: z.number() }),
       permission: 'read',
       lock: byTab,
-      execute: async ({ tab_id, scale = 1, ref: element, name }, ctx) => {
+      execute: async ({ tab_id, scale = 1, ref: element, region, name }, ctx) => {
         const act = await enter(env, ctx, tab_id, 'read');
-        const take = () => screenshot(act, { scale, ref: element });
+        const clip =
+          name !== undefined && region && element === undefined
+            ? fromScreenshotRect(env, tab_id, region)
+            : undefined;
+
+        const take = () =>
+          screenshot(act, { scale, ref: element, region: clip ? undefined : region, clip });
+
         const capture = name === undefined ? await take() : await clean(act, take);
         const read = await getTab(env, tab_id, act.signal);
 
         if (name !== undefined) {
-          keepBaseline(act.run, name, { tabId: tab_id, scale, ref: element, capture });
+          keepBaseline(act.run, name, { tabId: tab_id, scale, ref: element, clip, capture });
         }
 
         return untrusted({ url: read.url, width: capture.width, height: capture.height }, [
@@ -167,7 +229,7 @@ export function readTools(env: BrowserEnv) {
     defineTool({
       id: 'screenshot_diff',
       description:
-        'Capture the tab again the way a named baseline screenshot was taken (same scale and element) and compare the two. Returns how many pixels changed and an image with unchanged pixels gray and changed ones red. The images must be the same size: keep the viewport and zoom unchanged between them. click, hover and drag x and y still refer to the last screenshot, not this image.',
+        'Capture the tab again the way a named baseline screenshot was taken (same scale, element and region) and compare the two. Returns how many pixels changed and an image with unchanged pixels gray and changed ones red. The images must be the same size: keep the viewport and zoom unchanged between them. click, hover and drag x and y still refer to the last screenshot, not this image.',
       input: z.object({
         tab_id: tabId,
         baseline: baselineName.describe('The name given to screenshot.'),
@@ -193,7 +255,12 @@ export function readTools(env: BrowserEnv) {
         const act = await enter(env, ctx, tab_id, 'read');
         const baseline = baselineOf(act.run, name, tab_id);
         const capture = await clean(act, () =>
-          screenshot(act, { scale: baseline.scale, ref: baseline.ref, keepMap: false }),
+          screenshot(act, {
+            scale: baseline.scale,
+            ref: baseline.ref,
+            clip: baseline.clip,
+            keepMap: false,
+          }),
         );
 
         const [before, after] = await race(

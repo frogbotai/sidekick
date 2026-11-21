@@ -1,12 +1,14 @@
 import { ToolError } from '../../tool/tool';
 import type { Run } from './runs';
-import type { Capture } from './types';
+import type { Capture, Rect } from './types';
 
 /** A named screenshot and how it was taken, so `screenshot_diff` can capture the same way. */
 export interface Baseline {
   tabId: number;
   scale: number;
   ref?: string;
+  /** The region the capture covered, in viewport CSS pixels, so a later diff covers the same area. */
+  clip?: Rect;
   capture: Capture;
 }
 

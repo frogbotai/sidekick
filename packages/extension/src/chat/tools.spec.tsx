@@ -89,6 +89,12 @@ const CASES: [string, Done, string, string][] = [
     'Reading page',
     'Read Rows',
   ],
+  [
+    'page_text',
+    { input: {}, output: { title: 'Rows', url: 'https://a.test/' } },
+    'Reading page text',
+    'Read the text of Rows',
+  ],
   ['screenshot', { input: {}, output: { width: 10 } }, 'Taking screenshot', 'Took a screenshot'],
   [
     'screenshot_diff',
@@ -125,6 +131,12 @@ const CASES: [string, Done, string, string][] = [
     { input: {}, output: { file: 'sidekick-recording-2026-11-18-03-00-00.mp4' } },
     'Saving the recording',
     'Saved sidekick-recording-2026-11-18-03-00-00.mp4 to Downloads',
+  ],
+  [
+    'screenshot',
+    { input: { region: { x: 0, y: 0, width: 10, height: 10 } }, output: { width: 10 } },
+    'Zooming in',
+    'Zoomed in',
   ],
   [
     'scroll',
@@ -233,6 +245,7 @@ describe('tool cards', () => {
         'tabs_close',
         'navigate',
         'snapshot',
+        'page_text',
         'screenshot',
         'screenshot_diff',
         'record_start',
