@@ -96,6 +96,13 @@ function answerHandshake(socket: ReturnType<typeof workerSocket>) {
   socket.reply({ jsonrpc: '2.0', id: init?.id, result: INIT_RESULT });
 }
 
+const call = (id: number, name: string): Message => ({
+  jsonrpc: '2.0',
+  id,
+  method: 'tools/call',
+  params: { name, arguments: {} },
+});
+
 beforeEach(() => {
   vi.useFakeTimers();
 });
@@ -266,7 +273,7 @@ describe('the relay', () => {
   it('fails a request that waits too long for Sidekick, and wakes again next time', async () => {
     const { relay, toClient, wake } = setup();
 
-    relay.fromClient(initialize);
+    relay.fromClient({ jsonrpc: '2.0', id: 0, method: 'resources/list' });
     await flush();
     await vi.advanceTimersByTimeAsync(CONNECT_TIMEOUT);
 
@@ -274,22 +281,24 @@ describe('the relay', () => {
       { jsonrpc: '2.0', id: 0, error: { code: -32000, message: NO_CONNECTION } },
     ]);
 
-    relay.fromClient({ ...initialize, id: 1 });
+    relay.fromClient({ jsonrpc: '2.0', id: 1, method: 'resources/list' });
     await flush();
 
     expect(wake).toHaveBeenCalledTimes(2);
   });
 
-  it('fails at once without a token, after opening the page that points to settings', async () => {
+  it('fails a browser call at once without a token, opening the settings page only once', async () => {
     const { relay, toClient, wake } = setup({ hasToken: false });
 
-    relay.fromClient(initialize);
+    relay.fromClient(call(1, 'snapshot'));
+    relay.fromClient(call(2, 'snapshot'));
     await flush();
 
     expect(wake).toHaveBeenCalledTimes(1);
 
-    expect(toClient).toEqual([
-      { jsonrpc: '2.0', id: 0, error: { code: -32000, message: NO_TOKEN } },
+    expect(toClient.map((message) => message.result)).toEqual([
+      { isError: true, content: [{ type: 'text', text: NO_TOKEN }] },
+      { isError: true, content: [{ type: 'text', text: NO_TOKEN }] },
     ]);
   });
 
@@ -313,13 +322,6 @@ describe('the relay', () => {
     expect(toClient.at(-1)).toMatchObject({ id: 1, result: { isError: true } });
     expect(second.sent[0]).toMatchObject({ method: 'initialize' });
   });
-});
-
-const call = (id: number, name: string): Message => ({
-  jsonrpc: '2.0',
-  id,
-  method: 'tools/call',
-  params: { name, arguments: {} },
 });
 
 function textOf(message: Message | undefined) {
@@ -346,6 +348,7 @@ describe('status and settings while disconnected', () => {
       pairingState: 'no_token',
       nextStep: NO_TOKEN,
       helperVersion: '0.1.0',
+      versionMismatch: false,
     });
   });
 

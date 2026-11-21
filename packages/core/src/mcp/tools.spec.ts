@@ -186,7 +186,7 @@ describe('the settings tool', () => {
       'webSearchProvider: "bing" isn’t one of exa | tavily | random | false',
     );
 
-    expect(result.text).toContain('permissionGrants: unknown setting');
+    expect(result.text).toContain('permissionGrants: agents can’t change it');
     expect(result.text).toContain('sound: unknown setting');
     expect(await theme.get()).toBe('system');
     expect(await webSearchProvider.get()).toBeUndefined();

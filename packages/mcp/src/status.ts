@@ -5,6 +5,42 @@ export const MIN_EXTENSION = '0.9.0';
 export const OLD_EXTENSION =
   'Sidekick’s Chrome extension is out of date. Chrome updates extensions on its own; ask the person to restart Chrome to finish the update.';
 
+const NEXT_STEP_RULE =
+  'When `nextStep` is set, tell the person what it says and don’t retry until they have done it.';
+
+/**
+ * `status` and `settings` as the helper lists them when Sidekick can't connect and no listing is
+ * cached, so a client can still find `status`. The worker's own listing replaces them on connect.
+ */
+export const OFFLINE_TOOLS = [
+  {
+    name: 'settings',
+    description:
+      'Reads Sidekick’s settings, or changes theme or webSearchProvider with `set`. Needs Sidekick connected.',
+    inputSchema: {
+      type: 'object',
+      properties: { set: { type: 'object', additionalProperties: {} } },
+    },
+  },
+  {
+    name: 'status',
+    description: `Says whether Sidekick is connected and paired, and which versions run. ${NEXT_STEP_RULE}`,
+    inputSchema: { type: 'object', properties: {} },
+    annotations: { readOnlyHint: true },
+  },
+];
+
+/** The helper's own `initialize` answer when Sidekick can't connect and none is cached. */
+export function offlineInitialize(protocolVersion: unknown, helperVersion: string) {
+  return {
+    protocolVersion,
+    capabilities: { tools: { listChanged: true } },
+    serverInfo: { name: 'sidekick', title: 'FrogBot Sidekick', version: helperVersion },
+  };
+}
+
+const MISSING_STATUS = /^No worker tool named status\b/;
+
 /** What the helper last saw of Sidekick: never woken, a wake that failed, timed out, or a socket that dropped. */
 export type LastConnection = 'wake_failed' | 'timed_out' | 'dropped' | undefined;
 
@@ -45,6 +81,7 @@ export function disconnectedStatus(input: {
     pairingState: input.hasToken ? 'token_set' : 'no_token',
     nextStep: input.nextStep,
     helperVersion: input.helperVersion,
+    versionMismatch: false,
   };
 }
 
@@ -60,6 +97,16 @@ interface ToolResult {
 export function withVersions(result: unknown, helperVersion: string): unknown {
   const value = result as ToolResult | undefined;
   const first = value?.content?.[0];
+
+  if (value?.isError && first?.text !== undefined && MISSING_STATUS.test(first.text)) {
+    return textResult({
+      connected: true,
+      pairingState: 'paired',
+      helperVersion,
+      versionMismatch: true,
+      nextStep: OLD_EXTENSION,
+    });
+  }
 
   if (!value || value.isError || first?.type !== 'text' || first.text === undefined) return result;
 

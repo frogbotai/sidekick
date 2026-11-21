@@ -27,6 +27,8 @@ export const READABLE_SETTINGS = [
 /** The settings an agent may change (DR-107): display and search only, never the safety rails. */
 export const WRITABLE_SETTINGS = ['theme', 'webSearchProvider'] as const;
 
+const PROTECTED_SETTINGS = ['permissionGrants', 'mcpPairings', 'mcpHubs', 'userCommands'] as const;
+
 type Writable = (typeof WRITABLE_SETTINGS)[number];
 
 const THEMES = ['light', 'dark', 'system'] as const;
@@ -45,7 +47,9 @@ export interface ConnectionToolsOptions {
 }
 
 function problemOf(key: string, value: unknown, providers: string[]): string | undefined {
-  if (!(READABLE_SETTINGS as readonly string[]).includes(key)) {
+  const known = [...READABLE_SETTINGS, ...PROTECTED_SETTINGS] as readonly string[];
+
+  if (!known.includes(key)) {
     return `${key}: unknown setting. Settings: ${READABLE_SETTINGS.join(', ')}.`;
   }
 
