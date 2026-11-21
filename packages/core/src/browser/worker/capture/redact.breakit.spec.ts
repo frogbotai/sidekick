@@ -89,3 +89,36 @@ describe('independent review of PR #33', () => {
     expect(stored.request.url).toBe('https://a.test/list?page=10&limit=100');
   });
 });
+
+describe('around the PR #33 fixes', () => {
+  it('keeps Set-Cookie dates, plain anchors and hash routes, and whole-word auth names', () => {
+    const redactor = new SecretRedactor();
+    const [setCookie, author, auth] = redactor.protectHeaders([
+      { name: 'Set-Cookie', value: 'sid=abc12345; Expires=Wed, 21 Oct 2026 07:28:00 GMT; Secure' },
+      { name: 'X-Author', value: 'Jane Doe' },
+      { name: 'X-Auth', value: 'Jane Doe' },
+    ]);
+
+    expect(setCookie?.value).toBe('sid=[redacted]; Expires=Wed, 21 Oct 2026 07:28:00 GMT; Secure');
+    expect(author?.value).toBe('Jane Doe');
+    expect(auth?.value).toBe('[redacted]');
+
+    expect(redactor.protectUrl('https://a.test/docs#section-2')).toBe(
+      'https://a.test/docs#section-2',
+    );
+
+    expect(redactor.protectUrl('https://a.test/#/settings/profile')).toBe(
+      'https://a.test/#/settings/profile',
+    );
+
+    expect(redactor.redactText('state 2048 rows')).toBe('state 2048 rows');
+  });
+
+  it('remembers every value in a replaced fragment, so it stays hidden in later text', () => {
+    const redactor = new SecretRedactor();
+
+    redactor.protectUrl('https://a.test/cb#state=xyz&access_token=frag_tok_ABCDEF123456');
+
+    expect(redactor.redactText('got frag_tok_ABCDEF123456')).toBe('got [redacted]');
+  });
+});

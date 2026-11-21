@@ -1,6 +1,6 @@
 import {
   decode,
-  protectFragment,
+  isPlainFragment,
   protectPathSegments,
   protectSearchParams,
   SECRET_NAME,
@@ -14,13 +14,15 @@ export const REDACTED = '[redacted]';
 const SENTINEL = '__sidekick_redacted__';
 
 /**
- * Known values shorter than this are not replaced inside unrelated text, since short strings
- * collide with ordinary text. A whole text that equals a known value is still replaced.
+ * Hidden values shorter than this are not remembered, since short strings collide with ordinary
+ * text. Numbers and booleans are never remembered.
  */
 export const MIN_KNOWN_LENGTH = 8;
 
+const MIN_ONE_TIME_LENGTH = 4;
+
 const ONE_TIME_FIELD =
-  /pass(?:word|wd|code|phrase)|(?:^|[-_.])pwd(?:$|[-_.])|otp|totp|(?:^|[-_.])(?:mfa_?|2fa_?|verification_?|auth_?)?code(?:$|[-_.])|(?:^|[-_.])pin(?:$|[-_.])/i;
+  /pass(?:word|wd|code|phrase)|(?:^|[-_.])pwd(?:$|[-_.])|(?:^|[-_.])t?otp(?:$|[-_.])|(?:^|[-_.])(?:mfa_?|2fa_?|verification_?|auth_?)?code(?:$|[-_.])|(?:^|[-_.])pin(?:$|[-_.])/i;
 
 const SECRET_HEADERS = new Set([
   'authorization',
@@ -53,7 +55,7 @@ const NON_SECRET_HEADERS = new Set([
 const COOKIE_ATTRIBUTE =
   /^(?:domain|path|expires|max-age|samesite|priority|partitioned|secure|httponly)$/i;
 
-const URL_HEADERS = new Set(['location', 'referer', 'referrer']);
+const URL_HEADERS = new Set(['location', 'content-location', 'referer', 'referrer']);
 
 /** A request or response header. */
 export interface Header {
@@ -130,7 +132,7 @@ export class SecretRedactor {
 
     if (hash < 0) return result;
 
-    return `${result}#${restore(protectFragment(raw.slice(hash + 1), query))}`;
+    return `${result}#${restore(this.protectFragment(raw.slice(hash + 1)))}`;
   }
 
   /** The body with secret fields hidden, or `undefined` when it can't be parsed safely. */
@@ -215,12 +217,36 @@ export class SecretRedactor {
       .reduce((output, entry) => output.split(entry).join(REDACTED), text);
   }
 
-  private scrub(value: string, field = '') {
+  private scrub(value: string, field = '', remember = true) {
     if (!value) return value;
+    if (!remember) return SENTINEL;
 
-    this.known.add(value);
+    const oneTime = value.length >= MIN_ONE_TIME_LENGTH && ONE_TIME_FIELD.test(field);
 
-    if (ONE_TIME_FIELD.test(field)) this.always.add(value);
+    if (oneTime) this.always.add(value);
+    if (oneTime || value.length >= MIN_KNOWN_LENGTH) this.known.add(value);
+
+    return SENTINEL;
+  }
+
+  /** Keeps a plain route or anchor, and replaces anything else, such as `#access_token=…`. */
+  private protectFragment(fragment: string) {
+    const query = fragment.indexOf('?');
+    const route = query < 0 ? fragment : fragment.slice(0, query);
+
+    if (!isPlainFragment(route)) return this.hideFragment(fragment);
+
+    return query < 0 ? route : `${route}?${this.hideFragment(fragment.slice(query + 1))}`;
+  }
+
+  private hideFragment(text: string) {
+    const decoded = decode(text);
+
+    if (!decoded) return text;
+
+    for (const [name, value] of new URLSearchParams(decoded)) {
+      this.scrubUrlField(value || name, value ? name : '');
+    }
 
     return SENTINEL;
   }
@@ -238,7 +264,7 @@ export class SecretRedactor {
         .map((part, index) => {
           const separator = part.indexOf('=');
 
-          if (separator < 1) return part;
+          if (separator < 0) return !part || (set && index > 0) ? part : this.scrub(part);
 
           const name = part.slice(0, separator).trim();
           const cookie = part.slice(separator + 1);
@@ -250,7 +276,12 @@ export class SecretRedactor {
         })
         .join('; ');
 
-    return set ? value.split('\n').map(line).join('\n') : line(value);
+    if (!set) return line(value);
+
+    return value
+      .split(/(\n|, (?=[^;=\s]+=))/)
+      .map((chunk, index) => (index % 2 ? chunk : line(chunk)))
+      .join('');
   }
 
   private protectHeader(name: string, value: string) {
@@ -265,6 +296,17 @@ export class SecretRedactor {
     }
 
     if (URL_HEADERS.has(lower)) return this.protectUrl(value);
+    if (lower === 'link') {
+      return value.replace(/<([^>]*)>/g, (_, url: string) => `<${this.protectUrl(url)}>`);
+    }
+
+    if (lower === 'refresh') {
+      return value.replace(
+        /(url\s*=\s*['"]?)([^'"]*)/i,
+        (_, prefix: string, url: string) => `${prefix}${this.protectUrl(url)}`,
+      );
+    }
+
     if (lower === 'authorization' || lower === 'proxy-authorization') {
       const match = /^(\S+)\s+(.+)$/.exec(value);
 
@@ -301,7 +343,7 @@ export class SecretRedactor {
     if (field === 'open' || value === null || value === '') return value;
     if (field === 'codeVoice' && typeof value === 'string') return value;
 
-    return this.scrub(String(value), fieldName);
+    return this.scrub(String(value), fieldName, typeof value === 'string');
   }
 
   private protectMultipart(body: string, contentType: string) {
@@ -312,7 +354,7 @@ export class SecretRedactor {
     const delimiter = `--${boundary}`;
     const parts = body.split(delimiter);
 
-    if (parts.length < 3) return undefined;
+    if (parts.length < 3 || !(parts.at(-1) ?? '').startsWith('--')) return undefined;
 
     for (let index = 1; index < parts.length - 1; index += 1) {
       const part = parts[index] ?? '';
