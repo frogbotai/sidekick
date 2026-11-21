@@ -31,6 +31,8 @@ const NEARBY_DEPTH = 6;
 
 const secrets = new WeakSet<Element>();
 
+const secretSelectors = new Set<string>();
+
 function targetOf(event: Event) {
   const target = event.composedPath()[0];
 
@@ -95,9 +97,14 @@ function isSecret(element: Element) {
   );
 }
 
+function rememberSecret(element: Element) {
+  secrets.add(element);
+  secretSelectors.add(selectorOf(element));
+}
+
 function privacyOf(element: Element): string | undefined {
-  if (secrets.has(element) || isSecret(element)) {
-    secrets.add(element);
+  if (secrets.has(element) || isSecret(element) || secretSelectors.has(selectorOf(element))) {
+    rememberSecret(element);
 
     return 'secret';
   }
@@ -111,10 +118,21 @@ function privacyOf(element: Element): string | undefined {
   return undefined;
 }
 
+function uniqueId(element: Element) {
+  if (!element.id) return undefined;
+
+  const root = element.getRootNode();
+  const scope = root instanceof ShadowRoot ? root : element.ownerDocument;
+  const id = CSS.escape(element.id);
+
+  return scope.querySelectorAll(`#${id}`).length === 1 ? id : undefined;
+}
+
 function segment(element: Element) {
   const tag = element.tagName.toLowerCase();
+  const id = uniqueId(element);
 
-  if (element.id) return { text: `${tag}#${CSS.escape(element.id)}`, anchored: true };
+  if (id) return { text: `${tag}#${id}`, anchored: true };
 
   const parent = element.parentElement;
 
@@ -205,7 +223,7 @@ function kept(element: Element, value: string) {
 
   if (privacy === 'secret') return { redacted: true };
 
-  return { value: privacy ? `<${privacy}>` : value };
+  return privacy ? { masked: privacy } : { value };
 }
 
 function selectStep(element: HTMLSelectElement): RecordedStep {
@@ -214,7 +232,11 @@ function selectStep(element: HTMLSelectElement): RecordedStep {
 
   if (privacy === 'secret') return { kind: 'select', ...base(element), redacted: true };
 
-  return { kind: 'select', ...base(element), options: privacy ? [`<${privacy}>`] : labels };
+  return {
+    kind: 'select',
+    ...base(element),
+    ...(privacy ? { masked: privacy } : { options: labels }),
+  };
 }
 
 function inputStep(target: Element): RecordedStep | undefined {
@@ -231,7 +253,7 @@ function inputStep(target: Element): RecordedStep | undefined {
 
 function rememberSecrets(root: Document | ShadowRoot) {
   for (const element of root.querySelectorAll('*')) {
-    if (isSecret(element)) secrets.add(element);
+    if (isSecret(element)) rememberSecret(element);
 
     const shadow = shadowOf(element);
 
@@ -249,16 +271,18 @@ export interface Recorder {
  * (sidekick-21, after browse's `demonstrate`). Only trusted events count, so a page can't add
  * steps, and targets inside closed shadow roots are found from the point or the focus. Each step
  * goes to `send` as it happens, so a navigation can't drop it. A field that was ever a password
- * or secret keeps no value, even after a Show button makes it text: each press re-scans for
- * secret fields before the page's own handlers run; personal fields keep their
- * autocomplete token in place of the value (D3 B).
+ * or secret keeps no value, even after a Show button makes it text or swaps in a new input at the
+ * same selector: each press re-scans for secret fields before the page's own handlers run.
+ * Personal fields send their autocomplete token as `masked` in place of the value (D3 B).
  */
 export function createRecorder(send: (step: RecordedStep) => void): Recorder {
   let recording = false;
 
   const revealed = new MutationObserver((mutations) => {
     for (const { target, oldValue } of mutations) {
-      if (oldValue?.toLowerCase() === 'password' && target instanceof Element) secrets.add(target);
+      if (oldValue?.toLowerCase() === 'password' && target instanceof Element) {
+        rememberSecret(target);
+      }
     }
   });
 
@@ -300,6 +324,7 @@ export function createRecorder(send: (step: RecordedStep) => void): Recorder {
       }
 
       if (on) {
+        secretSelectors.clear();
         rememberSecrets(document);
 
         revealed.observe(document, {

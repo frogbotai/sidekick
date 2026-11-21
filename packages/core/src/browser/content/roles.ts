@@ -159,10 +159,22 @@ function labels(element: Element) {
     return '';
   }
 
-  return Array.from(element.labels ?? [], (label) => label.textContent ?? '').join(' ');
+  return Array.from(element.labels ?? [], labelText).join(' ');
+}
+
+function labelText(label: HTMLLabelElement) {
+  const copy = label.cloneNode(true);
+
+  if (!(copy instanceof Element)) return '';
+
+  for (const control of copy.querySelectorAll(FORM_CONTROLS)) control.remove();
+
+  return copy.textContent ?? '';
 }
 
 const BUTTON_INPUTS = new Set(['submit', 'reset', 'button']);
+
+const FORM_CONTROLS = 'input, textarea, select, [contenteditable]';
 
 export function nameOf(element: Element, role: string | undefined): string {
   for (const text of [
