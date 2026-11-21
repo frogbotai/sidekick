@@ -19,6 +19,15 @@ describe('the calling agent', () => {
     expect(callingAgent({ TERM_PROGRAM: 'vscode', CODEX_HOME: '/home/me/.codex' })).toBeUndefined();
     expect(callingAgent({ AI_AGENT: 'goose' })).toBeUndefined();
   });
+
+  it('is the inner agent when one runs inside a Claude Code shell', () => {
+    const claude = { CLAUDECODE: '1', CLAUDE_CODE_ENTRYPOINT: 'cli' };
+
+    expect(callingAgent({ ...claude, OPENCODE: '1' })).toBe('opencode');
+    expect(callingAgent({ ...claude, OPENCODE_SESSION_ID: 'session' })).toBe('opencode');
+    expect(callingAgent({ ...claude, CODEX_THREAD_ID: 'thread' })).toBe('codex');
+    expect(callingAgent({ ...claude, CURSOR_AGENT: '1' })).toBe('cursor');
+  });
 });
 
 describe('the plan', () => {
