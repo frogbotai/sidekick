@@ -86,6 +86,10 @@ describe('background', () => {
     start();
 
     expect(tools.list()).toHaveLength(19);
+  it('registers the 17 browser tools as built-ins', () => {
+    start();
+
+    expect(tools.list()).toHaveLength(17);
     expect(tools.errors()).toEqual([]);
   });
 
