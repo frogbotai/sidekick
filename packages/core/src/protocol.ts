@@ -101,6 +101,7 @@ const recordedStep = z.object({
   nearby: z.string(),
   selector: z.string(),
   value: z.optional(z.string()),
+  masked: z.optional(z.string()),
   redacted: z.optional(z.boolean()),
   checked: z.optional(z.boolean()),
   options: z.optional(z.array(z.string())),

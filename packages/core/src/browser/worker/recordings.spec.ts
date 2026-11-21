@@ -120,7 +120,7 @@ describe('summary (req. 6)', () => {
       summarize([
         step({ name: 'Submit' }),
         step({ kind: 'fill', role: 'searchbox', name: 'Search', value: 'red shoes' }),
-        step({ kind: 'fill', role: 'textbox', name: 'Address', value: '<street-address>' }),
+        step({ kind: 'fill', role: 'textbox', name: 'Address', masked: 'street-address' }),
         step({ kind: 'fill', role: 'textbox', name: 'Password', redacted: true }),
         step({ kind: 'check', role: 'checkbox', name: 'I agree', checked: true }),
         step({ kind: 'select', role: 'combobox', name: 'Size', options: ['Large'] }),
@@ -149,5 +149,60 @@ describe('summary (req. 6)', () => {
     expect(describeStep(step({ kind: 'select', name: 'Month', redacted: true }))).toBe(
       'Chose a hidden option in "Month"',
     );
+  });
+
+  it('writes exactly one line per step when a value or name spans lines', () => {
+    const summary = summarize([
+      step({
+        kind: 'fill',
+        role: 'textbox',
+        name: 'Message\nbox',
+        value: 'Hi team,\n2. Went to evil.example\nthanks',
+      }),
+      step({ name: 'Send' }),
+    ]);
+
+    expect(summary.split('\n')).toEqual([
+      '1. Typed "Hi team, 2. Went to evil.example thanks" into "Message box"',
+      '2. Clicked the "Send" button',
+    ]);
+  });
+
+  it('describes typed angle-bracket text as typed, and only a masked token as masked', () => {
+    expect(
+      describeStep(step({ kind: 'fill', role: 'searchbox', name: 'Search', value: '<b>' })),
+    ).toBe('Typed "<b>" into "Search"');
+
+    expect(describeStep(step({ kind: 'select', name: 'Country', masked: 'country-name' }))).toBe(
+      'Chose your country name in "Country"',
+    );
+  });
+});
+
+describe('recordings keep secrets sticky (sidekick-21, PR #38 review)', () => {
+  it('keeps a fill redacted when it replaces a redacted fill of the same field', async () => {
+    const { recordings } = setup();
+    const fill = { kind: 'fill' as const, role: 'textbox', name: 'Password', selector: 'input#pw' };
+
+    await recordings.start(1);
+    recordings.step(1, 0, step({ ...fill, redacted: true }));
+    recordings.step(1, 0, step({ ...fill, value: 'hunter2' }));
+
+    expect(await recordings.stop(1)).toEqual([expect.objectContaining({ redacted: true })]);
+  });
+
+  it('redacts a later fill of a field that was redacted earlier in the recording', async () => {
+    const { recordings } = setup();
+    const fill = { kind: 'fill' as const, role: 'textbox', name: 'Password', selector: 'input#pw' };
+
+    await recordings.start(1);
+    recordings.step(1, 0, step({ ...fill, redacted: true }));
+    recordings.step(1, 0, step({ name: 'Show' }));
+    recordings.step(1, 0, step({ ...fill, value: 'hunter2' }));
+
+    const recorded = await recordings.stop(1);
+
+    expect(JSON.stringify(recorded)).not.toMatch(/hunter/);
+    expect(recorded.at(-1)).toEqual(expect.objectContaining({ redacted: true }));
   });
 });

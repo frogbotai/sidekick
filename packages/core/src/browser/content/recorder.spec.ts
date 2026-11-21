@@ -362,7 +362,11 @@ describe('masking (D3 B, req. 5)', () => {
     type(field('email'), 'me@example.com');
     type(field('search'), 'red shoes');
 
-    expect(steps().map((step) => step.value)).toEqual(['<street-address>', '<email>', 'red shoes']);
+    expect(steps().map(({ value, masked }) => ({ value, masked }))).toEqual([
+      { value: undefined, masked: 'street-address' },
+      { value: undefined, masked: 'email' },
+      { value: 'red shoes', masked: undefined },
+    ]);
   });
 
   it('masks a card expiry select and a country select', async () => {
@@ -377,8 +381,10 @@ describe('masking (D3 B, req. 5)', () => {
 
     expect(steps()).toEqual([
       expect.objectContaining({ kind: 'select', redacted: true }),
-      expect.objectContaining({ kind: 'select', options: ['<country>'] }),
+      expect.objectContaining({ kind: 'select', masked: 'country' }),
     ]);
+
+    expect(steps()[1]).not.toHaveProperty('options');
 
     expect(steps()[0]).not.toHaveProperty('options');
   });
