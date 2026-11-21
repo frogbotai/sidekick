@@ -2,6 +2,8 @@ import type { PermissionAction, ToolContext, ToolMetadata, ToolResult } from '..
 import { ToolError, UNTRUSTED } from '../../tool/tool';
 import { originOf } from '../../tool/url';
 import { checkpoint, race, stopped } from './abort';
+import type { Challenge } from './challenge';
+import { detect } from './detect';
 import type { Run, Runs } from './runs';
 import type { Sessions } from './sessions';
 import type { Settler } from './settle';
@@ -335,12 +337,18 @@ export interface ActionOutput {
   url: string;
   navigated: boolean;
   settled: boolean;
+  /** Only when the action ended on a captcha, bot check or block page. */
+  challenge?: Challenge;
 }
 
+/** The action's result, after checking whether it ended on a wall (D2). */
 export async function finish(act: Act, settled: boolean): Promise<ActionOutput> {
-  const tab = await getTab(act.env, act.tabId, act.signal);
+  const landed = await getTab(act.env, act.tabId, act.signal);
+  const challenge = await detect(act.env, act.tabId, landed.url, act.signal);
+  const tab = challenge ? await getTab(act.env, act.tabId, act.signal) : landed;
+  const output = { url: tab.url, navigated: tab.url !== act.tab.url, settled };
 
-  return { url: tab.url, navigated: tab.url !== act.tab.url, settled };
+  return challenge ? { ...output, challenge } : output;
 }
 
 export function untrusted<O>(output: O, content: ToolResult['content'] = []): ToolResult<O> {
