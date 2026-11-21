@@ -54,8 +54,8 @@ describe('parseMatches', () => {
       'button "Submit" [f0e3] — better than f0e2 which is Go',
     ]);
 
-    expect(parseMatches('f0e3 — unlike f9e9', OUTLINE)).toEqual([
-      'button "Submit" [f0e3] — unlike f9e9',
+    expect(parseMatches('f0e3 — unlike f9e9 or [f9e8]', OUTLINE)).toEqual([
+      'button "Submit" [f0e3] — unlike … or …',
     ]);
 
     expect(parseMatches('[f0e3] and [f0e2] — both buttons', OUTLINE)).toEqual([
@@ -66,6 +66,20 @@ describe('parseMatches', () => {
     expect(parseMatches('- button "Submit" [f0e3] — submit', OUTLINE)).toEqual([
       'button "Submit" [f0e3] — submit',
     ]);
+  });
+
+  it('reads refs the way models format them, with a clean reason', () => {
+    const replies = [
+      '1. f0e3 — the Submit button',
+      '- [f0e3] — the Submit button',
+      '`f0e3` — the Submit button',
+      '**f0e3** — the Submit button',
+      'f0e3: the Submit button',
+    ];
+
+    expect(replies.map((reply) => parseMatches(reply, OUTLINE))).toEqual(
+      replies.map(() => ['button "Submit" [f0e3] — the Submit button']),
+    );
   });
 
   it('caps reasons and the number of matches', () => {
