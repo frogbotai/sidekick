@@ -15,6 +15,7 @@ const SAMPLES: Record<string, { input: Record<string, unknown>; resource: string
   tabs_close: { input: { tab_id: 1 }, resource: 'https://example.com' },
   navigate: { input: { tab_id: 1, url: 'https://next.test/' }, resource: 'https://next.test' },
   snapshot: { input: { tab_id: 1 }, resource: 'https://example.com' },
+  page_text: { input: { tab_id: 1 }, resource: 'https://example.com' },
   screenshot: { input: { tab_id: 1 }, resource: 'https://example.com' },
   scroll: { input: { tab_id: 1, direction: 'down' }, resource: 'https://example.com' },
   scroll_to: { input: { tab_id: 1, ref: 'f0e1' }, resource: 'https://example.com' },
@@ -86,6 +87,7 @@ describe('browser tools in the tools registry', () => {
 
   it.each([
     'snapshot',
+    'page_text',
     'screenshot',
     'scroll',
     'scroll_to',
