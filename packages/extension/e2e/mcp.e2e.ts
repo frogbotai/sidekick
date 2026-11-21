@@ -202,11 +202,10 @@ test.describe('the MCP bridge', () => {
       arguments: { tab_id: tabId, url: `${origin()}/labelled.html` },
     });
 
-    const handoff = helper.client.callTool(
-      { name: 'handoff', arguments: { tab_id: tabId, message: 'Sign in, then Continue' } },
-      undefined,
-      { timeout: 60_000 },
-    );
+    const handoff = helper.client.callTool({
+      name: 'handoff',
+      arguments: { tab_id: tabId, message: 'Sign in, then Continue' },
+    });
 
     const page = context.pages().find((candidate) => candidate.url().endsWith('/labelled.html'));
 
