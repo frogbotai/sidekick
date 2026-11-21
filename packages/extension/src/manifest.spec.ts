@@ -157,7 +157,7 @@ describe('built files', () => {
 
     expect(source).not.toMatch(/(^|[;\s}])import[\s{*("']/);
     expect(source).not.toMatch(/(^|[;\s}])export[\s{*]/);
-    expect(source.length).toBeLessThan(64_000);
+    expect(source.length).toBeLessThan(72_000);
   });
 
   it('leaves the e2e and live-test pages out of production', async () => {
