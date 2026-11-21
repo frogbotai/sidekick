@@ -1,6 +1,6 @@
 import type { Cdp, CdpEvent } from '../types';
 import { type CaptureBuffer, createBuffer, type Taken } from './buffer';
-import { REDACTED, SECRET_NAME, type SecretRedactor } from './redact';
+import { isSecretName, REDACTED, type SecretRedactor } from './redact';
 
 /** The longest console message a capture keeps, as browse does. */
 export const MAX_MESSAGE_CHARS = 4_000;
@@ -69,7 +69,7 @@ function hideNamed(text: string): string {
     (whole, quote: string, name: string, gap: string, value: string) => {
       const open = delimiter(value);
       const found = value.slice(open.length, value.length - open.length);
-      const secret = SECRET_NAME.test(name);
+      const secret = isSecretName(name);
 
       if (found === REDACTED || (!secret && !open)) return whole;
 
@@ -104,11 +104,7 @@ function text(value: unknown) {
 function property(item: Record<string, unknown>, array: boolean) {
   const name = text(item.name) ?? '';
   const raw = text(item.value) ?? text(item.type) ?? '';
-  const value = SECRET_NAME.test(name)
-    ? REDACTED
-    : item.type === 'string'
-      ? JSON.stringify(raw)
-      : raw;
+  const value = isSecretName(name) ? REDACTED : item.type === 'string' ? JSON.stringify(raw) : raw;
 
   return array ? value : `${name}: ${value}`;
 }
