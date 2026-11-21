@@ -225,6 +225,7 @@ describe('screenshots (req. 19) and their coordinates (271 D3)', () => {
     expect(runtime.env.screens.get(1)).toEqual({
       offset: { x: 0, y: 0 },
       scale: { x: 2, y: 2 },
+      image: { width: 400, height: 300 },
       document: 0,
     });
   });
