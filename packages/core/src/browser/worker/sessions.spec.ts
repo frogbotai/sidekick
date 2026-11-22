@@ -89,6 +89,54 @@ describe('debugger sessions (req. 2, 21)', () => {
     expect(cdp.attaching).toEqual([1, 1]);
   });
 
+  it('stays attached while a command is still running past the idle time (sidekick-17)', async () => {
+    const { runtime, cdp } = await setupBrowser();
+    let answer = (_value: unknown) => {};
+
+    cdp.replies.set('Runtime.evaluate', () => new Promise((resolve) => (answer = resolve)));
+
+    const running = runtime.env.sessions.send(1, 'Runtime.evaluate', {}, undefined, {
+      timeout: 60_000,
+    });
+
+    await vi.advanceTimersByTimeAsync(45_000);
+
+    expect(cdp.detached).toEqual([]);
+
+    answer({ result: {} });
+    await running;
+    await vi.advanceTimersByTimeAsync(20_000);
+
+    expect(cdp.detached).toEqual([1]);
+  });
+
+  it('re-sends after a lost session, unless the command is sent once', async () => {
+    const { runtime, cdp } = await setupBrowser();
+    const lost = () => new Error('Detached while handling command.');
+
+    cdp.sendErrors.set('Runtime.evaluate', [lost()]);
+    await runtime.env.sessions.send(1, 'Runtime.evaluate', {});
+
+    cdp.sendErrors.set('Runtime.evaluate', [lost()]);
+
+    const error = await failure(
+      runtime.env.sessions.send(1, 'Runtime.evaluate', {}, undefined, { once: true }),
+    );
+
+    expect(error).toMatchObject({ message: 'Detached while handling command.' });
+    expect(cdp.sent.filter(({ method }) => method === 'Runtime.evaluate')).toHaveLength(3);
+  });
+
+  it('gives up on an attach whose Network.enable never answers', async () => {
+    const { runtime, cdp } = await setupBrowser();
+
+    cdp.replies.set('Network.enable', () => new Promise(() => undefined));
+
+    const error = await failure(runtime.env.sessions.ensure(1));
+
+    expect(error).toMatchObject({ code: 'timeout' });
+  });
+
   it('detaches leftover sessions on start', async () => {
     const { runtime, cdp } = await setupBrowser();
 

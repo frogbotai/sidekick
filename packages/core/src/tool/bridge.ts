@@ -7,11 +7,13 @@ import type { Handlers } from '../rpc/define';
 import { createKeyedLock, type KeyedLock } from './lock';
 import {
   type ToolContent,
+  type ToolContext,
   type ToolDefinition,
   ToolError,
   type ToolErrorCode,
   type ToolErrorDetail,
   type ToolMetadata,
+  type ToolResult,
 } from './tool';
 
 type Methods = (typeof sidekickProtocol)['methods'];
@@ -95,6 +97,42 @@ export interface ToolCaller {
   cancel: (callID: string) => void;
 }
 
+/** A call's tool and parsed input, or why it can't run: no such tool, or input its schema refuses. */
+export function prepareCall(
+  tools: Pick<Registry<ToolDefinition>, 'get'>,
+  name: string,
+  input: unknown,
+): { tool: ToolDefinition; input: unknown } | ToolError {
+  const tool = tools.get(name);
+
+  if (!tool) return new ToolError('invalid_target', `No worker tool named ${name}`);
+
+  const parsed = tool.input.safeParse(input);
+
+  if (!parsed.success) {
+    return new ToolError('input_mismatch', `Invalid input for ${name}: ${parsed.error.message}`);
+  }
+
+  return { tool, input: parsed.data };
+}
+
+/** Runs a tool on parsed input, holding its `lock` key's turn, taken on `ctx.signal`, while it runs. */
+export async function runTool(
+  tool: ToolDefinition,
+  input: unknown,
+  ctx: ToolContext,
+  locks: KeyedLock,
+): Promise<ToolResult> {
+  const key = tool.lock?.(input);
+  const release = key === undefined ? undefined : await locks.take(key, ctx.signal);
+
+  try {
+    return await tool.execute(input, ctx);
+  } finally {
+    release?.();
+  }
+}
+
 /** The worker's tool calls, for the panel's `tool.call` and MCP's `tools/call` alike. */
 export function createToolCaller({
   tools,
@@ -106,13 +144,9 @@ export function createToolCaller({
 
   return {
     call: async ({ tool: name, input, ...call }, { run, signal } = {}) => {
-      const tool = tools.get(name);
+      const prepared = prepareCall(tools, name, input);
 
-      if (!tool) throw new Error(`No worker tool named ${name}`);
-
-      const parsed = tool.input.safeParse(input);
-
-      if (!parsed.success) throw new Error(`Invalid input for ${name}: ${parsed.error.message}`);
+      if (prepared instanceof ToolError) throw new Error(prepared.message);
 
       const controller = new AbortController();
       const abort = () => controller.abort();
@@ -123,35 +157,35 @@ export function createToolCaller({
       calls.set(call.callID, controller);
 
       const scope = scopeOf(call);
-      const key = tool.lock?.(parsed.data);
-      const turn = key === undefined ? undefined : locks.take(key, controller.signal);
-      let release: (() => void) | undefined;
 
       try {
-        release = await turn;
-
         const current = await run?.();
 
-        const result = await tool.execute(parsed.data, {
-          signal: controller.signal,
-          session: { id: call.sessionID },
-          messageID: call.messageID,
-          callID: call.callID,
-          agent: call.agent,
-          ...(current ? { run: current } : {}),
-          permission: {
-            assert: (request) => permission.assert(request, scope, controller.signal),
-          },
-          ...(progress
-            ? {
-                progress: (metadata) => {
-                  progress(call.callID, metadata);
+        const result = await runTool(
+          prepared.tool,
+          prepared.input,
+          {
+            signal: controller.signal,
+            session: { id: call.sessionID },
+            messageID: call.messageID,
+            callID: call.callID,
+            agent: call.agent,
+            ...(current ? { run: current } : {}),
+            permission: {
+              assert: (request) => permission.assert(request, scope, controller.signal),
+            },
+            ...(progress
+              ? {
+                  progress: (metadata) => {
+                    progress(call.callID, metadata);
 
-                  return Promise.resolve();
-                },
-              }
-            : {}),
-        });
+                    return Promise.resolve();
+                  },
+                }
+              : {}),
+          },
+          locks,
+        );
 
         return {
           ok: { output: result.output, ...(result.content ? { content: result.content } : {}) },
@@ -161,7 +195,6 @@ export function createToolCaller({
 
         throw error;
       } finally {
-        release?.();
         signal?.removeEventListener('abort', abort);
 
         if (calls.get(call.callID) === controller) calls.delete(call.callID);

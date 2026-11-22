@@ -1,3 +1,5 @@
+export type { BatchToolOptions } from './batch';
+export { batchTool } from './batch';
 export type {
   BridgeCall,
   BridgeHandlers,

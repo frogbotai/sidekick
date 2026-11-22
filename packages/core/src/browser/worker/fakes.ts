@@ -1,5 +1,18 @@
 import type { PermissionRequest, ToolContext, ToolMetadata } from '../../tool/tool';
-import type { Cdp, CdpEvent, Commit, Page, Size, TabInfo, Tabs } from './types';
+import { jpegSize } from './jpeg';
+import type {
+  Capture,
+  Cdp,
+  CdpEvent,
+  Commit,
+  Encoder,
+  Images,
+  Page,
+  Rgba,
+  Size,
+  TabInfo,
+  Tabs,
+} from './types';
 
 export type Log = string[];
 
@@ -225,6 +238,10 @@ export function fakePage(log: Log, overrides: Partial<Page> = {}): Page {
     strip: later(() => []),
     indicator: later(() => undefined),
     stopAt: later(() => false),
+    hasText: later(() => true),
+    isVisible: later(() => true),
+    tag: later(() => undefined),
+    record: later(() => undefined),
     webmcpList: later(() => ({
       tools: [{ name: 'echo', description: 'Echoes', origin: 'https://example.com' }],
       more: 0,
@@ -354,6 +371,39 @@ export function fakeTabs(log: Log, initial: TabInfo[]): FakeTabs {
   return logged(log, 'tabs', fake);
 }
 
+export interface FakeImages extends Images {
+  /** The pixel colour of the next decoded capture, by decode count from 0; white unless set. */
+  paint: (index: number, size: Size) => Rgba;
+  /** Every image passed to `png`. */
+  encoded: Rgba[];
+}
+
+export function solid({ width, height }: Size, rgba: [number, number, number, number]): Rgba {
+  const data = new Uint8ClampedArray(width * height * 4);
+
+  for (let offset = 0; offset < data.length; offset += 4) data.set(rgba, offset);
+
+  return { width, height, data };
+}
+
+/** Decodes a fake JPEG to `paint`'s pixels at its real size; `png` records the image. */
+export function fakeImages(log: Log): FakeImages {
+  let decoded = 0;
+
+  const fake: FakeImages = {
+    paint: (_index, size) => solid(size, [255, 255, 255, 255]),
+    encoded: [],
+    decode: later((capture: Capture) => fake.paint(decoded++, jpegSize(capture.data) ?? capture)),
+    png: later((image: Rgba) => {
+      fake.encoded.push(image);
+
+      return btoa(`png ${image.width}x${image.height}`);
+    }),
+  };
+
+  return logged(log, 'images', fake);
+}
+
 export interface FakeContext extends ToolContext {
   asserts: PermissionRequest[];
   /** Every progress report, in order. */
@@ -388,4 +438,45 @@ export function fakeContext(log: Log, runId: string): FakeContext {
       }),
     },
   };
+}
+
+export interface FakeEncoder extends Encoder {
+  /** Frames per open recording, in the order they came. */
+  frames: Map<string, { data: string; timestamp: number; duration: number }[]>;
+  closed: { id: string; file: string }[];
+  cancelled: string[];
+}
+
+/** Keeps every frame in memory; `close` reports a 1 KB H.264 file at the first frame's size. */
+export function fakeEncoder(log: Log): FakeEncoder {
+  const fake: FakeEncoder = {
+    frames: new Map(),
+    closed: [],
+    cancelled: [],
+    open: later((id: string) => void fake.frames.set(id, [])),
+    frame: later((id: string, frame: { data: string; timestamp: number; duration: number }) => {
+      const frames = fake.frames.get(id);
+
+      if (!frames) throw new Error(`No recording ${id}`);
+
+      frames.push(frame);
+    }),
+    close: later((id: string, file: string) => {
+      const [first] = fake.frames.get(id) ?? [];
+
+      if (!first) throw new Error('No frames to save');
+
+      fake.closed.push({ id, file });
+
+      const size = jpegSize(first.data) ?? { width: 0, height: 0 };
+
+      return { file, codec: 'avc', bytes: 1024, ...size };
+    }),
+    cancel: later((id: string) => {
+      fake.cancelled.push(id);
+      fake.frames.delete(id);
+    }),
+  };
+
+  return logged(log, 'encoder', fake);
 }

@@ -1,4 +1,4 @@
-export { chromeCdp, chromeTabs } from './chrome';
+export { chromeCdp, chromeImages, chromeTabs } from './chrome';
 export type { ActionOutput, BrowserEnv, ScreenMap } from './env';
 export type { ChromePageOptions } from './page';
 export { chromePage, frameOfRef } from './page';
@@ -16,11 +16,15 @@ export type {
   Cdp,
   CdpEvent,
   Direction,
+  Encoder,
   FrameInfo,
+  Images,
   Page,
   Point,
   Rect,
   RefInfo,
+  Rgba,
+  SavedVideo,
   ScrollEnd,
   ScrollStart,
   Size,
@@ -29,3 +33,4 @@ export type {
   Tabs,
   Target,
 } from './types';
+export type { EndReason, RecordingReport, RecordingStatus, Videos } from './videos';

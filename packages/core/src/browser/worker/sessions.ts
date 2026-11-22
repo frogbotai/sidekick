@@ -24,12 +24,19 @@ export interface Sessions {
     method: string,
     params?: Record<string, unknown>,
     signal?: AbortSignal,
+    options?: SendOptions,
   ): Promise<unknown>;
   attached(tabId: number): boolean;
   /** Keeps the tab's session from idle-detaching until the returned release is called. */
   hold(tabId: number): () => void;
   onStripped(listener: (event: Stripped) => void): () => void;
   dispose(): void;
+}
+
+/** `timeout`: how long Chrome may take to answer. `once`: never re-send after a lost session, for commands that must not run twice. */
+export interface SendOptions {
+  timeout?: number;
+  once?: boolean;
 }
 
 export interface SessionsOptions {
@@ -89,7 +96,7 @@ export function createSessions({
 }: SessionsOptions): Sessions {
   const sessions = new Map<
     number,
-    { ready: Promise<void>; timer?: ReturnType<typeof setTimeout> }
+    { ready: Promise<void>; busy: number; timer?: ReturnType<typeof setTimeout> }
   >();
 
   const strippedListeners = new Set<(event: Stripped) => void>();
@@ -111,6 +118,12 @@ export function createSessions({
     if (holds.get(tabId)?.size) return;
 
     session.timer = setTimeout(() => {
+      if (session.busy > 0) {
+        touch(tabId);
+
+        return;
+      }
+
       drop(tabId);
       void cdp.detach(tabId).catch(() => undefined);
     }, idleMs);
@@ -149,7 +162,10 @@ export function createSessions({
       });
     }
 
-    await cdp.send(tabId, 'Network.enable', {});
+    await race(cdp.send(tabId, 'Network.enable', {}), NEVER, {
+      ms: COMMAND_TIMEOUT_MS,
+      what: 'Network.enable',
+    });
   };
 
   const ensure = async (tabId: number, signal = NEVER) => {
@@ -158,7 +174,7 @@ export function createSessions({
     if (!session) {
       const ready = attach(tabId);
 
-      session = { ready };
+      session = { ready, busy: 0 };
       sessions.set(tabId, session);
 
       ready.catch(() => {
@@ -170,12 +186,23 @@ export function createSessions({
     touch(tabId);
   };
 
-  const sendOnce = (
+  const sendOnce = async (
     tabId: number,
     method: string,
     params: Record<string, unknown> | undefined,
     signal: AbortSignal,
-  ) => race(cdp.send(tabId, method, params), signal, { ms: COMMAND_TIMEOUT_MS, what: method });
+    ms: number,
+  ) => {
+    const session = sessions.get(tabId);
+
+    if (session) session.busy++;
+
+    try {
+      return await race(cdp.send(tabId, method, params), signal, { ms, what: method });
+    } finally {
+      if (session) session.busy--;
+    }
+  };
 
   const unsubscribe = cdp.onDetach((tabId) => drop(tabId));
 
@@ -186,11 +213,13 @@ export function createSessions({
       await Promise.all(leftover.map((tabId) => cdp.detach(tabId).catch(() => undefined)));
     },
     ensure,
-    send: async (tabId, method, params, signal = NEVER) => {
+    send: async (tabId, method, params, signal = NEVER, options = {}) => {
+      const { timeout = COMMAND_TIMEOUT_MS, once = false } = options;
+
       await ensure(tabId, signal);
 
       try {
-        const result = await sendOnce(tabId, method, params, signal);
+        const result = await sendOnce(tabId, method, params, signal, timeout);
 
         touch(tabId);
 
@@ -199,12 +228,12 @@ export function createSessions({
         const reattach =
           lostSession(error) || (isExtensionFrameError(error) && !sessions.has(tabId));
 
-        if (!reattach) throw error;
+        if (!reattach || once) throw error;
 
         drop(tabId);
         await ensure(tabId, signal);
 
-        return sendOnce(tabId, method, params, signal);
+        return sendOnce(tabId, method, params, signal, timeout);
       }
     },
     attached: (tabId) => sessions.has(tabId),

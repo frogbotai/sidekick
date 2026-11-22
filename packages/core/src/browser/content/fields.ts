@@ -32,10 +32,48 @@ export function maxLengthOf(element: Element) {
   return limited && element.maxLength >= 0 ? element.maxLength : undefined;
 }
 
+function caretToEnd(element: Element) {
+  if (isTextField(element)) {
+    const end = element.value.length;
+
+    if (element.selectionStart !== null) element.setSelectionRange(end, end);
+
+    return;
+  }
+
+  if (!(element instanceof HTMLElement) || !element.isContentEditable) return;
+
+  const selection = element.ownerDocument.getSelection();
+  const range = element.ownerDocument.createRange();
+
+  range.selectNodeContents(editingHost(element));
+  range.collapse(false);
+  selection?.removeAllRanges();
+  selection?.addRange(range);
+}
+
 export function focusElement(element: Element) {
   if (element instanceof HTMLElement || element instanceof SVGElement) {
     element.focus({ preventScroll: true });
   }
+}
+
+/** `type`'s focus: refuses what `fill` refuses, and a field that didn't have focus gets its caret after its text. */
+export function focusField(element: Element, ref: string) {
+  if (element instanceof HTMLInputElement && CHECKABLE_INPUTS.has(element.type)) {
+    throw new ToolError(
+      'invalid_target',
+      `${ref} is a ${element.type}, not a text field. Use check to set it.`,
+    );
+  }
+
+  if (!isEditable(element) || !(element instanceof HTMLElement)) throw notText(ref);
+
+  const had = deepActiveElement() === element;
+
+  element.focus({ preventScroll: true });
+
+  if (!had) caretToEnd(element);
 }
 
 /** Playwright's `fill` preparation: select the field's whole contents, so one `insertText` replaces it. */

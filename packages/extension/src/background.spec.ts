@@ -82,10 +82,11 @@ describe('background', () => {
     expect(setAccessLevel).toHaveBeenCalledWith({ accessLevel: 'TRUSTED_CONTEXTS' });
   });
 
-  it('registers the 20 browser tools as built-ins', () => {
+  it('registers the 27 browser tools and batch as built-ins', () => {
     start();
 
-    expect(tools.list()).toHaveLength(20);
+    expect(tools.list()).toHaveLength(28);
+    expect(tools.get('batch')?.permission).toBe('input');
     expect(tools.errors()).toEqual([]);
   });
 

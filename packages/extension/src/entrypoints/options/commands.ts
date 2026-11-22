@@ -3,6 +3,9 @@ import type { McpClientKind } from '@frogbotai/sidekick-core';
 /** The helper an agent app runs; `npx -y` fetches it on first use. */
 export const MCP_PACKAGE = '@frogbotai/sidekick-mcp';
 
+/** Adds Sidekick to the agents on this computer and pairs it, after an Approve click here. */
+export const INSTALL_COMMAND = `npx -y ${MCP_PACKAGE} install`;
+
 /** The app each pairing is for, as Add lists them. */
 export const MCP_CLIENT_NAMES: Record<McpClientKind, string> = {
   'claude-code': 'Claude Code',
