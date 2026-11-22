@@ -29,6 +29,8 @@ export interface HandoffWait {
   timeout: number;
   signal: AbortSignal;
   sessionID?: string;
+  /** The card says the person's steps are being recorded, for `demonstrate`. */
+  recording?: boolean;
 }
 
 /** The handoffs waiting on the person, at most one per tab (sidekick-13 req. 3, 7, 9, 12). */
@@ -111,7 +113,7 @@ export function createHandoffs({ tabs, page }: { tabs: Tabs; page: Page }): Hand
     guards.delete(tabId);
   };
 
-  const wait = ({ tabId, message, timeout, signal, sessionID }: HandoffWait) =>
+  const wait = ({ tabId, message, timeout, signal, sessionID, recording }: HandoffWait) =>
     new Promise<HandoffEnd>((settle) => {
       waiting.get(tabId)?.end({ status: 'timeout' });
 
@@ -121,9 +123,14 @@ export function createHandoffs({ tabs, page }: { tabs: Tabs; page: Page }): Hand
         return;
       }
 
-      const ask: HandoffAsk = {
+      const shown: HandoffCard = {
         id: crypto.randomUUID(),
         message,
+        ...(recording ? { recording } : {}),
+      };
+
+      const ask: HandoffAsk = {
+        ...shown,
         tabId,
         ...(sessionID ? { sessionID } : {}),
       };
@@ -131,7 +138,7 @@ export function createHandoffs({ tabs, page }: { tabs: Tabs; page: Page }): Hand
       const onAbort = () => entry.end({ status: 'cancelled', reason: 'stopped' });
       const timer = setTimeout(() => entry.end({ status: 'timeout' }), timeout);
 
-      const heartbeat = setInterval(() => card(tabId, { id: ask.id, message }), HANDOFF_HEARTBEAT);
+      const heartbeat = setInterval(() => card(tabId, shown), HANDOFF_HEARTBEAT);
 
       const entry: Waiting = {
         ask,
@@ -152,7 +159,7 @@ export function createHandoffs({ tabs, page }: { tabs: Tabs; page: Page }): Hand
       waiting.set(tabId, entry);
       interrupt(tabId);
       signal.addEventListener('abort', onAbort, { once: true });
-      card(tabId, { id: ask.id, message });
+      card(tabId, shown);
       badge(tabId, HANDOFF_BADGE);
       asked.emit(ask);
     });

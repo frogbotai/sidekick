@@ -10,6 +10,7 @@ interface Entry {
 }
 
 interface Recording {
+  id: number;
   entries: Entry[];
   secret: Set<string>;
 }
@@ -19,15 +20,19 @@ const LOAD_TIMEOUT_MS = 10_000;
 const MAX_STEPS = 500;
 
 export interface Recordings {
-  /** Starts recording a tab in every frame, and in every document it loads until `stop`. */
-  start(tabId: number): Promise<void>;
+  /**
+   * Starts recording a tab in every frame, and in every document it loads until `stop`. A new
+   * recording on the tab sets the earlier one aside, so its `stop` with its id still gets its steps.
+   */
+  start(tabId: number): Promise<number>;
   recording(tabId: number): boolean;
   /**
    * A frame's step; a fill of the field the last step filled replaces it. A fill of a field that
    * was redacted earlier in the recording stays redacted.
    */
   step(tabId: number, frameId: number, step: RecordedStep): void;
-  stop(tabId: number): Promise<DemonstrationStep[]>;
+  /** Ends the tab's recording, or with `id` the recording `start` returned it for, and gives its steps. */
+  stop(tabId: number, id?: number): Promise<DemonstrationStep[]>;
   dispose(): void;
 }
 
@@ -48,6 +53,8 @@ function sticky(recording: Recording, frameId: number | undefined, step: Demonst
 /** One recording per tab for `demonstrate` (sidekick-21), after browse's demonstration recorder. */
 export function createRecordings({ page, tabs }: { page: Page; tabs: Tabs }): Recordings {
   const active = new Map<number, Recording>();
+  const aside = new Map<number, Entry[]>();
+  let next = 0;
 
   const arm = (tabId: number) =>
     active.has(tabId) ? page.record(tabId, true).catch(() => undefined) : Promise.resolve();
@@ -87,22 +94,38 @@ export function createRecordings({ page, tabs }: { page: Page; tabs: Tabs }): Re
 
   return {
     start: async (tabId) => {
-      active.set(tabId, { entries: [], secret: new Set() });
+      const earlier = active.get(tabId);
+      const id = ++next;
+
+      if (earlier) aside.set(earlier.id, earlier.entries);
+
+      active.set(tabId, { id, entries: [], secret: new Set() });
       await arm(tabId);
+
+      return id;
     },
     recording: (tabId) => active.has(tabId),
     step: (tabId, frameId, step) => add(tabId, { frameId, step }),
-    stop: async (tabId) => {
-      const entries = active.get(tabId)?.entries ?? [];
+    stop: async (tabId, id) => {
+      const recording = active.get(tabId);
+
+      if (id !== undefined && recording?.id !== id) {
+        const entries = aside.get(id) ?? [];
+
+        aside.delete(id);
+
+        return entries.map(({ step }) => step);
+      }
 
       active.delete(tabId);
       await page.record(tabId, false).catch(() => undefined);
 
-      return entries.map(({ step }) => step);
+      return (recording?.entries ?? []).map(({ step }) => step);
     },
     dispose: () => {
       stopCommits();
       active.clear();
+      aside.clear();
     },
   };
 }
@@ -174,6 +197,8 @@ export function describeStep(step: DemonstrationStep): string {
       return `${step.checked ? 'Checked' : 'Unchecked'} ${target(step)}`;
     case 'select':
       return selectLine(step);
+    case 'file':
+      return `Chose a file for ${target(step)}; which file wasn't recorded`;
   }
 }
 

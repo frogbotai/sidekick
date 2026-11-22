@@ -93,11 +93,18 @@ const scrollStart = z.object({
 
 const scrollEnd = z.object({ moved: z.number(), at_end: z.boolean() });
 
-const handoffCard = z.object({ id, message: z.string() });
+const handoffCard = z.object({ id, message: z.string(), recording: z.optional(z.boolean()) });
 
-const handoffAsk = z.object({ id, message: z.string(), tabId, sessionID: z.optional(id) });
+const handoffAsk = z.object({
+  id,
+  message: z.string(),
+  recording: z.optional(z.boolean()),
+  tabId,
+  sessionID: z.optional(id),
+});
+
 const recordedStep = z.object({
-  kind: z.enum(['click', 'fill', 'check', 'select']),
+  kind: z.enum(['click', 'fill', 'check', 'select', 'file']),
   frameUrl: z.string(),
   role: z.string(),
   name: z.string(),

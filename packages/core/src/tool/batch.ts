@@ -12,6 +12,7 @@ export const MAX_STEPS = 50;
 const ALONE = new Map([
   [BATCH, 'A batch can’t contain batch; list its steps instead'],
   ['handoff', 'A batch can’t contain handoff; call it on its own and decide on its result'],
+  ['demonstrate', 'A batch can’t contain demonstrate; call it on its own and read its steps'],
 ]);
 
 /** The text one batch returns, after browse's script results. */
@@ -138,7 +139,7 @@ function cancelled() {
 export function batchTool({ tools, locks }: BatchToolOptions) {
   return defineTool({
     id: BATCH,
-    description: `Run up to ${MAX_STEPS} browser tool calls in order, in one call, for steps that need no decision in between, such as filling a form and pressing Enter. Each call is { tool, input }, with the input that tool takes on its own. Every step asks the permissions it would on its own. Every call is checked before any runs; the batch stops at the first step that fails, and its result lists the steps that ran, the failed step and how many were skipped. A batch can’t contain batch or handoff. ${UNTRUSTED}`,
+    description: `Run up to ${MAX_STEPS} browser tool calls in order, in one call, for steps that need no decision in between, such as filling a form and pressing Enter. Each call is { tool, input }, with the input that tool takes on its own. Every step asks the permissions it would on its own. Every call is checked before any runs; the batch stops at the first step that fails, and its result lists the steps that ran, the failed step and how many were skipped. A batch can’t contain batch, handoff or demonstrate. ${UNTRUSTED}`,
     input,
     output,
     permission: 'input',

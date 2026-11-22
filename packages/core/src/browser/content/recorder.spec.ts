@@ -147,13 +147,32 @@ describe('recorder steps (sidekick-21, req. 2 to 4)', () => {
 
     const { steps } = await recording();
 
-    input(byId('upload'));
+    click(byId('upload'));
     input(byId('go'));
     click(byId('text'));
     click(byId('search'));
     click(byId('terms'));
 
     expect(steps()).toEqual([]);
+  });
+
+  it('records a chosen file as a file step with no file name', async () => {
+    document.body.innerHTML = FORM;
+
+    const { steps } = await recording();
+
+    input(byId('upload'));
+
+    expect(steps()).toEqual([
+      {
+        kind: 'file',
+        frameUrl: location.href,
+        role: expect.any(String),
+        name: 'Receipt',
+        nearby: 'Checkout',
+        selector: 'input#upload',
+      },
+    ]);
   });
 
   it('records a contenteditable fill from its editing host', async () => {

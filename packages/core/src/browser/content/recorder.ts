@@ -242,6 +242,10 @@ function selectStep(element: HTMLSelectElement): RecordedStep {
 function inputStep(target: Element): RecordedStep | undefined {
   if (target instanceof HTMLSelectElement) return selectStep(target);
 
+  if (target instanceof HTMLInputElement && target.type === 'file') {
+    return { kind: 'file', ...base(target) };
+  }
+
   if (target instanceof HTMLInputElement && /^(checkbox|radio)$/.test(target.type)) {
     return { kind: 'check', ...base(target), checked: isChecked(target) };
   }
@@ -267,9 +271,9 @@ export interface Recorder {
 }
 
 /**
- * Records the person's clicks on actionable targets, fills, checks and selects in this frame
- * (sidekick-21, after browse's `demonstrate`). Only trusted events count, so a page can't add
- * steps, and targets inside closed shadow roots are found from the point or the focus. Each step
+ * Records the person's clicks on actionable targets, fills, checks, selects and chosen files in
+ * this frame (sidekick-21, after browse's `demonstrate`); a chosen file keeps no name. Only
+ * trusted events count, so a page can't add steps, and targets inside closed shadow roots are found from the point or the focus. Each step
  * goes to `send` as it happens, so a navigation can't drop it. A field that was ever a password
  * or secret keeps no value, even after a Show button makes it text or swaps in a new input at the
  * same selector: each press re-scans for secret fields before the page's own handlers run.
@@ -294,6 +298,7 @@ export function createRecorder(send: (step: RecordedStep) => void): Recorder {
     onPress(event);
 
     const target = targetOf(event);
+
     const element = target && clickable(target);
 
     if (element) send({ kind: 'click', ...base(element) });

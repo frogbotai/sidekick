@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Shop</title>
+  </head>
+  <body>
+    <main></main>
+    <script>
+      const again = location.search.includes('again');
+      const id = (name) => (again ? `x-${name}-2` : name);
+      const main = document.querySelector('main');
+
+      main.innerHTML = location.search.includes('done')
+        ? '<h1>Checkout</h1><p>Thanks</p>'
+        : `
+          <form aria-label="Order" class="${again ? 'v2' : 'v1'}">
+            ${again ? '<div class="wrap">' : ''}
+            <label>Search <input id="${id('q')}" type="search"></label>
+            <label>Address <input id="${id('addr')}" autocomplete="street-address"></label>
+            <label>Password <input id="${id('pw')}" type="password"></label>
+            <label><input id="${id('gift')}" type="checkbox"> Gift wrap</label>
+            <button id="${id('go')}" type="button">Find</button>
+            ${again ? '</div>' : ''}
+            <a href="?done">Checkout</a>
+          </form>`;
+
+      window.log = [];
+      main.addEventListener('click', (event) => {
+        if (event.target.matches('button')) window.log.push('find');
+      });
+    </script>
+  </body>
+</html>

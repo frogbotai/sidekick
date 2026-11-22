@@ -1,6 +1,7 @@
 import type { ToolDefinition } from '../../../tool/tool';
 import type { BrowserEnv } from '../env';
 import { captureTools } from './capture';
+import { demonstrateTools } from './demonstrate';
 import { dialogTools } from './dialog';
 import { emulateTools } from './emulate';
 import { handoffTools } from './handoff';
@@ -25,5 +26,6 @@ export function browserTools(env: BrowserEnv): ToolDefinition[] {
     ...emulateTools(env),
     ...webmcpTools(env),
     ...handoffTools(env),
+    ...demonstrateTools(env),
   ];
 }

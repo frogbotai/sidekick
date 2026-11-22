@@ -149,6 +149,10 @@ describe('summary (req. 6)', () => {
     expect(describeStep(step({ kind: 'select', name: 'Month', redacted: true }))).toBe(
       'Chose a hidden option in "Month"',
     );
+
+    expect(describeStep(step({ kind: 'file', name: 'Receipt' }))).toBe(
+      'Chose a file for "Receipt"; which file wasn\'t recorded',
+    );
   });
 
   it('writes exactly one line per step when a value or name spans lines', () => {
