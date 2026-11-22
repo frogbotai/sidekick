@@ -31,6 +31,9 @@ test('reports a Turnstile check and a block page, and nothing on an ordinary pag
   expect(await run.call('navigate', { url: clean })).toEqual({
     url: clean,
     navigated: true,
+    urlChanged: false,
+    newTabs: [],
+    dialog: null,
     settled: true,
   });
 
@@ -82,6 +85,9 @@ test('reports nothing on a sign-in page with an invisible reCAPTCHA (sidekick-14
   expect(await run.call('navigate', { url: signIn })).toEqual({
     url: signIn,
     navigated: true,
+    urlChanged: false,
+    newTabs: [],
+    dialog: null,
     settled: true,
   });
 });

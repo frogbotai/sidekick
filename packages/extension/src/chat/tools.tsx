@@ -8,6 +8,8 @@ import {
 import type { IconName } from '@frogbotai/ui/icons/registry';
 import type { ReactNode } from 'react';
 
+import { count, hostOf, joined, plural, record, short, text, web } from './text';
+
 /** One call's input, output and progress, as the status lines read them. */
 export interface ToolCall {
   input: Record<string, unknown>;
@@ -24,49 +26,6 @@ export interface ToolLine {
   subtitle?: string;
   links?: readonly LinkListItem[];
   body?: ReactNode;
-}
-
-const TEXT_LIMIT = 40;
-
-function record(value: unknown): Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : {};
-}
-
-function text(value: unknown) {
-  return typeof value === 'string' && value ? value : undefined;
-}
-
-function count(value: unknown) {
-  return Array.isArray(value) ? value.length : 0;
-}
-
-function plural(n: number, word: string) {
-  return `${n} ${word}${n === 1 ? '' : 's'}`;
-}
-
-function short(value: string) {
-  const line = value.replace(/\s+/g, ' ').trim();
-
-  return line.length > TEXT_LIMIT ? `${line.slice(0, TEXT_LIMIT).trimEnd()}…` : line;
-}
-
-function web(url: string | undefined) {
-  return url !== undefined && /^https?:\/\//i.test(url);
-}
-
-/** A URL's host without `www.`, or the URL when it has none. */
-export function hostOf(url: string) {
-  try {
-    return new URL(url).hostname.replace(/^www\./, '') || url;
-  } catch {
-    return url;
-  }
-}
-
-function joined(...words: (string | undefined)[]) {
-  return words.filter(Boolean).join(' ');
 }
 
 function waitedFor(input: Record<string, unknown>, target: string | undefined) {
@@ -469,6 +428,31 @@ export const TOOL_LINES: Record<string, (call: ToolCall) => ToolLine> = {
     const ends = from && to ? ` ${from} to ${to}` : '';
 
     return { icon: 'cursor', running: 'Dragging', done: `Dragged${ends}`, failed: `Drag${ends}` };
+  },
+  dialog: ({ input, output }) => {
+    const shown = record(output.dialog);
+    const message = text(shown.message);
+
+    if (input.action === 'accept' || input.action === 'dismiss') {
+      const [running, done, failed] =
+        input.action === 'accept'
+          ? ['Accepting', 'Accepted', 'Accept']
+          : ['Dismissing', 'Dismissed', 'Dismiss'];
+
+      return {
+        icon: 'message-square-text',
+        running: `${running} the dialog`,
+        done: `${done} the dialog`,
+        failed: `${failed} the dialog`,
+      };
+    }
+
+    return {
+      icon: 'message-square-text',
+      running: 'Reading the dialog',
+      done: message ? `Dialog “${short(message)}”` : 'No dialog open',
+      failed: 'Read the dialog',
+    };
   },
   network_capture: recording('activity', 'requests', 'request'),
   console_capture: recording('terminal', 'the console', 'message'),

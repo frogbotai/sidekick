@@ -1,5 +1,6 @@
 import type { ToolDefinition } from '../../tool/tool';
 import { createCaptures } from './capture';
+import { createDialogs } from './dialogs';
 import type { BrowserEnv } from './env';
 import { createRecordings } from './recordings';
 import { createRuns } from './runs';
@@ -31,10 +32,11 @@ export function createBrowserRuntime({
   encoder: Encoder;
   mac: boolean;
 }): BrowserRuntime {
-  const sessions = createSessions({ cdp, tabs, page });
+  const dialogs = createDialogs({ cdp, tabs });
+  const sessions = createSessions({ cdp, tabs, page, keep: (tabId) => !!dialogs.get(tabId) });
   const runs = createRuns(tabs);
   const videos = createVideos({ cdp, sessions, encoder, runs });
-  const settler = createSettler({ cdp, page, tabs, sessions });
+  const settler = createSettler({ cdp, page, tabs, sessions, dialogs });
   const captures = createCaptures({ cdp, sessions });
   const recordings = createRecordings({ page, tabs });
   const documents = new Map<number, number>();
@@ -45,6 +47,7 @@ export function createBrowserRuntime({
     images,
     sessions,
     settler,
+    dialogs,
     runs,
     captures,
     recordings,
@@ -64,6 +67,7 @@ export function createBrowserRuntime({
     start: () => sessions.start(),
     dispose: () => {
       stopCommits();
+      dialogs.dispose();
       captures.dispose();
       videos.dispose();
       sessions.dispose();

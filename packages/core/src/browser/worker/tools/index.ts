@@ -1,6 +1,7 @@
 import type { ToolDefinition } from '../../../tool/tool';
 import type { BrowserEnv } from '../env';
 import { captureTools } from './capture';
+import { dialogTools } from './dialog';
 import { inputTools } from './input';
 import { pageTools } from './page';
 import { readTools } from './read';
@@ -14,6 +15,7 @@ export function browserTools(env: BrowserEnv): ToolDefinition[] {
     ...readTools(env),
     ...recordTools(env),
     ...inputTools(env),
+    ...dialogTools(env),
     ...captureTools(env),
     ...pageTools(env),
     ...webmcpTools(env),

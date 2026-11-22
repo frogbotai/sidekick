@@ -94,8 +94,13 @@ export interface FakeCdp extends Cdp {
   leftover: number[];
   attachErrors: Error[];
   sendErrors: Map<string, Error[]>;
-  replies: Map<string, (params: Record<string, unknown>) => unknown>;
+  replies: Map<string, (params: Record<string, unknown>, tabId: number) => unknown>;
   emit: (event: CdpEvent) => void;
+  /** Raises a dialog on the tab, as `Page.javascriptDialogOpening`; answering it closes it. */
+  openDialog: (
+    tabId: number,
+    dialog: { type: string; message: string; defaultPrompt?: string },
+  ) => void;
   detachByChrome: (tabId: number, reason: string) => void;
   listeners: () => number;
   /** The screen's device pixel ratio: `Page.captureScreenshot` renders clip × scale × ratio. */
@@ -114,7 +119,15 @@ export function fakeCdp(log: Log): FakeCdp {
     leftover: [],
     attachErrors: [],
     sendErrors: new Map(),
-    replies: new Map<string, (params: Record<string, unknown>) => unknown>([
+    replies: new Map<string, (params: Record<string, unknown>, tabId: number) => unknown>([
+      [
+        'Page.handleJavaScriptDialog',
+        (_params, tabId) => {
+          events.emit({ tabId, method: 'Page.javascriptDialogClosed', params: {} });
+
+          return {};
+        },
+      ],
       ['Page.getFrameTree', () => ({ frameTree: { frame: { id: MAIN_FRAME } } })],
       [
         'Page.getLayoutMetrics',
@@ -165,12 +178,14 @@ export function fakeCdp(log: Log): FakeCdp {
         throw new Error(`Debugger is not attached to the tab with id: ${tabId}.`);
       }
 
-      return fake.replies.get(method)?.(params) ?? {};
+      return fake.replies.get(method)?.(params, tabId) ?? {};
     }),
     attachedTabs: later(() => [...fake.leftover]),
     onEvent: events.add,
     onDetach: detaches.add,
     emit: events.emit,
+    openDialog: (tabId, params) =>
+      events.emit({ tabId, method: 'Page.javascriptDialogOpening', params }),
     detachByChrome: (tabId, reason) => {
       fake.sessions.delete(tabId);
       detaches.emit(tabId, reason);

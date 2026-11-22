@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Order review</title>
+  </head>
+  <body>
+    <main>
+      <h1>Order review</h1>
+      <a href="receipt.html" target="_blank">Open receipt</a>
+      <a href="#details">Jump to details</a>
+      <button id="delete" type="button">Delete order</button>
+      <button id="rename" type="button">Rename order</button>
+      <label>Coupon <input id="coupon" /></label>
+      <select id="plan" aria-label="Plan" onchange="alert('Plan changed')">
+        <option value="free">Free</option>
+        <option value="pro">Pro</option>
+      </select>
+      <p id="details">Details</p>
+    </main>
+    <script>
+      window.answers = [];
+
+      document.getElementById('delete').addEventListener('click', () => {
+        window.answers.push(confirm('Delete this order?'));
+      });
+
+      document
+        .getElementById('coupon')
+        .addEventListener('focus', () => alert('Coupons are paused'));
+
+      document.getElementById('rename').addEventListener('click', () => {
+        window.answers.push(prompt('New name?', 'Order 1'));
+      });
+    </script>
+  </body>
+</html>

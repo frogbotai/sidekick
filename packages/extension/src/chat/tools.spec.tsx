@@ -248,6 +248,20 @@ const CASES: [string, Done, string, string][] = [
     'Dragged listitem “A” to listitem “Done”',
   ],
   [
+    'dialog',
+    { input: { action: 'get' }, output: { dialog: { type: 'confirm', message: 'Delete it?' } } },
+    'Reading the dialog',
+    'Dialog “Delete it?”',
+  ],
+  [
+    'dialog',
+    { input: { action: 'get' }, output: { dialog: null } },
+    'Reading the dialog',
+    'No dialog open',
+  ],
+  ['dialog', { input: { action: 'accept' } }, 'Accepting the dialog', 'Accepted the dialog'],
+  ['dialog', { input: { action: 'dismiss' } }, 'Dismissing the dialog', 'Dismissed the dialog'],
+  [
     'web_search',
     { input: { query: 'chrome 142' }, output: { results: [{ url: 'https://a.test/' }] } },
     'Searching “chrome 142”',
@@ -305,6 +319,7 @@ describe('tool cards', () => {
         'select',
         'press',
         'drag',
+        'dialog',
         'network_capture',
         'console_capture',
         'wait_for',

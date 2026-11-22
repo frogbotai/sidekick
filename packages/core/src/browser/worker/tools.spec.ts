@@ -4,11 +4,10 @@ import { z } from 'zod';
 import { BUILTIN_MODES, PLAN_MODE } from '../../permission/modes';
 import { whollyDenied } from '../../permission/rules';
 import { tools } from '../../registry';
-import { createToolCaller } from '../../tool/bridge';
 import { defineTool, type ToolDefinition, ToolError, UNTRUSTED } from '../../tool/tool';
 import { MAX_BASELINES } from './baselines';
 import { later, solid } from './fakes';
-import { drain, failure, setupBrowser } from './harness';
+import { callerOf, drain, failure, setupBrowser } from './harness';
 import { MAX_CHARS_CAP } from './tools/read';
 
 type Setup = Awaited<ReturnType<typeof setupBrowser>>;
@@ -52,6 +51,7 @@ const SAMPLES: Record<
   select: { input: { tab_id: 1, ref: 'f0e1', values: ['a'] }, resource: 'https://example.com' },
   press: { input: { tab_id: 1, key: 'Enter' }, resource: 'https://example.com' },
   drag: { input: { tab_id: 1, from: 'f0e1', to: 'f0e2' }, resource: 'https://example.com' },
+  dialog: { input: { tab_id: 1, action: 'get' }, resource: 'https://example.com' },
   network_capture: { input: { tab_id: 1, action: 'start' }, resource: 'https://example.com' },
   console_capture: { input: { tab_id: 1, action: 'start' }, resource: 'https://example.com' },
   wait_for: { input: { tab_id: 1, text: 'Done' }, resource: 'https://example.com' },
@@ -164,29 +164,6 @@ describe('Plan mode (sidekick-17 acceptance 6)', () => {
   });
 });
 
-function callerOf({ runtime, run }: Awaited<ReturnType<typeof setupBrowser>>) {
-  const caller = createToolCaller({
-    tools: {
-      list: () => runtime.tools,
-      get: (id) => runtime.tools.find((entry) => entry.id === id),
-    },
-    permission: {
-      assert: () => Promise.resolve(),
-      reply: () => Promise.resolve(),
-      list: () => [],
-      cancel: () => undefined,
-    },
-  });
-
-  let next = 0;
-
-  return (tool: string, input: unknown) =>
-    caller.call(
-      { tool, input, sessionID: 'ses-1', messageID: 'msg-1', callID: `c${next++}`, agent: 'build' },
-      { run: () => Promise.resolve({ id: run.id }) },
-    );
-}
-
 describe('navigate waits for the new page (331 req. 2, 3)', () => {
   it('resolves only after the main frame commits', async () => {
     const { tool, ctx, tabs } = await setupBrowser();
@@ -206,7 +183,14 @@ describe('navigate waits for the new page (331 req. 2, 3)', () => {
 
     const { output } = await drain(navigate);
 
-    expect(output).toEqual({ url: 'https://next.test/', navigated: true, settled: true });
+    expect(output).toEqual({
+      url: 'https://next.test/',
+      navigated: true,
+      settled: true,
+      urlChanged: false,
+      newTabs: [],
+      dialog: null,
+    });
   });
 
   it('fails with Chrome’s error text when the main frame fails to load', async () => {
@@ -229,7 +213,15 @@ describe('navigate waits for the new page (331 req. 2, 3)', () => {
 
     const { output } = await drain(tool('navigate').execute({ tab_id: 1, go: 'reload' }, ctx));
 
-    expect(output).toEqual({ url: 'https://example.com/', navigated: false, settled: false });
+    expect(output).toEqual({
+      url: 'https://example.com/',
+      navigated: false,
+      settled: false,
+      urlChanged: false,
+      newTabs: [],
+      dialog: null,
+    });
+
     expect(log).not.toContain('page.domQuiet');
   });
 
@@ -240,7 +232,15 @@ describe('navigate waits for the new page (331 req. 2, 3)', () => {
       tool('navigate').execute({ tab_id: 1, url: 'https://example.com/' }, ctx),
     );
 
-    expect(output).toEqual({ url: 'https://example.com/', navigated: true, settled: true });
+    expect(output).toEqual({
+      url: 'https://example.com/',
+      navigated: true,
+      settled: true,
+      urlChanged: false,
+      newTabs: [],
+      dialog: null,
+    });
+
     expect(log.filter((entry) => entry === 'tabs.navigate')).toHaveLength(1);
   });
 
@@ -282,7 +282,15 @@ describe('navigate waits for the new page (331 req. 2, 3)', () => {
 
     const { output } = await drain(navigate);
 
-    expect(output).toEqual({ url: 'https://example.com/next', navigated: true, settled: true });
+    expect(output).toEqual({
+      url: 'https://example.com/next',
+      navigated: true,
+      settled: true,
+      urlChanged: false,
+      newTabs: [],
+      dialog: null,
+    });
+
     expect(log).not.toContain('tabs.navigate');
   });
 });

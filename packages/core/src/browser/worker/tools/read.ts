@@ -11,6 +11,7 @@ import {
   getTab,
   inspect,
   inspectTarget,
+  onPage,
   send,
   untrusted,
 } from '../env';
@@ -53,7 +54,7 @@ async function attachForScroll(act: Act) {
 async function wheel(act: Act, start: ScrollStart, attached: boolean): Promise<ScrollEnd> {
   const { page } = act.env;
 
-  if (!attached) return race(page.scrollFallback(act.tabId, start.token), act.signal);
+  if (!attached) return onPage(act, () => page.scrollFallback(act.tabId, start.token));
 
   await page.indicator(act.tabId, { cursor: start.point }).catch(() => undefined);
 
@@ -70,11 +71,11 @@ async function wheel(act: Act, start: ScrollStart, attached: boolean): Promise<S
     deltaY: start.delta.y,
   });
 
-  const end = await race(page.scrollEnd(act.tabId, start.token), act.signal);
+  const end = await onPage(act, () => page.scrollEnd(act.tabId, start.token));
 
   if (end.moved > 0) return end;
 
-  return race(page.scrollFallback(act.tabId, start.token), act.signal);
+  return onPage(act, () => page.scrollFallback(act.tabId, start.token));
 }
 
 async function clean<T>(act: Act, capture: () => Promise<T>) {
@@ -116,13 +117,12 @@ export function readTools(env: BrowserEnv) {
 
         if (subtree !== undefined) await inspect(act, subtree);
 
-        const snapshot = await race(
+        const snapshot = await onPage(act, () =>
           env.page.snapshot(tab_id, {
             scope: scope ?? 'viewport',
             ref: subtree,
             max_chars: clampChars(max_chars),
           }),
-          act.signal,
         );
 
         const read = await getTab(env, tab_id, act.signal);
@@ -158,9 +158,8 @@ export function readTools(env: BrowserEnv) {
 
         if (element !== undefined) await inspect(act, element);
 
-        const page = await race(
+        const page = await onPage(act, () =>
           env.page.text(tab_id, { ref: element, max_chars: clampChars(max_chars) }),
-          act.signal,
         );
 
         const read = await getTab(env, tab_id, act.signal);
@@ -310,9 +309,8 @@ export function readTools(env: BrowserEnv) {
 
         const attached = await attachForScroll(act);
 
-        const start = await race(
+        const start = await onPage(act, () =>
           env.page.scrollStart(tab_id, { ref: element, direction, amount }),
-          act.signal,
         );
 
         if (!start) return untrusted({ moved: 0, container: 'none', at_end: true });
@@ -334,7 +332,7 @@ export function readTools(env: BrowserEnv) {
 
         await inspectTarget(act, element);
 
-        const target = await race(env.page.scrollTo(tab_id, element), act.signal);
+        const target = await onPage(act, () => env.page.scrollTo(tab_id, element));
 
         return untrusted({ in_view: target.in_view, obscured_by: target.obscured_by });
       },
