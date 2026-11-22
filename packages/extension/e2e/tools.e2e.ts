@@ -196,3 +196,60 @@ test('each tool’s card reads its done line, a failure says Failed:, and favico
 
   expect(google).toEqual([]);
 });
+
+test('batch runs a snapshot and a click in one call, and its card lists both steps', async ({
+  context,
+  openPanel,
+  origin,
+}) => {
+  const page = `${origin()}/tools.html`;
+  let tab = 0;
+  let snapshot = '';
+
+  const { bodies } = await scriptOpenAI(context, [
+    callTool('tabs_open', { url: page }, 'call_open'),
+    () => {
+      tab = Number(/"tab_id"\s*:\s*(\d+)/.exec(lastText(bodies))?.[1]);
+
+      return Promise.resolve(callTool('snapshot', { tab_id: tab }, 'call_snapshot'));
+    },
+    () => {
+      snapshot = (JSON.parse(lastText(bodies).split('\n')[0] ?? '{}') as { snapshot: string })
+        .snapshot;
+
+      return Promise.resolve(
+        callTool(
+          'batch',
+          {
+            calls: [
+              { tool: 'snapshot', input: { tab_id: tab } },
+              { tool: 'click', input: { tab_id: tab, ref: refFor(snapshot, 'Sign in') } },
+            ],
+          },
+          'call_batch',
+        ),
+      );
+    },
+    reply('All done.'),
+  ]);
+
+  const panel = await start(context, openPanel, page);
+  const box = panel.getByRole('textbox');
+
+  await box.fill('Read the page and sign in');
+  await box.press('Enter');
+  await expect(panel.getByText('All done.')).toBeVisible({ timeout: 60_000 });
+
+  const batch = card(panel, 'Ran 2 steps');
+
+  await batch.locator('.fb-tool-card__header').click();
+  await expect(batch.getByRole('listitem')).toHaveText(['Read Tool bench', 'Clicked']);
+
+  const output = JSON.parse(lastText(bodies).split('\n')[0] ?? '{}') as {
+    steps?: { tool: string }[];
+    failed?: unknown;
+  };
+
+  expect(output.steps?.map((step) => step.tool)).toEqual(['snapshot', 'click']);
+  expect(output.failed).toBeUndefined();
+});

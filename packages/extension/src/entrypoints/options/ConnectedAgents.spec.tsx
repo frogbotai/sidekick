@@ -2,7 +2,7 @@ import { findPairing, mcpPairings } from '@frogbotai/sidekick-core';
 import { installFakeChrome } from '@frogbotai/sidekick-core/testing';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { commandFor, MCP_PACKAGE } from './commands';
+import { commandFor, INSTALL_COMMAND, MCP_PACKAGE } from './commands';
 import { addAgent, copyCommand, newCommand } from './ConnectedAgents';
 
 const TOKEN = 'sk_abc';
@@ -62,6 +62,10 @@ describe('Connected agents', () => {
     await copyCommand('codex mcp add sidekick', { writeText });
 
     expect(writeText).toHaveBeenCalledWith('codex mcp add sidekick');
+  });
+
+  it('offers one install command for every supported agent, with no token in it', () => {
+    expect(INSTALL_COMMAND).toBe('npx -y @frogbotai/sidekick-mcp install');
   });
 
   it('makes the old token fail on New command, with the same app’s command', async () => {

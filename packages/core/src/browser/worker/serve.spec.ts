@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { installFakeChrome } from '../../testing/fakeChrome';
-import { fakeCdp, fakePage, fakeTabs, later, type Log } from './fakes';
+import { fakeCdp, fakeEncoder, fakeImages, fakePage, fakeTabs, later, type Log } from './fakes';
 import { OUTSIDE_TAB, START_TAB } from './harness';
 import { createBrowserRuntime } from './runtime';
 import { createBrowserWorker } from './serve';
@@ -22,7 +22,15 @@ function setup() {
 
   const tabs = fakeTabs(log, [START_TAB, OUTSIDE_TAB]);
   const cdp = fakeCdp(log);
-  const runtime = createBrowserRuntime({ cdp, page, tabs, mac: false });
+  const runtime = createBrowserRuntime({
+    cdp,
+    page,
+    tabs,
+    images: fakeImages(log),
+    encoder: fakeEncoder(log),
+    mac: false,
+  });
+
   const worker = createBrowserWorker(runtime);
   const emitted: { type: string; data: unknown }[] = [];
 

@@ -17,6 +17,9 @@ const PERMISSIONS = {
   debugger: 'trusted input and scrolling over CDP',
   webNavigation: 'list a tab’s frames, to reach each frame’s content script',
   favicon: 'site icons in link cards, from Chrome’s own cache (315 D1)',
+  downloads: 'save tab recordings to Downloads without a dialog (sidekick-19 D3)',
+  offscreen:
+    'encode tab recordings with WebCodecs, which the service worker lacks (sidekick-19 D1)',
 } as const;
 
 const DEV_PERMISSIONS = {

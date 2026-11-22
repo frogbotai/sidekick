@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, vi } from 'vitest';
 
+import type { RecordedStep } from '../../protocol';
 import { ToolError } from '../../tool/tool';
 import { createContent } from '.';
 
@@ -33,16 +34,21 @@ export async function failure(promise: Promise<unknown>) {
 }
 
 /** One frame's content script over happy-dom, with a fake worker. */
-export function setup({ visible = false } = {}) {
+export function setup({ visible = false, recording = false } = {}) {
   const worker = {
     visible: vi.fn(() => Promise.resolve(visible)),
     stop: vi.fn(() => Promise.resolve()),
     identify: vi.fn(() => Promise.resolve({ frameId: 0, key: 'secret' })),
+    recording: vi.fn(() => Promise.resolve(recording)),
+    step: vi.fn((_step: RecordedStep) => Promise.resolve()),
   };
 
-  const { handlers, indicator } = createContent({ top: true, worker });
+  const { handlers, indicator, recorder } = createContent({ top: true, worker });
 
-  cleanups.push(() => indicator()?.set({ visible: false }));
+  cleanups.push(
+    () => indicator()?.set({ visible: false }),
+    () => recorder.set(false),
+  );
 
   const snapshot = async (input: Partial<SnapshotInput> = {}) =>
     unwrap(
@@ -63,7 +69,7 @@ export function setup({ visible = false } = {}) {
   const inspect = async (ref: string, doc?: string) =>
     unwrap(await handlers['page.inspect']({ ref, doc }));
 
-  return { handlers, indicator, worker, snapshot, text, inspect };
+  return { handlers, indicator, recorder, worker, snapshot, text, inspect };
 }
 
 export function refOf(text: string, label: string) {

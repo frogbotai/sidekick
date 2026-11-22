@@ -49,6 +49,40 @@ export interface Capture extends Size {
   mime: string;
 }
 
+/** An image as 8-bit RGBA rows, as `ImageData` holds it. */
+export interface Rgba extends Size {
+  data: Uint8ClampedArray;
+}
+
+/** Captures to pixels and pixels to PNG: `createImageBitmap` and `OffscreenCanvas` in the worker. */
+export interface Images {
+  decode(capture: Capture): Promise<Rgba>;
+  /** The image as a base64 PNG. */
+  png(image: Rgba): Promise<string>;
+}
+
+/** A finished recording, handed to the person as a download. */
+export interface SavedVideo extends Size {
+  file: string;
+  /** The video codec, `avc` (H.264) unless the browser can't encode it. */
+  codec: string;
+  bytes: number;
+}
+
+/**
+ * Turns a recording's JPEG frames into an MP4 and downloads it: an offscreen document with
+ * WebCodecs and `chrome.downloads` in the extension, a fake in tests.
+ */
+export interface Encoder {
+  open(id: string, input: { frameRate: number }): Promise<void>;
+  /** One frame, shown from `timestamp` for `duration` seconds; frames come in timestamp order. */
+  frame(id: string, frame: { data: string; timestamp: number; duration: number }): Promise<void>;
+  /** Finishes the file and downloads it as `file`. */
+  close(id: string, file: string): Promise<SavedVideo>;
+  /** Drops the recording without saving it. */
+  cancel(id: string): Promise<void>;
+}
+
 /** A tab's main frame committed: a new document, or a same-document `#` or history step. */
 export interface Commit {
   tabId: number;
@@ -213,7 +247,11 @@ export interface Page {
     frameId: number,
     input: { reported: string[]; surplus: number },
   ): Promise<string[]>;
-  indicator(tabId: number, state: { visible?: boolean; cursor?: Point }): Promise<void>;
+  /** `hidden` keeps a shown indicator out of the next captures without restarting its fade-in. */
+  indicator(
+    tabId: number,
+    state: { visible?: boolean; cursor?: Point; hidden?: boolean },
+  ): Promise<void>;
   /** Whether a top-level viewport point is on Sidekick's Stop button. */
   stopAt(tabId: number, point: Point): Promise<boolean>;
   /** Whether any frame's rendered text contains `text`, whitespace collapsed. */
@@ -222,6 +260,8 @@ export interface Page {
   isVisible(tabId: number, ref: string): Promise<boolean>;
   /** Puts `EVAL_TAG` with `token` on a ref's element, or removes it when `token` is null. */
   tag(tabId: number, ref: string, token: string | null): Promise<void>;
+  /** Turns the person's-steps recorder on or off in every frame of the tab. */
+  record(tabId: number, on: boolean): Promise<void>;
   /** The WebMCP tools the top frame sees, cross-origin ones from `fromOrigins` included. */
   webmcpList(
     tabId: number,

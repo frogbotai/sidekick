@@ -194,6 +194,11 @@ body,
   cursor: pointer;
 }
 
+.sidekick-batch-steps {
+  margin: 0;
+  padding-left: 1.25rem;
+}
+
 .sidekick-tool-image {
   display: block;
   max-width: 100%;

@@ -46,7 +46,7 @@ export interface BrowserWorker {
  * one run per chat, the indicator in each run's tabs, and the indicator's Stop.
  */
 export function createBrowserWorker({ env }: BrowserRuntime): BrowserWorker {
-  const { runs, tabs, page, sessions, emulation } = env;
+  const { runs, tabs, page, sessions, emulation, recordings } = env;
   const shown = new Map<string, Set<number>>();
   const hidden = new Set<string>();
   const bySession = new Map<string, string>();
@@ -217,6 +217,12 @@ export function createBrowserWorker({ env }: BrowserRuntime): BrowserWorker {
 
         if (run) runs.stop(run.id, 'user');
         else show(tabId, false);
+
+        return {};
+      },
+      'recorder.state': () => ({ on: recordings.recording(tabId) }),
+      'recorder.step': (step) => {
+        recordings.step(tabId, frameId, step);
 
         return {};
       },

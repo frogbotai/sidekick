@@ -1,8 +1,15 @@
-import { contentProtocol, EVAL_TAG, type frameProtocol } from '../../protocol';
+import { contentProtocol, EVAL_TAG, type frameProtocol, type RecordedStep } from '../../protocol';
 import { callWorker } from '../../rpc/content';
 import type { Handlers } from '../../rpc/define';
 import { ToolError, type ToolErrorCode, type ToolErrorDetail } from '../../tool/tool';
-import { assignFrames, type Identify, isShown, listenForFrames, renderedText } from './dom';
+import {
+  assignFrames,
+  type Identify,
+  isShown,
+  listenForFrames,
+  nextFrame,
+  renderedText,
+} from './dom';
 import {
   checkState,
   focusedField,
@@ -16,6 +23,7 @@ import { frameSources, stripFrames } from './frames';
 import { createIndicator, type Indicator } from './indicator';
 import { probePage } from './probe';
 import { domQuiet } from './quiet';
+import { createRecorder } from './recorder';
 import { createRefs, navigated } from './refs';
 import { fingerprintOf, isRedacted } from './roles';
 import { frameBox, scrollBegin, scrollFallback, scrollFinish, scrollToElement } from './scroll';
@@ -38,6 +46,21 @@ async function guard<T>(run: () => T | Promise<T>): Promise<Outcome<T>> {
   }
 }
 
+const PAINT_CAP_MS = 200;
+
+function painted() {
+  return new Promise<void>((resolve) => {
+    const timer = setTimeout(resolve, PAINT_CAP_MS);
+
+    void nextFrame()
+      .then(nextFrame)
+      .then(() => {
+        clearTimeout(timer);
+        resolve();
+      });
+  });
+}
+
 export interface ContentOptions {
   /** Whether this frame shows the indicator: the top frame only. */
   top?: boolean;
@@ -46,6 +69,9 @@ export interface ContentOptions {
     visible: () => Promise<boolean>;
     stop: () => Promise<void>;
     identify: Identify;
+    /** Whether the person's tab is being recorded, for a frame that loads mid-recording. */
+    recording: () => Promise<boolean>;
+    step: (step: RecordedStep) => Promise<void>;
   };
 }
 
@@ -53,6 +79,8 @@ const chromeWorker: NonNullable<ContentOptions['worker']> = {
   visible: async () => (await callWorker(contentProtocol, 'indicator.state', {})).visible,
   stop: async () => void (await callWorker(contentProtocol, 'indicator.stop', {})),
   identify: () => callWorker(contentProtocol, 'frame.identify', {}),
+  recording: async () => (await callWorker(contentProtocol, 'recorder.state', {})).on,
+  step: async (step) => void (await callWorker(contentProtocol, 'recorder.step', step)),
 };
 
 /** The content script's answers to the worker for one frame's document (req. 9–12, 16–17, 23). */
@@ -64,8 +92,14 @@ export function createContent({
   let frameId = 0;
   const refs = createRefs(() => frameId);
   let indicator: Indicator | undefined;
+  const recorder = createRecorder((step) => void worker.step(step).catch(() => undefined));
 
   listenForFrames(worker.identify);
+
+  void worker
+    .recording()
+    .then((on) => on && recorder.set(true))
+    .catch(() => undefined);
 
   const resolve = (ref: string, expected?: string) => {
     if (expected !== undefined && expected !== doc) throw navigated(ref);
@@ -176,8 +210,12 @@ export function createContent({
     'page.probe': ({ selectors }) => guard(() => probePage(selectors)),
     'page.strip': ({ reported, surplus }) => guard(() => stripFrames(reported, surplus)),
     'page.indicator': (state) =>
-      guard(() => {
-        if (top && (state.visible === true || indicator)) showIndicator().set(state);
+      guard(async () => {
+        if (!top || (state.visible !== true && !indicator)) return null;
+
+        showIndicator().set(state);
+
+        if (state.hidden !== undefined) await painted();
 
         return null;
       }),
@@ -194,6 +232,12 @@ export function createContent({
 
         return null;
       }),
+    'page.record': ({ on }) =>
+      guard(() => {
+        recorder.set(on);
+
+        return null;
+      }),
     'page.webmcpList': ({ fromOrigins }) => guard(() => listTools(fromOrigins)),
     'page.webmcpCall': (input) => guard(() => callTool(input)),
     'page.webmcpCancel': ({ token }) =>
@@ -204,5 +248,5 @@ export function createContent({
       }),
   };
 
-  return { handlers, indicator: () => indicator };
+  return { handlers, indicator: () => indicator, recorder };
 }
