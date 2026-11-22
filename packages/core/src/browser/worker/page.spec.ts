@@ -27,6 +27,8 @@ async function browserOverContent(html: string) {
       visible: () => Promise.resolve(false),
       stop: () => Promise.resolve(),
       identify: () => Promise.resolve({ frameId: 0, key: 'worker-key' }),
+      recording: () => Promise.resolve(false),
+      step: () => Promise.resolve(),
     },
   });
 

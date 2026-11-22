@@ -3,6 +3,7 @@ import {
   answerContent,
   callFrame,
   chromeCdp,
+  chromeImages,
   chromePage,
   chromeTabs,
   cleanupLegacy,
@@ -73,6 +74,7 @@ export default defineBackground(() => {
     cdp: chromeCdp(),
     page: chromePage({ tabs, inject: injectFrame, refs: sessionRefStore() }),
     tabs,
+    images: chromeImages(),
     mac: /Mac OS X|Macintosh/.test(navigator.userAgent),
   });
 
