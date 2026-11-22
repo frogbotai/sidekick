@@ -2,6 +2,7 @@ import type { PermissionAction, ToolContext, ToolMetadata, ToolResult } from '..
 import { ToolError, UNTRUSTED } from '../../tool/tool';
 import { originOf } from '../../tool/url';
 import { checkpoint, race, stopped } from './abort';
+import type { Captures } from './capture';
 import type { Challenge } from './challenge';
 import { detect } from './detect';
 import type { Recordings } from './recordings';
@@ -29,6 +30,7 @@ export interface BrowserEnv {
   sessions: Sessions;
   settler: Settler;
   runs: Runs;
+  captures: Captures;
   /** The person's demonstrations, one per tab (sidekick-21). */
   recordings: Recordings;
   /** Tab video recordings, one per tab (sidekick-19). */

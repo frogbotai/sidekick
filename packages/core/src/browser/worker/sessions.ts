@@ -27,6 +27,8 @@ export interface Sessions {
     options?: SendOptions,
   ): Promise<unknown>;
   attached(tabId: number): boolean;
+  /** Keeps the tab's session from idle-detaching until the returned release is called. */
+  hold(tabId: number): () => void;
   onStripped(listener: (event: Stripped) => void): () => void;
   dispose(): void;
 }
@@ -99,6 +101,8 @@ export function createSessions({
 
   const strippedListeners = new Set<(event: Stripped) => void>();
 
+  const holds = new Map<number, Set<symbol>>();
+
   const drop = (tabId: number) => {
     clearTimeout(sessions.get(tabId)?.timer);
     sessions.delete(tabId);
@@ -110,6 +114,8 @@ export function createSessions({
     if (!session) return;
 
     clearTimeout(session.timer);
+
+    if (holds.get(tabId)?.size) return;
 
     session.timer = setTimeout(() => {
       if (session.busy > 0) {
@@ -231,6 +237,22 @@ export function createSessions({
       }
     },
     attached: (tabId) => sessions.has(tabId),
+    hold: (tabId) => {
+      const token = Symbol(`hold:${tabId}`);
+      const held = holds.get(tabId) ?? new Set<symbol>();
+
+      held.add(token);
+      holds.set(tabId, held);
+      clearTimeout(sessions.get(tabId)?.timer);
+
+      return () => {
+        if (!held.delete(token)) return;
+
+        if (held.size === 0 && holds.get(tabId) === held) holds.delete(tabId);
+
+        touch(tabId);
+      };
+    },
     onStripped: (listener) => {
       strippedListeners.add(listener);
 
@@ -240,6 +262,8 @@ export function createSessions({
       unsubscribe();
 
       for (const tabId of [...sessions.keys()]) drop(tabId);
+
+      holds.clear();
     },
   };
 }

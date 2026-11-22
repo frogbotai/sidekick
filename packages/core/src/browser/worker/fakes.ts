@@ -16,6 +16,9 @@ import type {
 
 export type Log = string[];
 
+/** The main frame's CDP id in `fakeCdp`'s `Page.getFrameTree`. */
+export const MAIN_FRAME = 'main-frame';
+
 export interface SentCommand {
   tabId: number;
   method: string;
@@ -112,6 +115,7 @@ export function fakeCdp(log: Log): FakeCdp {
     attachErrors: [],
     sendErrors: new Map(),
     replies: new Map<string, (params: Record<string, unknown>) => unknown>([
+      ['Page.getFrameTree', () => ({ frameTree: { frame: { id: MAIN_FRAME } } })],
       [
         'Page.getLayoutMetrics',
         () => ({

@@ -158,6 +158,32 @@ function screenshotOf(output: Record<string, unknown>) {
   return data && mime ? `data:${mime};base64,${data}` : undefined;
 }
 
+function recording(icon: IconName, what: string, unit: string) {
+  return ({ input, output }: ToolCall): ToolLine => {
+    const entries = plural(count(output.entries), unit);
+
+    if (input.action === 'start') {
+      return {
+        icon,
+        running: `Starting to record ${what}`,
+        done: `Recording ${what}`,
+        failed: `Record ${what}`,
+      };
+    }
+
+    if (input.action === 'stop') {
+      return {
+        icon,
+        running: `Stopping recording ${what}`,
+        done: `Stopped recording ${what}, ${entries}`,
+        failed: `Stop recording ${what}`,
+      };
+    }
+
+    return { icon, running: `Reading ${what}`, done: `Read ${entries}`, failed: `Read ${what}` };
+  };
+}
+
 function stepLabel(call: Record<string, unknown>, output: unknown, failed?: string) {
   const tool = text(call.tool) ?? 'step';
   const line = TOOL_LINES[tool];
@@ -444,6 +470,8 @@ export const TOOL_LINES: Record<string, (call: ToolCall) => ToolLine> = {
 
     return { icon: 'cursor', running: 'Dragging', done: `Dragged${ends}`, failed: `Drag${ends}` };
   },
+  network_capture: recording('activity', 'requests', 'request'),
+  console_capture: recording('terminal', 'the console', 'message'),
   wait_for: ({ input, metadata }) => {
     const what = waitedFor(input, text(metadata.target));
 

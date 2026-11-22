@@ -259,6 +259,24 @@ const CASES: [string, Done, string, string][] = [
     'Fetching mdn.test',
     'Fetched mdn.test',
   ],
+  [
+    'network_capture',
+    { input: { tab_id: 1, action: 'start' }, output: { capturing: true, entries: [] } },
+    'Starting to record requests',
+    'Recording requests',
+  ],
+  [
+    'network_capture',
+    { input: { tab_id: 1, action: 'read' }, output: { entries: [{}, {}] } },
+    'Reading requests',
+    'Read 2 requests',
+  ],
+  [
+    'console_capture',
+    { input: { tab_id: 1, action: 'stop' }, output: { entries: [{}] } },
+    'Stopping recording the console',
+    'Stopped recording the console, 1 message',
+  ],
 ];
 
 describe('tool cards', () => {
@@ -287,6 +305,8 @@ describe('tool cards', () => {
         'select',
         'press',
         'drag',
+        'network_capture',
+        'console_capture',
         'wait_for',
         'eval',
         'web_search',
