@@ -50,6 +50,7 @@ function proxy(
     id: info.id,
     description: info.description,
     permission: info.permission,
+    ...(info.acts ? { acts: true } : {}),
     input: schemaFrom(info.input),
     output: schemaFrom(info.output),
     execute: async (input, ctx) => {

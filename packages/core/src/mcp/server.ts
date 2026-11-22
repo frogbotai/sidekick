@@ -48,7 +48,7 @@ export function listingOf(tool: ToolDefinition): Tool {
     name: tool.id,
     description: tool.description,
     inputSchema: schemaOf(tool.input) as Tool['inputSchema'],
-    ...(tool.permission === 'read' ? { annotations: { readOnlyHint: true } } : {}),
+    ...(tool.permission === 'read' && !tool.acts ? { annotations: { readOnlyHint: true } } : {}),
   };
 }
 
