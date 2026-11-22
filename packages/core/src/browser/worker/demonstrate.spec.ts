@@ -5,7 +5,7 @@ import { batchTool } from '../../tool/batch';
 import { createKeyedLock } from '../../tool/lock';
 import { ToolError } from '../../tool/tool';
 import { later } from './fakes';
-import { drain, setupBrowser, START_TAB } from './harness';
+import { callerOf, drain, setupBrowser, START_TAB } from './harness';
 import { demonstrateTools } from './tools/demonstrate';
 import type { HandoffCard } from './types';
 
@@ -264,5 +264,74 @@ describe('the demonstrate tool (sidekick-21 req. 1, 6, 7)', () => {
 
     expect(error).toMatchObject({ code: 'invalid_target' });
     expect(recordings.recording(1)).toBe(false);
+  });
+
+  it('returns urls without the query and fragment, where a GET form puts typed values (req. 5)', async () => {
+    const { tabs, recordings, demonstrate, started, resolve } = await setup();
+    const result = demonstrate();
+
+    await started();
+
+    recordings.step(
+      1,
+      0,
+      step({ kind: 'fill', role: 'textbox', name: 'Password', redacted: true }),
+    );
+
+    const url = 'https://example.com/login?addr=1+Main+St&pw=hunter2#top';
+
+    tabs.tabs.set(1, { ...START_TAB, url, groupId: tabs.tabs.get(1)?.groupId ?? -1 });
+    tabs.commit({ tabId: 1, url });
+    resolve();
+
+    const { output } = await result;
+
+    expect(JSON.stringify(output)).not.toMatch(/hunter2|Main|top/);
+    expect(output.ended_url).toBe('https://example.com/login');
+  });
+
+  it('starts recording only after an agent click on the tab has finished (req. 2)', async () => {
+    const browser = await setup();
+    const { cdp, handoffs, recordings } = browser;
+    const call = callerOf(browser);
+    const inFlight: string[] = [];
+    const atStart: string[][] = [];
+    let release = () => {};
+
+    cdp.replies.set('Input.dispatchMouseEvent', (params) => {
+      if (params.type !== 'mouseReleased') return {};
+
+      inFlight.push('mouseReleased');
+
+      return new Promise((done) => {
+        release = () => {
+          inFlight.length = 0;
+          done({});
+        };
+      });
+    });
+
+    const start = recordings.start.bind(recordings);
+
+    vi.spyOn(recordings, 'start').mockImplementation((tabId) => {
+      atStart.push([...inFlight]);
+
+      return start(tabId);
+    });
+
+    const click = call('click', { tab_id: 1, ref: 'f0e1' }).catch((error: unknown) => error);
+
+    await vi.waitFor(() => expect(inFlight).toEqual(['mouseReleased']));
+
+    const result = call('demonstrate', { tab_id: 1, message: 'Show me' });
+
+    await vi.advanceTimersByTimeAsync(100);
+    release();
+    await drain(click);
+    await vi.waitFor(() => expect(handoffs.pending(1)).toBeDefined());
+    handoffs.resolve(handoffs.pending(1)?.id ?? '');
+    await drain(result);
+
+    expect(atStart).toEqual([[]]);
   });
 });

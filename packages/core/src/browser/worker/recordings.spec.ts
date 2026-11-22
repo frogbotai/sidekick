@@ -210,3 +210,69 @@ describe('recordings keep secrets sticky (sidekick-21, PR #38 review)', () => {
     expect(recorded.at(-1)).toEqual(expect.objectContaining({ redacted: true }));
   });
 });
+
+describe('recordings after the PR #56 review (sidekick-21)', () => {
+  it('drops the query and fragment from navigations and frame urls, where a GET form puts typed values', async () => {
+    const { tabs, recordings } = setup();
+    const url = 'https://example.com/login?addr=1+Main+St&pw=hunter2#done';
+
+    await recordings.start(1);
+    tabs.commit({ tabId: 1, url });
+    recordings.step(1, 0, step({ frameUrl: url }));
+
+    const recorded = await recordings.stop(1);
+
+    expect(JSON.stringify(recorded)).not.toMatch(/hunter2|Main|done/);
+
+    expect(recorded).toEqual([
+      { kind: 'navigation', url: 'https://example.com/login' },
+      step({ frameUrl: 'https://example.com/login' }),
+    ]);
+  });
+
+  it('keeps a field masked when a later fill of it arrives unmasked', async () => {
+    const { recordings } = setup();
+    const fill = { kind: 'fill' as const, role: 'textbox', name: 'Address', selector: 'input#a' };
+
+    await recordings.start(1);
+    recordings.step(1, 0, step({ ...fill, masked: 'street-address' }));
+    recordings.step(1, 0, step({ name: 'Next' }));
+    recordings.step(1, 0, step({ ...fill, value: '1 Main St' }));
+
+    const recorded = await recordings.stop(1);
+
+    expect(JSON.stringify(recorded)).not.toMatch(/Main/);
+    expect(recorded.at(-1)).toEqual(expect.objectContaining({ masked: 'street-address' }));
+  });
+
+  it('turns the page recorder off again when a re-arm lands after stop', async () => {
+    const { tabs, record, recordings } = setup();
+    let land = () => {};
+
+    await recordings.start(1);
+
+    record.mockImplementationOnce(
+      () =>
+        new Promise<void>((done) => {
+          land = done;
+        }),
+    );
+
+    tabs.commit({ tabId: 1, url: 'https://example.com/next' });
+    await recordings.stop(1);
+    land();
+
+    await vi.waitFor(() => expect(record.mock.calls.at(-1)).toEqual([1, false]));
+
+    expect(record.mock.calls.filter(([, on]) => !on).length).toBe(2);
+  });
+
+  it('turns the page recorder off in recording tabs on dispose', async () => {
+    const { record, recordings } = setup();
+
+    await recordings.start(1);
+    recordings.dispose();
+
+    expect(record.mock.calls.at(-1)).toEqual([1, false]);
+  });
+});
