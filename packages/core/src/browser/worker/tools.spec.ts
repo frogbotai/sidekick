@@ -1,6 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
 
+import { BUILTIN_MODES, PLAN_MODE } from '../../permission/modes';
+import { whollyDenied } from '../../permission/rules';
 import { tools } from '../../registry';
 import { createToolCaller } from '../../tool/bridge';
 import { defineTool, type ToolDefinition, ToolError, UNTRUSTED } from '../../tool/tool';
@@ -45,10 +47,13 @@ const SAMPLES: Record<
   click: { input: { tab_id: 1, ref: 'f0e1' }, resource: 'https://example.com' },
   hover: { input: { tab_id: 1, ref: 'f0e1' }, resource: 'https://example.com' },
   fill: { input: { tab_id: 1, ref: 'f0e1', text: 'hi' }, resource: 'https://example.com' },
+  type: { input: { tab_id: 1, text: 'hi' }, resource: 'https://example.com' },
   check: { input: { tab_id: 1, ref: 'f0e1', checked: false }, resource: 'https://example.com' },
   select: { input: { tab_id: 1, ref: 'f0e1', values: ['a'] }, resource: 'https://example.com' },
   press: { input: { tab_id: 1, key: 'Enter' }, resource: 'https://example.com' },
   drag: { input: { tab_id: 1, from: 'f0e1', to: 'f0e2' }, resource: 'https://example.com' },
+  wait_for: { input: { tab_id: 1, text: 'Done' }, resource: 'https://example.com' },
+  eval: { input: { tab_id: 1, script: 'document.title' }, resource: 'https://example.com' },
   webmcp: { input: { tab_id: 1, action: 'list' }, resource: 'https://example.com' },
 };
 
@@ -76,7 +81,7 @@ function bad(id: string, input: z.ZodType = z.object({})): ToolDefinition {
 }
 
 describe('browser tools in the tools registry', () => {
-  it('registers all 20, and sends a bad id or schema to errors()', async () => {
+  it('registers all 23, and sends a bad id or schema to errors()', async () => {
     const { runtime } = await setupBrowser();
 
     disposers.push(
@@ -140,6 +145,20 @@ describe('browser tools in the tools registry', () => {
     const error = await failure(definition.execute(definition.input.parse(sample.input), ctx));
 
     expect(error).toMatchObject({ code: 'navigated' });
+  });
+});
+
+describe('Plan mode (sidekick-17 acceptance 6)', () => {
+  it('denies type and eval and keeps wait_for', async () => {
+    const { runtime } = await setupBrowser();
+    const plan = BUILTIN_MODES.find(({ id }) => id === PLAN_MODE);
+    const offered = runtime.tools
+      .filter(({ permission }) => !whollyDenied(plan?.rules ?? [], permission))
+      .map(({ id }) => id);
+
+    expect(offered).toContain('wait_for');
+    expect(offered).not.toContain('type');
+    expect(offered).not.toContain('eval');
   });
 });
 

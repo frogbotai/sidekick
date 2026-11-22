@@ -223,7 +223,8 @@ export interface Page {
   text(tabId: number, input: { ref?: string; max_chars: number }): Promise<PageText>;
   inspect(tabId: number, ref: string): Promise<RefInfo>;
   scrollTo(tabId: number, ref: string): Promise<Target>;
-  focus(tabId: number, ref: string): Promise<void>;
+  /** With `end`, a field that didn't have focus gets its caret after its text, as `type` needs. */
+  focus(tabId: number, ref: string, end?: boolean): Promise<void>;
   selectContents(tabId: number, ref: string): Promise<void>;
   /** What has focus, following focused frames inward. */
   focused(tabId: number): Promise<Focused>;
@@ -253,6 +254,12 @@ export interface Page {
   ): Promise<void>;
   /** Whether a top-level viewport point is on Sidekick's Stop button. */
   stopAt(tabId: number, point: Point): Promise<boolean>;
+  /** Whether any frame's rendered text contains `text`, whitespace collapsed. */
+  hasText(tabId: number, text: string): Promise<boolean>;
+  /** Whether a ref's element has a box and isn't hidden; `stale_ref` once it is gone. */
+  isVisible(tabId: number, ref: string): Promise<boolean>;
+  /** Puts `EVAL_TAG` with `token` on a ref's element, or removes it when `token` is null. */
+  tag(tabId: number, ref: string, token: string | null): Promise<void>;
   /** Turns the person's-steps recorder on or off in every frame of the tab. */
   record(tabId: number, on: boolean): Promise<void>;
   /** The WebMCP tools the top frame sees, cross-origin ones from `fromOrigins` included. */

@@ -216,6 +216,9 @@ export const sidekickProtocol = defineProtocol({
   },
 });
 
+/** The attribute `eval` with a ref puts on its element for a moment, so the debugger can find it. */
+export const EVAL_TAG = 'data-sidekick-eval';
+
 export const frameProtocol = defineProtocol({
   methods: {
     'frame.ping': { input: z.object({}), output: z.object({ url: z.string() }) },
@@ -266,7 +269,10 @@ export const frameProtocol = defineProtocol({
       input: z.object({ frameId, reveal: z.boolean(), point: z.optional(point), children, key }),
       output: outcome(z.object({ origin: point, obscured_by: z.optional(z.string()) })),
     },
-    'page.focus': { input: byRef, output: outcome(z.null()) },
+    'page.focus': {
+      input: z.object({ ref, doc, end: z.optional(z.boolean()) }),
+      output: outcome(z.null()),
+    },
     'page.selectContents': { input: byRef, output: outcome(z.null()) },
     'page.focused': {
       input: z.object({ children, key }),
@@ -340,6 +346,12 @@ export const frameProtocol = defineProtocol({
       output: outcome(z.null()),
     },
     'page.stopAt': { input: z.object({ point }), output: outcome(z.boolean()) },
+    'page.hasText': { input: z.object({ text: z.string() }), output: outcome(z.boolean()) },
+    'page.isVisible': { input: byRef, output: outcome(z.boolean()) },
+    'page.tag': {
+      input: z.object({ ref, doc, token: z.nullable(z.string()) }),
+      output: outcome(z.null()),
+    },
     'page.record': { input: z.object({ on: z.boolean() }), output: outcome(z.null()) },
     'page.webmcpList': {
       input: z.object({ fromOrigins: origins }),
