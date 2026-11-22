@@ -61,6 +61,28 @@ export interface Images {
   png(image: Rgba): Promise<string>;
 }
 
+/** A finished recording, handed to the person as a download. */
+export interface SavedVideo extends Size {
+  file: string;
+  /** The video codec, `avc` (H.264) unless the browser can't encode it. */
+  codec: string;
+  bytes: number;
+}
+
+/**
+ * Turns a recording's JPEG frames into an MP4 and downloads it: an offscreen document with
+ * WebCodecs and `chrome.downloads` in the extension, a fake in tests.
+ */
+export interface Encoder {
+  open(id: string, input: { frameRate: number }): Promise<void>;
+  /** One frame, shown from `timestamp` for `duration` seconds; frames come in timestamp order. */
+  frame(id: string, frame: { data: string; timestamp: number; duration: number }): Promise<void>;
+  /** Finishes the file and downloads it as `file`. */
+  close(id: string, file: string): Promise<SavedVideo>;
+  /** Drops the recording without saving it. */
+  cancel(id: string): Promise<void>;
+}
+
 /** A tab's main frame committed: a new document, or a same-document `#` or history step. */
 export interface Commit {
   tabId: number;

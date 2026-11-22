@@ -16,6 +16,7 @@ export type {
   Cdp,
   CdpEvent,
   Direction,
+  Encoder,
   FrameInfo,
   Images,
   Page,
@@ -23,6 +24,7 @@ export type {
   Rect,
   RefInfo,
   Rgba,
+  SavedVideo,
   ScrollEnd,
   ScrollStart,
   Size,
@@ -31,3 +33,4 @@ export type {
   Tabs,
   Target,
 } from './types';
+export type { EndReason, RecordingReport, RecordingStatus, Videos } from './videos';

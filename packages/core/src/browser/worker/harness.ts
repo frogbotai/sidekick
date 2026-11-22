@@ -1,7 +1,15 @@
 import { vi } from 'vitest';
 
 import { installFakeChrome } from '../../testing/fakeChrome';
-import { fakeCdp, fakeContext, fakeImages, fakePage, fakeTabs, type Log } from './fakes';
+import {
+  fakeCdp,
+  fakeContext,
+  fakeEncoder,
+  fakeImages,
+  fakePage,
+  fakeTabs,
+  type Log,
+} from './fakes';
 import { createBrowserRuntime } from './runtime';
 import type { Page, TabInfo } from './types';
 
@@ -33,7 +41,8 @@ export async function setupBrowser({
   const page = fakePage(log, overrides);
   const tabs = fakeTabs(log, [START_TAB, OUTSIDE_TAB]);
   const images = fakeImages(log);
-  const runtime = createBrowserRuntime({ cdp, page, tabs, images, mac });
+  const encoder = fakeEncoder(log);
+  const runtime = createBrowserRuntime({ cdp, page, tabs, images, encoder, mac });
   const run = await runtime.env.runs.start({ tabId: START_TAB.id, label: 'Task' });
   const ctx = fakeContext(log, run.id);
 
@@ -47,7 +56,7 @@ export async function setupBrowser({
 
   log.length = 0;
 
-  return { storage, log, cdp, page, tabs, images, runtime, run, ctx, tool };
+  return { storage, log, cdp, page, tabs, images, encoder, runtime, run, ctx, tool };
 }
 
 /** Advances fake time until `promise` settles, so settling timers don't stall a test. */

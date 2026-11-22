@@ -9,6 +9,7 @@ import type { Run, Runs } from './runs';
 import type { Sessions } from './sessions';
 import type { Settler } from './settle';
 import type { Cdp, Images, Page, Point, Rect, RefInfo, Size, TabInfo, Tabs } from './types';
+import type { Videos } from './videos';
 
 /** Screenshot pixels to viewport CSS pixels for one tab (271 D3). */
 export interface ScreenMap {
@@ -30,6 +31,8 @@ export interface BrowserEnv {
   runs: Runs;
   /** The person's demonstrations, one per tab (sidekick-21). */
   recordings: Recordings;
+  /** Tab video recordings, one per tab (sidekick-19). */
+  videos: Videos;
   screens: Map<number, ScreenMap>;
   /** New-document commits per tab, so a call can tell its page was replaced. */
   documents: Map<number, number>;
