@@ -89,7 +89,19 @@ const CASES: [string, Done, string, string][] = [
     'Reading page',
     'Read Rows',
   ],
+  [
+    'page_text',
+    { input: {}, output: { title: 'Rows', url: 'https://a.test/' } },
+    'Reading page text',
+    'Read the text of Rows',
+  ],
   ['screenshot', { input: {}, output: { width: 10 } }, 'Taking screenshot', 'Took a screenshot'],
+  [
+    'screenshot',
+    { input: { region: { x: 0, y: 0, width: 10, height: 10 } }, output: { width: 10 } },
+    'Zooming in',
+    'Zoomed in',
+  ],
   [
     'scroll',
     { input: { direction: 'down' }, output: { at_end: true } },
@@ -197,6 +209,7 @@ describe('tool cards', () => {
         'tabs_close',
         'navigate',
         'snapshot',
+        'page_text',
         'screenshot',
         'scroll',
         'scroll_to',

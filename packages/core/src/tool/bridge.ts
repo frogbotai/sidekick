@@ -222,6 +222,7 @@ export function createToolBridge({
         id: tool.id,
         description: tool.description,
         permission: tool.permission,
+        ...(tool.acts ? { acts: true } : {}),
         input: schemaOf(tool.input),
         output: schemaOf(tool.output),
       })),
