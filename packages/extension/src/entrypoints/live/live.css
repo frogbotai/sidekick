@@ -1,120 +1,155 @@
 body {
   margin: 0;
-  padding: 12px;
-  font:
-    14px/1.4 system-ui,
-    sans-serif;
-  color: #111;
-  background: #fff;
+  padding: calc(var(--spacing) * 3);
+  font-family: var(--font-body);
+  font-size: var(--fb-text-sm);
+  line-height: var(--fb-text-sm--line-height);
+  color: var(--color-text);
+  background: var(--color-bg);
 }
 
 h1 {
-  font-size: 18px;
-  margin: 0 0 12px;
+  margin: 0 0 calc(var(--spacing) * 3);
+  font-size: var(--fb-text-lg);
+  font-weight: var(--font-weight-semibold);
+  line-height: var(--fb-text-lg--line-height);
 }
 
 h1 small {
-  font-weight: 400;
-  color: #666;
+  font-size: var(--fb-text-sm);
+  font-weight: var(--font-weight-normal);
+  color: var(--color-text-secondary);
 }
 
 h2 {
-  font-size: 15px;
-  margin: 12px 0 6px;
+  margin: calc(var(--spacing) * 3) 0 calc(var(--spacing) * 1.5);
+  font-size: var(--fb-text-base);
+  font-weight: var(--font-weight-semibold);
+  line-height: var(--fb-text-base--line-height);
 }
 
 button {
+  padding: calc(var(--spacing) * 1.5) calc(var(--spacing) * 4);
   font: inherit;
-  padding: 6px 12px;
-  border: 1px solid #999;
-  border-radius: 6px;
-  background: #f4f4f4;
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text);
   cursor: pointer;
+  background: var(--color-bg-secondary);
+  border: 1px solid var(--special-border-translucent-strong);
+  border-radius: var(--button-radius);
+}
+
+button:hover {
+  background: var(--color-bg-secondary-hover);
 }
 
 button.primary {
   display: block;
   width: 100%;
-  margin: 12px 0 6px;
-  padding: 12px;
-  font-size: 16px;
-  font-weight: 600;
-  color: #fff;
-  background: #ea580c;
-  border-color: #c2410c;
+  margin: calc(var(--spacing) * 3) 0 calc(var(--spacing) * 1.5);
+  padding: calc(var(--spacing) * 3);
+  font-size: var(--fb-text-base);
+  color: var(--primary-foreground);
+  background: var(--primary);
+  border-color: transparent;
+}
+
+button.primary:hover {
+  background: var(--primary-hover);
+}
+
+button.primary:active {
+  background: var(--primary-pressed);
 }
 
 button.danger {
-  color: #fff;
-  background: #b91c1c;
-  border-color: #991b1b;
+  color: var(--color-text-ondanger);
+  background: var(--color-bg-danger);
+  border-color: transparent;
+}
+
+button.danger:hover {
+  background: var(--color-bg-danger-hover);
 }
 
 button.chosen {
-  color: #fff;
-  background: #1d4ed8;
-  border-color: #1e40af;
+  color: var(--color-text-oninverse);
+  background: var(--color-bg-inverse);
+  border-color: transparent;
 }
 
 .sites {
-  list-style: none;
   padding: 0;
+  list-style: none;
 }
 
 .sites li {
-  margin: 6px 0;
+  margin: calc(var(--spacing) * 1.5) 0;
 }
 
 .sites small,
 .step small {
   display: block;
-  margin-left: 24px;
-  color: #666;
+  margin-left: calc(var(--spacing) * 6);
+  font-size: var(--fb-text-xs);
+  line-height: var(--fb-text-xs--line-height);
+  color: var(--color-text-secondary);
+}
+
+input[type="checkbox"] {
+  accent-color: var(--primary);
 }
 
 .progress {
-  font-weight: 600;
+  font-weight: var(--font-weight-semibold);
 }
 
 .stop-now {
-  padding: 10px;
-  border-radius: 6px;
-  font-weight: 600;
-  background: #fef3c7;
-  border: 2px solid #d97706;
+  padding: calc(var(--spacing) * 3);
+  font-weight: var(--font-weight-semibold);
+  background: color-mix(in srgb, var(--warning) 14%, transparent);
+  border: 1px solid color-mix(in srgb, var(--warning) 50%, transparent);
+  border-radius: var(--fb-radius-md);
 }
 
 .questions li {
-  margin: 10px 0;
+  margin: calc(var(--spacing) * 2.5) 0;
 }
 
 .questions .answers {
   display: flex;
-  gap: 8px;
-  margin-top: 4px;
+  gap: calc(var(--spacing) * 2);
+  margin-top: var(--spacing);
 }
 
-.notes textarea {
+textarea {
   display: block;
-  width: 100%;
   box-sizing: border-box;
-  margin-top: 4px;
+  width: 100%;
+  margin-top: var(--spacing);
+  padding: calc(var(--spacing) * 2) calc(var(--spacing) * 3);
+  font: inherit;
+  color: var(--color-text);
+  background: var(--field-color-bg);
+  border: 1px solid var(--input);
+  border-radius: var(--field-border-radius);
 }
 
 .copied {
-  color: #15803d;
-  font-weight: 600;
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text-success);
 }
 
 .site {
-  margin: 10px 0;
+  margin: calc(var(--spacing) * 2.5) 0;
 }
 
 .site h3 {
-  font-size: 14px;
-  margin: 0 0 4px;
+  margin: 0 0 var(--spacing);
+  font-size: var(--fb-text-sm);
+  font-weight: var(--font-weight-semibold);
 }
 
 .step {
-  margin: 2px 0;
+  margin: calc(var(--spacing) * 0.5) 0;
 }

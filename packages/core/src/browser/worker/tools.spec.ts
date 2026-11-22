@@ -31,6 +31,7 @@ const SAMPLES: Record<string, { input: Record<string, unknown>; resource: string
   drag: { input: { tab_id: 1, from: 'f0e1', to: 'f0e2' }, resource: 'https://example.com' },
   wait_for: { input: { tab_id: 1, text: 'Done' }, resource: 'https://example.com' },
   eval: { input: { tab_id: 1, script: 'document.title' }, resource: 'https://example.com' },
+  webmcp: { input: { tab_id: 1, action: 'list' }, resource: 'https://example.com' },
 };
 
 const disposers: (() => void)[] = [];
@@ -98,6 +99,7 @@ describe('browser tools in the tools registry', () => {
     'tabs_switch',
     'tabs_close',
     'click',
+    'webmcp',
   ])('%s fails navigated when the tab changes site during its assert', async (id) => {
     const { tool, ctx, tabs } = await setupBrowser();
     const definition = tool(id);

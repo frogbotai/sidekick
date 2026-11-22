@@ -1,3 +1,10 @@
+import '@frogbotai/ui/fonts.css';
+import '@frogbotai/ui/styles.css';
+import './live.css';
+
+import { theme } from '@frogbotai/sidekick-core';
+
+import { followPageTheme } from '../../theme/pageTheme';
 import { groupMembers } from './checks';
 import { ICON, questionsFor, toMarkdown } from './report';
 import { LiveRunner } from './runner';
@@ -24,6 +31,7 @@ function make<K extends keyof HTMLElementTagNameMap>(tag: K, text = '', classNam
   return element;
 }
 
+followPageTheme(await theme.get(), theme.watch);
 applyOverrides((await chrome.storage.local.get(OVERRIDES_KEY))[OVERRIDES_KEY]);
 
 const state: LiveState = freshState();
@@ -49,7 +57,6 @@ async function copy(text: string, status: HTMLElement) {
 
     area.value = text;
     area.rows = 10;
-    area.style.width = '100%';
     status.after(area);
   }
 }
