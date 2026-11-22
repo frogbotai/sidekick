@@ -270,4 +270,56 @@ test.describe('the MCP bridge', () => {
     await researcher.client.close();
     await support.client.close();
   });
+
+  test('reports status and reads settings, and refuses a change to the permission mode', async ({
+    context,
+    extensionId,
+  }) => {
+    const sw = await serviceWorker(context, extensionId);
+    const token = await pair(sw, 'OpenCode', 'opencode');
+    const helper = await startHelper(context, extensionId, token, 'status');
+
+    await Promise.all([helper.connect(), helper.openConnect()]);
+
+    const text = async (name: string, args: Record<string, unknown> = {}) => {
+      const result = await helper.client.callTool({ name, arguments: args });
+      const [first] = result.content as { text?: string }[];
+
+      return { isError: result.isError ?? false, text: first?.text ?? '' };
+    };
+
+    const version = await sw.evaluate(() => chrome.runtime.getManifest().version);
+
+    expect(JSON.parse((await text('status')).text)).toMatchObject({
+      connected: true,
+      pairingState: 'paired',
+      pairing: { name: 'OpenCode', client: 'opencode' },
+      extensionVersion: version,
+      helperVersion: expect.stringMatching(/^\d+\.\d+\.\d+/),
+      versionMismatch: false,
+      permissionMode: 'build',
+    });
+
+    expect(JSON.parse((await text('settings')).text)).toMatchObject({
+      theme: 'system',
+      permissionMode: 'build',
+    });
+
+    const refused = await text('settings', { set: { permissionMode: 'auto' } });
+
+    expect(refused.isError).toBe(true);
+    expect(refused.text).toContain('permissionMode: agents can’t change it');
+
+    expect(JSON.parse((await text('settings', { set: { theme: 'dark' } })).text)).toMatchObject({
+      changed: [{ setting: 'theme', from: 'system', to: 'dark' }],
+    });
+
+    expect(await sw.evaluate(() => chrome.storage.local.get(['theme', 'permission:mode']))).toEqual(
+      {
+        theme: 'dark',
+      },
+    );
+
+    await helper.client.close();
+  });
 });
