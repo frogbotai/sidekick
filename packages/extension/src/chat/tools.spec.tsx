@@ -255,6 +255,20 @@ const CASES: [string, Done, string, string][] = [
     'Dragged listitem “A” to listitem “Done”',
   ],
   [
+    'dialog',
+    { input: { action: 'get' }, output: { dialog: { type: 'confirm', message: 'Delete it?' } } },
+    'Reading the dialog',
+    'Dialog “Delete it?”',
+  ],
+  [
+    'dialog',
+    { input: { action: 'get' }, output: { dialog: null } },
+    'Reading the dialog',
+    'No dialog open',
+  ],
+  ['dialog', { input: { action: 'accept' } }, 'Accepting the dialog', 'Accepted the dialog'],
+  ['dialog', { input: { action: 'dismiss' } }, 'Dismissing the dialog', 'Dismissed the dialog'],
+  [
     'web_search',
     { input: { query: 'chrome 142' }, output: { results: [{ url: 'https://a.test/' }] } },
     'Searching “chrome 142”',
@@ -265,6 +279,24 @@ const CASES: [string, Done, string, string][] = [
     { input: { url: 'https://www.mdn.test/docs' }, output: { url: 'https://www.mdn.test/docs' } },
     'Fetching mdn.test',
     'Fetched mdn.test',
+  ],
+  [
+    'network_capture',
+    { input: { tab_id: 1, action: 'start' }, output: { capturing: true, entries: [] } },
+    'Starting to record requests',
+    'Recording requests',
+  ],
+  [
+    'network_capture',
+    { input: { tab_id: 1, action: 'read' }, output: { entries: [{}, {}] } },
+    'Reading requests',
+    'Read 2 requests',
+  ],
+  [
+    'console_capture',
+    { input: { tab_id: 1, action: 'stop' }, output: { entries: [{}] } },
+    'Stopping recording the console',
+    'Stopped recording the console, 1 message',
   ],
 ];
 
@@ -294,6 +326,9 @@ describe('tool cards', () => {
         'select',
         'press',
         'drag',
+        'dialog',
+        'network_capture',
+        'console_capture',
         'wait_for',
         'eval',
         'emulate',

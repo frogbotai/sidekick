@@ -22,14 +22,19 @@ afterEach(() => {
 });
 
 const BROWSER_TOOLS = [
-  ...['click', 'hover', 'fill', 'check', 'select', 'press', 'drag'].map((id) => ({
+  ...['click', 'hover', 'fill', 'check', 'select', 'press', 'drag', 'dialog'].map((id) => ({
     id,
     permission: 'input',
   })),
-  ...['snapshot', 'page_text', 'screenshot', 'scroll', 'scroll_to'].map((id) => ({
-    id,
-    permission: 'read',
-  })),
+  ...[
+    'snapshot',
+    'page_text',
+    'screenshot',
+    'scroll',
+    'scroll_to',
+    'network_capture',
+    'console_capture',
+  ].map((id) => ({ id, permission: 'read' })),
   ...['tabs_list', 'tabs_switch', 'tabs_close', 'tabs_open'].map((id) => ({
     id,
     permission: 'tabs',
@@ -109,6 +114,8 @@ describe('built-in agents', () => {
       'screenshot',
       'scroll',
       'scroll_to',
+      'network_capture',
+      'console_capture',
       'web_search',
       'webfetch',
     ]);
@@ -132,6 +139,8 @@ describe('built-in agents', () => {
       'screenshot',
       'scroll',
       'scroll_to',
+      'network_capture',
+      'console_capture',
       'web_search',
       'webfetch',
     ]);

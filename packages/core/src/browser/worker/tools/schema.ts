@@ -1,5 +1,6 @@
 import { z } from 'zod';
 
+import { DIALOG_TYPES } from '../dialogs';
 import { MODIFIERS } from '../keys';
 
 export const tabId = z
@@ -31,6 +32,12 @@ export const pointer = {
 
 export const modifiers = z.array(z.enum(MODIFIERS)).max(4).optional();
 
+export const dialog = z.object({
+  type: z.enum(DIALOG_TYPES),
+  message: z.string(),
+  defaultValue: z.string().describe('A prompt’s prefilled text; empty for the other types.'),
+});
+
 export const challenge = z
   .object({
     vendor: z.string(),
@@ -48,10 +55,21 @@ export const action = z.object({
   url: z.string(),
   navigated: z
     .boolean()
+    .describe('A new page loaded in the tab during the action; a reload of the same URL counts.'),
+  urlChanged: z
+    .boolean()
+    .describe('The URL changed without loading a new page, like a # link or a single-page app.'),
+  settled: z
+    .boolean()
+    .describe('The page went quiet before the time limit; false when a dialog opened.'),
+  newTabs: z
+    .array(z.object({ tab_id: z.number(), url: z.string() }))
+    .describe('Tabs this tab opened during the action, like a popup or a link with a target.'),
+  dialog: dialog
+    .nullable()
     .describe(
-      'navigate: a new page loaded (a reload counts). Other actions: the URL changed during the action.',
+      'The dialog waiting on the tab when the action ended. Answer it with the dialog tool before anything else on this tab.',
     ),
-  settled: z.boolean().describe('The page went quiet before the time limit.'),
   challenge,
 });
 

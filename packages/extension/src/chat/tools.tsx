@@ -8,6 +8,8 @@ import {
 import type { IconName } from '@frogbotai/ui/icons/registry';
 import type { ReactNode } from 'react';
 
+import { count, emulated, hostOf, joined, plural, record, short, text, web } from './text';
+
 /** One call's input, output and progress, as the status lines read them. */
 export interface ToolCall {
   input: Record<string, unknown>;
@@ -26,49 +28,6 @@ export interface ToolLine {
   body?: ReactNode;
 }
 
-const TEXT_LIMIT = 40;
-
-function record(value: unknown): Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : {};
-}
-
-function text(value: unknown) {
-  return typeof value === 'string' && value ? value : undefined;
-}
-
-function count(value: unknown) {
-  return Array.isArray(value) ? value.length : 0;
-}
-
-function plural(n: number, word: string) {
-  return `${n} ${word}${n === 1 ? '' : 's'}`;
-}
-
-function short(value: string) {
-  const line = value.replace(/\s+/g, ' ').trim();
-
-  return line.length > TEXT_LIMIT ? `${line.slice(0, TEXT_LIMIT).trimEnd()}…` : line;
-}
-
-function web(url: string | undefined) {
-  return url !== undefined && /^https?:\/\//i.test(url);
-}
-
-/** A URL's host without `www.`, or the URL when it has none. */
-export function hostOf(url: string) {
-  try {
-    return new URL(url).hostname.replace(/^www\./, '') || url;
-  } catch {
-    return url;
-  }
-}
-
-function joined(...words: (string | undefined)[]) {
-  return words.filter(Boolean).join(' ');
-}
-
 function waitedFor(input: Record<string, unknown>, target: string | undefined) {
   const quote = (value: unknown) => `“${short(text(value) ?? '')}”`;
 
@@ -83,26 +42,6 @@ function waitedFor(input: Record<string, unknown>, target: string | undefined) {
   }
 
   return 'the page to load';
-}
-
-function emulated(input: Record<string, unknown>) {
-  const viewport = record(input.viewport);
-  const size =
-    typeof viewport.width === 'number' && typeof viewport.height === 'number'
-      ? joined(`${viewport.width}×${viewport.height}`, viewport.mobile === true ? 'phone' : '')
-      : undefined;
-
-  const motion = text(input.reduced_motion);
-
-  return [
-    size,
-    text(input.color_scheme) && `${text(input.color_scheme)} mode`,
-    motion && (motion === 'reduce' ? 'reduced motion' : 'full motion'),
-    text(input.user_agent) && 'another user agent',
-    Object.keys(record(input.geolocation)).length > 0 && 'another location',
-  ]
-    .filter((part) => typeof part === 'string' && part)
-    .join(', ');
 }
 
 function linkTo(url: string | undefined): readonly LinkListItem[] | undefined {
@@ -176,6 +115,32 @@ function screenshotOf(output: Record<string, unknown>) {
   const mime = text(image?.mimeType);
 
   return data && mime ? `data:${mime};base64,${data}` : undefined;
+}
+
+function recording(icon: IconName, what: string, unit: string) {
+  return ({ input, output }: ToolCall): ToolLine => {
+    const entries = plural(count(output.entries), unit);
+
+    if (input.action === 'start') {
+      return {
+        icon,
+        running: `Starting to record ${what}`,
+        done: `Recording ${what}`,
+        failed: `Record ${what}`,
+      };
+    }
+
+    if (input.action === 'stop') {
+      return {
+        icon,
+        running: `Stopping recording ${what}`,
+        done: `Stopped recording ${what}, ${entries}`,
+        failed: `Stop recording ${what}`,
+      };
+    }
+
+    return { icon, running: `Reading ${what}`, done: `Read ${entries}`, failed: `Read ${what}` };
+  };
 }
 
 function stepLabel(call: Record<string, unknown>, output: unknown, failed?: string) {
@@ -464,6 +429,33 @@ export const TOOL_LINES: Record<string, (call: ToolCall) => ToolLine> = {
 
     return { icon: 'cursor', running: 'Dragging', done: `Dragged${ends}`, failed: `Drag${ends}` };
   },
+  dialog: ({ input, output }) => {
+    const shown = record(output.dialog);
+    const message = text(shown.message);
+
+    if (input.action === 'accept' || input.action === 'dismiss') {
+      const [running, done, failed] =
+        input.action === 'accept'
+          ? ['Accepting', 'Accepted', 'Accept']
+          : ['Dismissing', 'Dismissed', 'Dismiss'];
+
+      return {
+        icon: 'message-square-text',
+        running: `${running} the dialog`,
+        done: `${done} the dialog`,
+        failed: `${failed} the dialog`,
+      };
+    }
+
+    return {
+      icon: 'message-square-text',
+      running: 'Reading the dialog',
+      done: message ? `Dialog “${short(message)}”` : 'No dialog open',
+      failed: 'Read the dialog',
+    };
+  },
+  network_capture: recording('activity', 'requests', 'request'),
+  console_capture: recording('terminal', 'the console', 'message'),
   wait_for: ({ input, metadata }) => {
     const what = waitedFor(input, text(metadata.target));
 

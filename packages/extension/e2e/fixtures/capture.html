@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Post editor</title>
+  </head>
+  <body>
+    <main>
+      <h1>Post editor</h1>
+      <button id="save" type="button">Save</button>
+      <p id="status"></p>
+    </main>
+    <script>
+      const token = 'e2e-bearer-5f4e3d2c1b0a9f8e';
+
+      document.cookie = 'sid=e2e-cookie-0a1b2c3d4e5f6a7b; path=/';
+
+      document.getElementById('save').addEventListener('click', async () => {
+        console.log('saving draft', { title: '', password: 'e2e-password-9z8y7x' });
+
+        const response = await fetch('/api/save-missing.json', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+          body: JSON.stringify({ title: '', api_key: 'e2e-apikey-1q2w3e4r5t' }),
+        });
+
+        console.error(`save failed: ${response.status} with ${token}`);
+        await fetch('http://127.0.0.1:1/unreachable').catch(() => undefined);
+        document.getElementById('status').textContent = 'done';
+        setTimeout(() => {
+          throw new Error('Title is required');
+        });
+      });
+    </script>
+  </body>
+</html>

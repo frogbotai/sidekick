@@ -50,6 +50,28 @@ describe('debugger sessions (req. 2, 21)', () => {
     expect(cdp.attaching).toEqual([]);
   });
 
+  it('never idle-detaches a held session, and counts down again once released', async () => {
+    const { tool, ctx, cdp, runtime } = await setupBrowser();
+
+    await drain(tool('click').execute({ tab_id: 1, ref: 'f0e1' }, ctx), 10, 100);
+
+    const release = runtime.env.sessions.hold(1);
+
+    await vi.advanceTimersByTimeAsync(60_000);
+
+    expect(cdp.detached).toEqual([]);
+
+    release();
+    release();
+    await vi.advanceTimersByTimeAsync(19_000);
+
+    expect(cdp.detached).toEqual([]);
+
+    await vi.advanceTimersByTimeAsync(1_000);
+
+    expect(cdp.detached).toEqual([1]);
+  });
+
   it('detaches 20 s after the last command, and attaches again on the next', async () => {
     const { tool, ctx, cdp } = await setupBrowser();
 
@@ -270,7 +292,7 @@ describe('the infobar’s Cancel (271 D2)', () => {
   });
 });
 
-describe('attach listeners and holds (sidekick-17)', () => {
+describe('attach listeners (sidekick-17)', () => {
   it('runs attach listeners before the first command, and a failing one never fails the attach', async () => {
     const { runtime, cdp } = await setupBrowser();
     const { sessions } = runtime.env;
@@ -284,26 +306,10 @@ describe('attach listeners and holds (sidekick-17)', () => {
       return Promise.resolve();
     });
 
-    cdp.replies.set('Page.enable', () => order.push('Page.enable'));
+    cdp.replies.set('DOM.enable', () => order.push('DOM.enable'));
 
-    await drain(sessions.send(1, 'Page.enable', {}));
+    await drain(sessions.send(1, 'DOM.enable', {}));
 
-    expect(order).toEqual(['attached 1', 'Page.enable']);
-  });
-
-  it('skips the idle detach while held', async () => {
-    const { runtime, cdp } = await setupBrowser();
-    const { sessions } = runtime.env;
-
-    await drain(sessions.send(1, 'Page.enable', {}), 10, 100);
-    sessions.hold(1, true);
-    await vi.advanceTimersByTimeAsync(90_000);
-
-    expect(cdp.detached).toEqual([]);
-
-    sessions.hold(1, false);
-    await vi.advanceTimersByTimeAsync(20_000);
-
-    expect(cdp.detached).toEqual([1]);
+    expect(order).toEqual(['attached 1', 'DOM.enable']);
   });
 });

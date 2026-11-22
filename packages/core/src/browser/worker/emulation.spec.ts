@@ -179,8 +179,9 @@ describe('emulate (sidekick-17 req. 20-26)', () => {
 
     const methods = sentMethods(cdp.sent);
 
-    expect(methods.slice(0, 3)).toEqual([
+    expect(methods.slice(0, 4)).toEqual([
       'Network.enable',
+      'Page.enable',
       'Emulation.setDeviceMetricsOverride',
       'Emulation.setEmulatedMedia',
     ]);
@@ -305,13 +306,14 @@ describe('emulate (sidekick-17 req. 20-26)', () => {
 
     expect(tabs.tabs.has(1)).toBe(true);
 
-    await drain(runtime.env.sessions.send(1, 'Page.enable', {}));
+    await drain(runtime.env.sessions.send(1, 'DOM.enable', {}));
 
     expect(sentMethods(cdp.sent)).toEqual([
       'Network.enable',
+      'Page.enable',
       'Emulation.setDeviceMetricsOverride',
       'Emulation.setEmulatedMedia',
-      'Page.enable',
+      'DOM.enable',
     ]);
 
     expect(runtime.env.emulation.active(1)).toEqual({ viewport: PHONE, color_scheme: 'dark' });

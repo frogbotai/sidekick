@@ -27,8 +27,8 @@ export interface Sessions {
     options?: SendOptions,
   ): Promise<unknown>;
   attached(tabId: number): boolean;
-  /** Keeps the tab's session from the idle detach while `on`, so state like emulation stays put. */
-  hold(tabId: number, on: boolean): void;
+  /** Keeps the tab's session from idle-detaching until the returned release is called. */
+  hold(tabId: number): () => void;
   /** Runs after each attach, before its first command; the attach waits for it. */
   onAttached(listener: (tabId: number) => Promise<void>): () => void;
   onStripped(listener: (event: Stripped) => void): () => void;
@@ -46,6 +46,8 @@ export interface SessionsOptions {
   tabs: Tabs;
   page: Page;
   idleMs?: number;
+  /** Keeps a tab attached past the idle time, as while a dialog waits on it. */
+  keep?: (tabId: number) => boolean;
 }
 
 function blocked(reason: 'policy' | 'devtools_open' | 'restricted_url', message: string) {
@@ -95,6 +97,7 @@ export function createSessions({
   tabs,
   page,
   idleMs = IDLE_DETACH_MS,
+  keep = () => false,
 }: SessionsOptions): Sessions {
   const sessions = new Map<
     number,
@@ -103,7 +106,8 @@ export function createSessions({
 
   const strippedListeners = new Set<(event: Stripped) => void>();
   const attachedListeners = new Set<(tabId: number) => Promise<void>>();
-  const held = new Set<number>();
+
+  const holds = new Map<number, Set<symbol>>();
 
   const drop = (tabId: number) => {
     clearTimeout(sessions.get(tabId)?.timer);
@@ -117,8 +121,10 @@ export function createSessions({
 
     clearTimeout(session.timer);
 
+    if (holds.get(tabId)?.size) return;
+
     session.timer = setTimeout(() => {
-      if (session.busy > 0 || held.has(tabId)) {
+      if (session.busy > 0 || keep(tabId)) {
         touch(tabId);
 
         return;
@@ -162,10 +168,9 @@ export function createSessions({
       });
     }
 
-    await race(cdp.send(tabId, 'Network.enable', {}), NEVER, {
-      ms: COMMAND_TIMEOUT_MS,
-      what: 'Network.enable',
-    });
+    for (const method of ['Network.enable', 'Page.enable']) {
+      await race(cdp.send(tabId, method, {}), NEVER, { ms: COMMAND_TIMEOUT_MS, what: method });
+    }
 
     await Promise.all(
       [...attachedListeners].map((listener) =>
@@ -245,9 +250,21 @@ export function createSessions({
       }
     },
     attached: (tabId) => sessions.has(tabId),
-    hold: (tabId, on) => {
-      if (on) held.add(tabId);
-      else held.delete(tabId);
+    hold: (tabId) => {
+      const token = Symbol(`hold:${tabId}`);
+      const held = holds.get(tabId) ?? new Set<symbol>();
+
+      held.add(token);
+      holds.set(tabId, held);
+      clearTimeout(sessions.get(tabId)?.timer);
+
+      return () => {
+        if (!held.delete(token)) return;
+
+        if (held.size === 0 && holds.get(tabId) === held) holds.delete(tabId);
+
+        touch(tabId);
+      };
     },
     onAttached: (listener) => {
       attachedListeners.add(listener);
@@ -263,6 +280,8 @@ export function createSessions({
       unsubscribe();
 
       for (const tabId of [...sessions.keys()]) drop(tabId);
+
+      holds.clear();
     },
   };
 }

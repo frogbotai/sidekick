@@ -146,10 +146,12 @@ export function createEmulation({
 }): Emulation {
   const entries = new Map<number, Entry>();
   const releases = new Map<string, number>();
+  const holds = new Map<number, () => void>();
 
   const forget = (tabId: number) => {
     entries.delete(tabId);
-    sessions.hold(tabId, false);
+    holds.get(tabId)?.();
+    holds.delete(tabId);
   };
 
   const reset = async (tabId: number, signal?: AbortSignal) => {
@@ -238,7 +240,7 @@ export function createEmulation({
       const entry = { runId, overrides: merged };
 
       entries.set(tabId, entry);
-      sessions.hold(tabId, true);
+      if (!holds.has(tabId)) holds.set(tabId, sessions.hold(tabId));
 
       try {
         await apply(

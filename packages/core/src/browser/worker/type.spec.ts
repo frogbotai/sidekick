@@ -69,6 +69,9 @@ describe('type (sidekick-17 req. 1-7)', () => {
     expect(output).toEqual({
       url: 'https://example.com/',
       navigated: false,
+      urlChanged: false,
+      newTabs: [],
+      dialog: null,
       settled: true,
       typed: 6,
     });

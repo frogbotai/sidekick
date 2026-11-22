@@ -4,7 +4,7 @@ import { defineTool, ToolError } from '../../../tool/tool';
 import { normalizeUrl, originOf } from '../../../tool/url';
 import { race } from '../abort';
 import { detect } from '../detect';
-import { type BrowserEnv, documentOf, enter, finish, getTab, runOf, untrusted } from '../env';
+import { type BrowserEnv, enter, getTab, runOf, settleAfter, untrusted } from '../env';
 import type { TabInfo } from '../types';
 import { action, byTab, challenge, tab, tabId, tabList } from './schema';
 
@@ -116,7 +116,10 @@ export function tabTools(env: BrowserEnv) {
 
         const settled = await env.settler.settle(opened.id, signal, undefined, { load: true });
         const landed = await race(env.tabs.get(opened.id), signal);
-        const found = await detect(env, opened.id, landed.url, signal);
+        const found = env.dialogs.get(opened.id)
+          ? undefined
+          : await detect(env, opened.id, landed.url, signal);
+
         const current = found ? await race(env.tabs.get(opened.id), signal) : landed;
         const output = { tab_id: opened.id, url: current.url, settled };
 
@@ -170,31 +173,25 @@ export function tabTools(env: BrowserEnv) {
       lock: byTab,
       execute: async ({ tab_id, url, go }, ctx) => {
         const target = url === undefined ? undefined : normalizeUrl(url);
-        const act = await enter(env, ctx, tab_id, 'navigate', target && originOf(target));
+        const act = await enter(env, ctx, tab_id, 'navigate', {
+          resource: target && originOf(target),
+        });
 
         await attachIfAllowed(env, tab_id, act.signal);
 
-        const before = documentOf(env, tab_id);
+        const start = async (signal: AbortSignal) => {
+          if (target === undefined) return travel(env, tab_id, go ?? 'reload', signal);
 
-        const start = async () => {
-          if (target === undefined) return travel(env, tab_id, go ?? 'reload', act.signal);
-
-          const current = await getTab(env, tab_id, act.signal);
+          const current = await getTab(env, tab_id, signal);
 
           if (current.pendingUrl === target) return;
 
           await env.tabs.navigate(tab_id, target);
         };
 
-        const load = () => race(start(), act.signal);
-        const settled = await env.settler.settle(tab_id, act.signal, load, { commit: true });
+        const load = ({ signal }: { signal: AbortSignal }) => race(start(signal), signal);
 
-        const output = await finish(act, settled);
-
-        return untrusted({
-          ...output,
-          navigated: output.navigated || documentOf(env, tab_id) !== before,
-        });
+        return untrusted(await settleAfter(act, load, { commit: true }));
       },
     }),
   ];

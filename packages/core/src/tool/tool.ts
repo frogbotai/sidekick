@@ -10,6 +10,7 @@ export const PERMISSION_ACTIONS = [
   'websearch',
   'webfetch',
   'subagent',
+  'settings',
 ] as const;
 
 export type PermissionAction = (typeof PERMISSION_ACTIONS)[number];
@@ -83,6 +84,7 @@ export const TOOL_ERROR_CODES = [
   'invalid_target',
   'input_mismatch',
   'not_editable',
+  'dialog_open',
   'timeout',
   'script_error',
   'stopped',
