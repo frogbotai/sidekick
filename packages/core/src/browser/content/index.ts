@@ -2,7 +2,7 @@ import { contentProtocol, type frameProtocol, type RecordedStep } from '../../pr
 import { callWorker } from '../../rpc/content';
 import type { Handlers } from '../../rpc/define';
 import { ToolError, type ToolErrorCode, type ToolErrorDetail } from '../../tool/tool';
-import { assignFrames, type Identify, listenForFrames } from './dom';
+import { assignFrames, type Identify, listenForFrames, nextFrame } from './dom';
 import {
   checkState,
   focusedField,
@@ -36,6 +36,21 @@ async function guard<T>(run: () => T | Promise<T>): Promise<Outcome<T>> {
 
     return { error: { code: error.code, message: error.message, detail: error.detail } };
   }
+}
+
+const PAINT_CAP_MS = 200;
+
+function painted() {
+  return new Promise<void>((resolve) => {
+    const timer = setTimeout(resolve, PAINT_CAP_MS);
+
+    void nextFrame()
+      .then(nextFrame)
+      .then(() => {
+        clearTimeout(timer);
+        resolve();
+      });
+  });
 }
 
 export interface ContentOptions {
@@ -186,8 +201,12 @@ export function createContent({
     'page.probe': ({ selectors }) => guard(() => probePage(selectors)),
     'page.strip': ({ reported, surplus }) => guard(() => stripFrames(reported, surplus)),
     'page.indicator': (state) =>
-      guard(() => {
-        if (top && (state.visible === true || indicator)) showIndicator().set(state);
+      guard(async () => {
+        if (!top || (state.visible !== true && !indicator)) return null;
+
+        showIndicator().set(state);
+
+        if (state.hidden !== undefined) await painted();
 
         return null;
       }),

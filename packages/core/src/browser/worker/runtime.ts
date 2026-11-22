@@ -5,7 +5,7 @@ import { createRuns } from './runs';
 import { createSessions } from './sessions';
 import { createSettler } from './settle';
 import { browserTools } from './tools';
-import type { Cdp, Page, Tabs } from './types';
+import type { Cdp, Images, Page, Tabs } from './types';
 
 export interface BrowserRuntime {
   env: BrowserEnv;
@@ -18,11 +18,13 @@ export function createBrowserRuntime({
   cdp,
   page,
   tabs,
+  images,
   mac,
 }: {
   cdp: Cdp;
   page: Page;
   tabs: Tabs;
+  images: Images;
   mac: boolean;
 }): BrowserRuntime {
   const sessions = createSessions({ cdp, tabs, page });
@@ -34,6 +36,7 @@ export function createBrowserRuntime({
     cdp,
     page,
     tabs,
+    images,
     sessions,
     settler,
     runs,

@@ -97,6 +97,18 @@ const CASES: [string, Done, string, string][] = [
   ],
   ['screenshot', { input: {}, output: { width: 10 } }, 'Taking screenshot', 'Took a screenshot'],
   [
+    'screenshot_diff',
+    { input: { baseline: 'before' }, output: { changed_pixels: 1200 } },
+    'Comparing screenshots',
+    '1,200 pixels changed since “before”',
+  ],
+  [
+    'screenshot_diff',
+    { input: { baseline: 'before' }, output: { changed_pixels: 0 } },
+    'Comparing screenshots',
+    'No change since “before”',
+  ],
+  [
     'screenshot',
     { input: { region: { x: 0, y: 0, width: 10, height: 10 } }, output: { width: 10 } },
     'Zooming in',
@@ -211,6 +223,7 @@ describe('tool cards', () => {
         'snapshot',
         'page_text',
         'screenshot',
+        'screenshot_diff',
         'scroll',
         'scroll_to',
         'click',
