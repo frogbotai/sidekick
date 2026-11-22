@@ -88,13 +88,15 @@ describe('the MCP server', () => {
     expect(tools.every((tool) => tool.inputSchema.type === 'object')).toBe(true);
 
     const hinted = tools.filter((tool) => tool.annotations).map((tool) => tool.name);
-    const reads = setup.runtime.tools.filter((tool) => tool.permission === 'read');
+    const reads = setup.runtime.tools.filter((tool) => tool.permission === 'read' && !tool.acts);
 
     expect(hinted).toEqual(reads.map((tool) => tool.id).sort());
 
     expect(tools.find((tool) => tool.name === 'snapshot')?.annotations).toEqual({
       readOnlyHint: true,
     });
+
+    expect(tools.find((tool) => tool.name === 'webmcp')).not.toHaveProperty('annotations');
   });
 
   it('returns a screenshot as an image after the untrusted note, and a ToolError as isError', async () => {

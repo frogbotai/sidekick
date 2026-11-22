@@ -93,6 +93,18 @@ const scrollStart = z.object({
 
 const scrollEnd = z.object({ moved: z.number(), at_end: z.boolean() });
 
+const origins = z.array(z.string());
+
+const pageTool = z.object({
+  name: z.string(),
+  title: z.optional(z.string()),
+  description: z.string(),
+  input_schema: z.optional(z.unknown()),
+  annotations: z.optional(z.record(z.string(), z.boolean())),
+  origin: z.string(),
+  truncated: z.optional(z.boolean()),
+});
+
 export const sidekickProtocol = defineProtocol({
   methods: {
     'tab.ping': {
@@ -115,6 +127,7 @@ export const sidekickProtocol = defineProtocol({
           id,
           description: z.string(),
           permission: z.enum(PERMISSION_ACTIONS),
+          acts: z.optional(z.boolean()),
           input: jsonSchema,
           output: jsonSchema,
         }),
@@ -269,6 +282,20 @@ export const frameProtocol = defineProtocol({
     },
     'page.viewport': { input: z.object({}), output: outcome(size) },
     'page.iframes': { input: z.object({}), output: outcome(z.array(z.string())) },
+    'page.probe': {
+      input: z.object({ selectors: z.array(z.string()) }),
+      output: outcome(
+        z.object({
+          url: z.string(),
+          title: z.string(),
+          text: z.string(),
+          textLength: z.number(),
+          scriptSrcs: z.array(z.string()),
+          selectors: z.array(z.string()),
+          visibleSelectors: z.array(z.string()),
+        }),
+      ),
+    },
     'page.strip': {
       input: z.object({ reported: z.array(z.string()), surplus: z.int().check(z.positive()) }),
       output: outcome(z.array(z.string())),
@@ -278,6 +305,27 @@ export const frameProtocol = defineProtocol({
       output: outcome(z.null()),
     },
     'page.stopAt': { input: z.object({ point }), output: outcome(z.boolean()) },
+    'page.webmcpList': {
+      input: z.object({ fromOrigins: origins }),
+      output: outcome(z.object({ tools: z.array(pageTool), more: z.int().check(z.nonnegative()) })),
+    },
+    'page.webmcpCall': {
+      input: z.object({
+        token: id,
+        name: z.string(),
+        origin: z.string(),
+        input: z.record(z.string(), z.unknown()),
+        fromOrigins: origins,
+      }),
+      output: outcome(
+        z.object({
+          result: z.optional(z.string()),
+          truncated: z.optional(z.boolean()),
+          error: z.optional(z.string()),
+        }),
+      ),
+    },
+    'page.webmcpCancel': { input: z.object({ token: id }), output: outcome(z.null()) },
   },
 });
 

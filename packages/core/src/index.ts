@@ -2,6 +2,7 @@ export * from './agent';
 export * from './browser/content';
 export * from './browser/worker';
 export * from './command';
+export * from './find';
 export * from './form';
 export * from './legacy';
 export * from './mcp';

@@ -1,3 +1,5 @@
+import type { Probe } from './challenge';
+
 export interface Point {
   x: number;
   y: number;
@@ -131,6 +133,33 @@ export interface ScrollEnd {
   at_end: boolean;
 }
 
+/** One tool a page offers through WebMCP; every field is the page's own text. */
+export interface PageTool {
+  name: string;
+  title?: string;
+  description: string;
+  input_schema?: unknown;
+  annotations?: Record<string, boolean>;
+  /** The origin of the document that registered it. */
+  origin: string;
+  truncated?: boolean;
+}
+
+/** What a WebMCP call returned: the tool's text, or the message it failed with. */
+export interface PageToolResult {
+  result?: string;
+  truncated?: boolean;
+  error?: string;
+}
+
+export interface WebmcpCall {
+  token: string;
+  name: string;
+  origin: string;
+  input: Record<string, unknown>;
+  fromOrigins: string[];
+}
+
 export interface Snapshot {
   title: string;
   text: string;
@@ -176,6 +205,8 @@ export interface Page {
   domQuiet(tabId: number, input: { quiet: number; cap: number }): Promise<boolean>;
   viewport(tabId: number): Promise<Size>;
   iframes(tabId: number): Promise<{ frameId: number; sources: string[] }[]>;
+  /** The main frame's URL, title, text and which of `selectors` it has, for wall detection. */
+  probe(tabId: number, selectors: string[]): Promise<Probe>;
   strip(
     tabId: number,
     frameId: number,
@@ -184,4 +215,11 @@ export interface Page {
   indicator(tabId: number, state: { visible?: boolean; cursor?: Point }): Promise<void>;
   /** Whether a top-level viewport point is on Sidekick's Stop button. */
   stopAt(tabId: number, point: Point): Promise<boolean>;
+  /** The WebMCP tools the top frame sees, cross-origin ones from `fromOrigins` included. */
+  webmcpList(
+    tabId: number,
+    input: { fromOrigins: string[] },
+  ): Promise<{ tools: PageTool[]; more: number }>;
+  webmcpCall(tabId: number, input: WebmcpCall): Promise<PageToolResult>;
+  webmcpCancel(tabId: number, token: string): Promise<void>;
 }

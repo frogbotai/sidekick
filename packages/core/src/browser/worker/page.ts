@@ -4,6 +4,7 @@ import { callFrame } from '../../rpc/frames';
 import { RpcError } from '../../rpc/wire';
 import { ToolError, type ToolErrorCode, type ToolErrorDetail } from '../../tool/tool';
 import { removed } from '../content/refs';
+import { PROBE_CAP_MS } from './challenge';
 import { createRefCounter, memoryRefStore, type RefStore } from './refs';
 import { type FrameOutline, stitch } from './stitch';
 import type { Focused, Page, Point, ScrollStart, Tabs } from './types';
@@ -439,10 +440,17 @@ export function chromePage({ tabs, inject, refs = memoryRefStore() }: ChromePage
 
       return found.flatMap(({ frameId, sources }) => (sources ? [{ frameId, sources }] : []));
     },
+    probe: (tabId, selectors) =>
+      call(tabId, 0, 'page.probe', { selectors }, { timeout: PROBE_CAP_MS }),
     strip: (tabId, frameId, input) => call(tabId, frameId, 'page.strip', input, { inject: false }),
     indicator: async (tabId, state) => {
       await call(tabId, 0, 'page.indicator', state);
     },
     stopAt: (tabId, point) => call(tabId, 0, 'page.stopAt', { point }),
+    webmcpList: (tabId, input) => call(tabId, 0, 'page.webmcpList', input),
+    webmcpCall: (tabId, input) => call(tabId, 0, 'page.webmcpCall', input, { inject: false }),
+    webmcpCancel: async (tabId, token) => {
+      await call(tabId, 0, 'page.webmcpCancel', { token }, { inject: false });
+    },
   };
 }
