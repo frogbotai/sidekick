@@ -4,9 +4,9 @@ import { markOwn } from './dom';
 const CSS = `
 :host { all: initial; position: fixed; inset: 0; pointer-events: none; z-index: 2147483647; }
 .overlay { position: fixed; inset: 0; pointer-events: none; opacity: 0; animation: fb-overlay-in 0.8s ease-in-out forwards; }
-.overlay__tint { position: absolute; inset: 6px; background-color: rgba(16, 24, 40, 0.25); box-shadow: inset 0 0 16px rgba(134, 239, 172, 0.6), inset 0 0 28px rgba(147, 197, 253, 0.4), inset 0 0 40px rgba(216, 180, 254, 0.3); }
-.overlay__frame { position: absolute; inset: 0; overflow: hidden; clip-path: polygon(0% 0%, 0% 6px, calc(100% - 6px) 6px, calc(100% - 6px) calc(100% - 6px), 6px calc(100% - 6px), 6px 6px, 0% 6px, 0% 100%, 100% 100%, 100% 0%); box-shadow: inset 0 0 12px rgba(134, 239, 172, 0.6), inset 0 0 24px rgba(147, 197, 253, 0.4), inset 0 0 36px rgba(216, 180, 254, 0.3); filter: drop-shadow(0 0 12px rgba(134, 239, 172, 0.6)) drop-shadow(0 0 24px rgba(147, 197, 253, 0.4)) drop-shadow(0 0 36px rgba(216, 180, 254, 0.3)); }
-.overlay__gradient { position: absolute; top: -100%; left: -100%; width: 300%; height: 300%; background: conic-gradient(from 0deg at 50% 50%, transparent 0deg, transparent 150deg, #66eb96 180deg, #78b6fc 210deg, #cb9afe 240deg, #f598a2 270deg, #cb9afe 300deg, #78b6fc 330deg, #66eb96 360deg); animation: fb-overlay-rotate 8s linear infinite; filter: drop-shadow(0 0 12px rgba(134, 239, 172, 0.6)) drop-shadow(0 0 24px rgba(147, 197, 253, 0.4)) drop-shadow(0 0 36px rgba(216, 180, 254, 0.3)); }
+.overlay__tint { position: absolute; inset: 6px; background-color: rgba(16, 24, 40, 0.25); box-shadow: inset 0 0 16px rgba(58, 207, 106, 0.6), inset 0 0 28px rgba(58, 207, 106, 0.4), inset 0 0 40px rgba(31, 158, 74, 0.3); }
+.overlay__frame { position: absolute; inset: 0; overflow: hidden; clip-path: polygon(0% 0%, 0% 6px, calc(100% - 6px) 6px, calc(100% - 6px) calc(100% - 6px), 6px calc(100% - 6px), 6px 6px, 0% 6px, 0% 100%, 100% 100%, 100% 0%); box-shadow: inset 0 0 12px rgba(58, 207, 106, 0.6), inset 0 0 24px rgba(58, 207, 106, 0.4), inset 0 0 36px rgba(31, 158, 74, 0.3); filter: drop-shadow(0 0 12px rgba(58, 207, 106, 0.6)) drop-shadow(0 0 24px rgba(58, 207, 106, 0.4)) drop-shadow(0 0 36px rgba(31, 158, 74, 0.3)); }
+.overlay__gradient { position: absolute; top: -100%; left: -100%; width: 300%; height: 300%; background: conic-gradient(from 0deg at 50% 50%, transparent 0deg, transparent 150deg, #1f9e4a 180deg, #3acf6a 210deg, #8ee8ab 240deg, #d4f7df 270deg, #8ee8ab 300deg, #3acf6a 330deg, #1f9e4a 360deg); animation: fb-overlay-rotate 8s linear infinite; filter: drop-shadow(0 0 12px rgba(58, 207, 106, 0.6)) drop-shadow(0 0 24px rgba(58, 207, 106, 0.4)) drop-shadow(0 0 36px rgba(31, 158, 74, 0.3)); }
 @keyframes fb-overlay-rotate { to { transform: rotate(360deg); } }
 @keyframes fb-overlay-in { from { opacity: 0; } to { opacity: 1; } }
 @media (prefers-reduced-motion: reduce) { .overlay__gradient { animation: none; } }
@@ -50,9 +50,8 @@ export interface Indicator {
 
 /**
  * The agent's cursor, page overlay and Stop button, in a closed shadow root on `<html>`. The
- * overlay is the old Sidekick's: a dim tint inside a 6px frame whose colours turn round the page.
- * Stop
- * accepts only trusted clicks, and the host comes back if the page removes it while a run is on.
+ * overlay is the old Sidekick's: a dim tint inside a 6px frame whose FrogBot green highlight
+ * turns round the page. Stop accepts only trusted clicks, and the host comes back if the page removes it while a run is on.
  */
 export function createIndicator(onStop: () => void): Indicator {
   const host = document.createElement('div');
