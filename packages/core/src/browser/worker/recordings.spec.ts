@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import type { RecordedStep } from '../../protocol';
 import { fakePage, fakeTabs } from './fakes';
-import { createRecordings, describeStep, summarize } from './recordings';
+import { bareUrl, createRecordings, describeStep, summarize } from './recordings';
 
 const TAB = {
   id: 1,
@@ -228,6 +228,12 @@ describe('recordings after the PR #56 review (sidekick-21)', () => {
       { kind: 'navigation', url: 'https://example.com/login' },
       step({ frameUrl: 'https://example.com/login' }),
     ]);
+  });
+
+  it('drops credentials written into a url', () => {
+    expect(bareUrl('https://bob:hunter2@example.com/next?pw=hunter2')).toBe(
+      'https://example.com/next',
+    );
   });
 
   it('keeps a field masked when a later fill of it arrives unmasked', async () => {

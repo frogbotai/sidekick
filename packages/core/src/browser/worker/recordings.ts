@@ -37,13 +37,15 @@ export interface Recordings {
   dispose(): void;
 }
 
-/** A url without its query and fragment, where a GET form puts the values typed into it. */
+/** A url without credentials, query or fragment, where a GET form puts the values typed into it. */
 export function bareUrl(url: string): string {
   try {
     const parsed = new URL(url);
 
     parsed.search = '';
     parsed.hash = '';
+    parsed.username = '';
+    parsed.password = '';
 
     return parsed.href;
   } catch {
