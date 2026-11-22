@@ -26,9 +26,15 @@ const BROWSER_TOOLS = [
     id,
     permission: 'input',
   })),
-  ...['snapshot', 'screenshot', 'scroll', 'scroll_to', 'network_capture', 'console_capture'].map(
-    (id) => ({ id, permission: 'read' }),
-  ),
+  ...[
+    'snapshot',
+    'page_text',
+    'screenshot',
+    'scroll',
+    'scroll_to',
+    'network_capture',
+    'console_capture',
+  ].map((id) => ({ id, permission: 'read' })),
   ...['tabs_list', 'tabs_switch', 'tabs_close', 'tabs_open'].map((id) => ({
     id,
     permission: 'tabs',
@@ -104,6 +110,7 @@ describe('built-in agents', () => {
 
     expect(BROWSER_TOOLS.filter((tool) => offersTool(explore, tool)).map(({ id }) => id)).toEqual([
       'snapshot',
+      'page_text',
       'screenshot',
       'scroll',
       'scroll_to',
@@ -128,6 +135,7 @@ describe('built-in agents', () => {
 
     expect(BROWSER_TOOLS.filter((tool) => offersTool(research, tool)).map(({ id }) => id)).toEqual([
       'snapshot',
+      'page_text',
       'screenshot',
       'scroll',
       'scroll_to',

@@ -44,7 +44,7 @@ export function Options({
 
   return (
     <ThemeProvider mode={mode} onModeChange={setMode} storage={themeStorage}>
-      <main className="sidekick-panel__view sidekick-options">
+      <main className="sidekick-panel__view sidekick-page">
         <h1 className="sidekick-title">Sidekick settings</h1>
         <fieldset className="sidekick-stack">
           <legend className="sidekick-heading">Theme</legend>

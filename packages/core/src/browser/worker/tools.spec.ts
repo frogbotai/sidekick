@@ -15,6 +15,7 @@ const SAMPLES: Record<string, { input: Record<string, unknown>; resource: string
   tabs_close: { input: { tab_id: 1 }, resource: 'https://example.com' },
   navigate: { input: { tab_id: 1, url: 'https://next.test/' }, resource: 'https://next.test' },
   snapshot: { input: { tab_id: 1 }, resource: 'https://example.com' },
+  page_text: { input: { tab_id: 1 }, resource: 'https://example.com' },
   screenshot: { input: { tab_id: 1 }, resource: 'https://example.com' },
   scroll: { input: { tab_id: 1, direction: 'down' }, resource: 'https://example.com' },
   scroll_to: { input: { tab_id: 1, ref: 'f0e1' }, resource: 'https://example.com' },
@@ -27,6 +28,7 @@ const SAMPLES: Record<string, { input: Record<string, unknown>; resource: string
   drag: { input: { tab_id: 1, from: 'f0e1', to: 'f0e2' }, resource: 'https://example.com' },
   network_capture: { input: { tab_id: 1, action: 'start' }, resource: 'https://example.com' },
   console_capture: { input: { tab_id: 1, action: 'start' }, resource: 'https://example.com' },
+  webmcp: { input: { tab_id: 1, action: 'list' }, resource: 'https://example.com' },
 };
 
 const disposers: (() => void)[] = [];
@@ -53,7 +55,7 @@ function bad(id: string, input: z.ZodType = z.object({})): ToolDefinition {
 }
 
 describe('browser tools in the tools registry', () => {
-  it('registers all 17, and sends a bad id or schema to errors()', async () => {
+  it('registers all 18, and sends a bad id or schema to errors()', async () => {
     const { runtime } = await setupBrowser();
 
     disposers.push(
@@ -85,26 +87,33 @@ describe('browser tools in the tools registry', () => {
     },
   );
 
-  it.each(['snapshot', 'screenshot', 'scroll', 'scroll_to', 'tabs_switch', 'tabs_close', 'click'])(
-    '%s fails navigated when the tab changes site during its assert',
-    async (id) => {
-      const { tool, ctx, tabs } = await setupBrowser();
-      const definition = tool(id);
-      const sample = SAMPLES[id];
+  it.each([
+    'snapshot',
+    'page_text',
+    'screenshot',
+    'scroll',
+    'scroll_to',
+    'tabs_switch',
+    'tabs_close',
+    'click',
+    'webmcp',
+  ])('%s fails navigated when the tab changes site during its assert', async (id) => {
+    const { tool, ctx, tabs } = await setupBrowser();
+    const definition = tool(id);
+    const sample = SAMPLES[id];
 
-      if (!sample) throw new Error(`No sample for ${id}`);
+    if (!sample) throw new Error(`No sample for ${id}`);
 
-      ctx.permission.assert = later(() => {
-        const tab = tabs.tabs.get(1);
+    ctx.permission.assert = later(() => {
+      const tab = tabs.tabs.get(1);
 
-        if (tab) tab.url = 'https://elsewhere.test/';
-      });
+      if (tab) tab.url = 'https://elsewhere.test/';
+    });
 
-      const error = await failure(definition.execute(definition.input.parse(sample.input), ctx));
+    const error = await failure(definition.execute(definition.input.parse(sample.input), ctx));
 
-      expect(error).toMatchObject({ code: 'navigated' });
-    },
-  );
+    expect(error).toMatchObject({ code: 'navigated' });
+  });
 });
 
 function callerOf({ runtime, run }: Awaited<ReturnType<typeof setupBrowser>>) {

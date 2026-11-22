@@ -210,14 +210,25 @@ export const TOOL_LINES: Record<string, (call: ToolCall) => ToolLine> = {
       failed: 'Read page',
     };
   },
-  screenshot: ({ output }) => {
+  page_text: ({ output }) => {
+    const title = text(output.title) ?? (text(output.url) && hostOf(text(output.url) as string));
+
+    return {
+      icon: 'web',
+      running: 'Reading page text',
+      done: title ? `Read the text of ${short(title)}` : 'Read page text',
+      failed: 'Read page text',
+    };
+  },
+  screenshot: ({ input, output }) => {
     const src = screenshotOf(output);
+    const zoom = input.region !== undefined;
 
     return {
       icon: 'image',
-      running: 'Taking screenshot',
-      done: 'Took a screenshot',
-      failed: 'Take a screenshot',
+      running: zoom ? 'Zooming in' : 'Taking screenshot',
+      done: zoom ? 'Zoomed in' : 'Took a screenshot',
+      failed: zoom ? 'Zoom in' : 'Take a screenshot',
       ...(src
         ? { body: <img className="sidekick-tool-image" src={src} alt="screenshot result" /> }
         : {}),
