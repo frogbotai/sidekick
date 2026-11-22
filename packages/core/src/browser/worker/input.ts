@@ -3,13 +3,15 @@ import { race } from './abort';
 import { type Act, cursor, send } from './env';
 import {
   type Chord,
+  describeKey,
+  type KeyDescription,
   macCommands,
   type Modifier,
   modifierMask,
   parseChord,
   typesText,
 } from './keys';
-import type { CdpEvent, Point, RefInfo } from './types';
+import type { CdpEvent, Focused, Point, RefInfo } from './types';
 
 export type Button = 'left' | 'right' | 'middle';
 
@@ -88,6 +90,62 @@ export async function press(act: Act, combo: string) {
     held.splice(held.indexOf(modifier), 1);
     await key(act, 'keyUp', parseChord(modifier, act.env.mac), { modifiers: modifierMask(held) });
   }
+}
+
+/** How many characters `type` sends between checks that focus stayed put. */
+export const FOCUS_CHECK_EVERY = 20;
+
+function keyFor(grapheme: string): KeyDescription | undefined {
+  if (/^(?:\r\n|\r|\n)$/.test(grapheme)) return describeKey('Enter', false);
+
+  return /^[\x20-\x7e]$/.test(grapheme) ? describeKey(grapheme, false) : undefined;
+}
+
+type Field = Pick<Focused, 'frameId' | 'role' | 'name'>;
+
+export function sameField(a: Field, b: Field) {
+  return a.frameId === b.frameId && a.role === b.role && a.name === b.name;
+}
+
+/**
+ * browse's `type`: each printable ASCII character and newline as a key press, anything else as
+ * `insertText` one grapheme at a time, stopping with `input_mismatch` once focus has left `start`.
+ */
+export async function typeText(act: Act, text: string, start: Focused) {
+  const graphemes = Array.from(new Intl.Segmenter().segment(text), ({ segment }) => segment);
+  let checked = 0;
+
+  for (const [index, grapheme] of graphemes.entries()) {
+    const description = keyFor(grapheme);
+
+    if (description) {
+      const chord = { key: description, modifiers: [] };
+      const typed = { text: description.text, unmodifiedText: description.text };
+
+      await key(act, 'keyDown', chord, typed);
+      await key(act, 'keyUp', chord);
+    } else {
+      await send(act, 'Input.insertText', { text: grapheme });
+    }
+
+    const sent = index + 1;
+
+    if (sent % FOCUS_CHECK_EVERY !== 0 && sent !== graphemes.length) continue;
+
+    const now = await race(act.env.page.focused(act.tabId), act.signal);
+
+    if (!sameField(start, now)) {
+      throw new ToolError(
+        'input_mismatch',
+        `Focus left the field while typing: between ${checked} and ${sent} of ${graphemes.length} characters went into it. Take a snapshot to see where focus went before typing the rest.`,
+        { typed: checked, sent, total: graphemes.length },
+      );
+    }
+
+    checked = sent;
+  }
+
+  return graphemes.length;
 }
 
 /** OpenCode v2's `fill`: select the contents, then one `insertText` (or `Delete`), with no read-back. */

@@ -20,7 +20,7 @@ import {
   untrusted,
   watchTab,
 } from '../env';
-import { click, drag, fill, hover, press } from '../input';
+import { click, drag, fill, hover, press, sameField, typeText } from '../input';
 import type { Point } from '../types';
 import { action, byTab, coordinate, modifiers, pointer, ref, tabId } from './schema';
 
@@ -185,6 +185,52 @@ export function inputTools(env: BrowserEnv) {
             await fill(during, element, text, info);
           }),
         );
+      },
+    }),
+    defineTool({
+      id: 'type',
+      description:
+        'Type text key by key, for fields that react to each key (search suggestions, masked inputs, editors). Adds to what is there; use fill to replace a field’s text. By ref, or into the focused element.',
+      input: z.object({
+        tab_id: tabId,
+        ref: ref.optional(),
+        text: z.string().min(1),
+        submit: z.boolean().optional().describe('Press Enter after the text.'),
+      }),
+      output: action.extend({
+        typed: z.number().describe('How many characters went in.'),
+      }),
+      permission: 'input',
+      lock: byTab,
+      execute: async ({ tab_id, ref: element, text, submit }, ctx) => {
+        const act = await enter(env, ctx, tab_id, 'input');
+
+        if (element === undefined) await focusedField(act);
+
+        const info = await focusTarget(act, element);
+
+        if (info?.redacted) await report(act, { redacted: 'true' });
+
+        let typed = 0;
+
+        const result = await settleAfter(act, async () => {
+          if (element !== undefined) await race(env.page.focus(tab_id, element, true), act.signal);
+
+          const start = await race(env.page.focused(tab_id), act.signal);
+
+          if (element !== undefined && info && !(start.editable && sameField(info, start))) {
+            throw new ToolError(
+              'invalid_target',
+              `Focus didn’t land on ${element}, so nothing was typed. Take a snapshot and pick an enabled text field.`,
+            );
+          }
+
+          typed = await typeText(act, text, start);
+
+          if (submit) await press(act, 'Enter');
+        });
+
+        return untrusted({ ...result, typed });
       },
     }),
     defineTool({

@@ -1,4 +1,5 @@
-const REDACT_AUTOCOMPLETE = /(^|\s)(current-password|new-password|one-time-code|cc-[a-z-]+)(\s|$)/i;
+export const REDACT_AUTOCOMPLETE =
+  /(^|\s)(current-password|new-password|one-time-code|cc-[a-z-]+)(\s|$)/i;
 
 export const INTERACTIVE = new Set([
   'button',
@@ -145,7 +146,11 @@ function labelled(element: Element) {
 
   return ids
     .split(/\s+/)
-    .map((id) => scope.getElementById(id)?.textContent ?? '')
+    .map((id) => {
+      const label = scope.getElementById(id);
+
+      return label ? textWithoutControls(label) : '';
+    })
     .join(' ');
 }
 
@@ -158,10 +163,22 @@ function labels(element: Element) {
     return '';
   }
 
-  return Array.from(element.labels ?? [], (label) => label.textContent ?? '').join(' ');
+  return Array.from(element.labels ?? [], textWithoutControls).join(' ');
+}
+
+function textWithoutControls(label: Element) {
+  const copy = label.cloneNode(true);
+
+  if (!(copy instanceof Element)) return '';
+
+  for (const control of copy.querySelectorAll(FORM_CONTROLS)) control.remove();
+
+  return copy.textContent ?? '';
 }
 
 const BUTTON_INPUTS = new Set(['submit', 'reset', 'button']);
+
+const FORM_CONTROLS = 'input, textarea, select, [contenteditable]';
 
 export function nameOf(element: Element, role: string | undefined): string {
   for (const text of [

@@ -5,6 +5,43 @@ export type Socket = Pick<WebSocket, 'readyState' | 'send' | 'close' | 'addEvent
 
 const OPEN = 1;
 
+/** How long a dial waits for the helper's hub to answer. */
+export const DIAL_TIMEOUT = 5_000;
+
+const LOOPBACK = new Set(['127.0.0.1', 'localhost', '[::1]']);
+
+/** Whether `hub` is a `ws:` URL on this machine, the only kind Sidekick dials. */
+export function isLoopbackHub(hub: string) {
+  try {
+    const url = new URL(hub);
+
+    return url.protocol === 'ws:' && LOOPBACK.has(url.hostname);
+  } catch {
+    return false;
+  }
+}
+
+/** Resolves once `socket` opens; rejects when it fails, closes or takes longer than `DIAL_TIMEOUT`. */
+export function openSocket(socket: Socket) {
+  return new Promise<void>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      socket.close();
+      reject(new Error('timeout'));
+    }, DIAL_TIMEOUT);
+
+    const settle = (error?: Error) => {
+      clearTimeout(timer);
+
+      if (error) reject(error);
+      else resolve();
+    };
+
+    socket.addEventListener('open', () => settle(), { once: true });
+    socket.addEventListener('error', () => settle(new Error('error')), { once: true });
+    socket.addEventListener('close', () => settle(new Error('closed')), { once: true });
+  });
+}
+
 function parse(data: unknown): JSONRPCMessage | Error {
   if (typeof data !== 'string') return new Error('MCP frames must be text');
 

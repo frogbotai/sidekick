@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Late</title>
+  </head>
+  <body>
+    <h1>Late</h1>
+    <button id="spinner" type="button">Cancel loading</button>
+    <script>
+      setTimeout(() => {
+        document.getElementById('spinner').remove();
+
+        const done = document.createElement('p');
+
+        done.textContent = 'Results are ready';
+        document.body.append(done);
+      }, 2000);
+    </script>
+  </body>
+</html>
