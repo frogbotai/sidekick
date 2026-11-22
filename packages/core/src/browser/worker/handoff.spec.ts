@@ -5,7 +5,7 @@ import { createToolCaller } from '../../tool/bridge';
 import { createKeyedLock } from '../../tool/lock';
 import { ToolError } from '../../tool/tool';
 import { fakePage, fakeTabs, later, type Log } from './fakes';
-import { createHandoffs, HANDOFF_HEARTBEAT, HANDOFF_MISSES, HANDOFF_TIMEOUT } from './handoff';
+import { createHandoffs, HANDOFF_HEARTBEAT, HANDOFF_TIMEOUT } from './handoff';
 import { callerOf, drain, OUTSIDE_TAB, setupBrowser, START_TAB } from './harness';
 import { createBrowserWorker } from './serve';
 import type { HandoffCard } from './types';
@@ -289,76 +289,6 @@ describe('handoffs through the tool caller', () => {
     await drain(snapshot);
 
     expect(log).toContain('page.snapshot');
-  });
-});
-
-describe('a crashed tab', () => {
-  function crashing() {
-    const log: Log = [];
-    let answering = true;
-    let failure: Error = new Error('No receiving end');
-    const page = fakePage(log, {
-      handoff: () => (answering ? Promise.resolve() : Promise.reject(failure)),
-    });
-
-    const tabs = fakeTabs(log, [START_TAB]);
-    const handoffs = createHandoffs({ tabs, page });
-    const result = handoffs.wait({
-      tabId: 1,
-      message: 'Sign in',
-      timeout: HANDOFF_TIMEOUT,
-      signal: new AbortController().signal,
-    });
-
-    return {
-      handoffs,
-      tabs,
-      result,
-      crash: () => (answering = false),
-      block: () => {
-        answering = false;
-        failure = new ToolError('timeout', 'The page didn’t answer in time.');
-      },
-    };
-  }
-
-  it('ends as cancelled when the page stops answering with no navigation under way (req. 3)', async () => {
-    const { result, crash } = crashing();
-
-    await vi.advanceTimersByTimeAsync(HANDOFF_HEARTBEAT);
-    crash();
-    await vi.advanceTimersByTimeAsync(HANDOFF_HEARTBEAT * HANDOFF_MISSES);
-
-    await expect(result).resolves.toEqual({ status: 'cancelled', reason: 'crashed' });
-  });
-
-  it('keeps waiting while an alert blocks the page, which answers late but is alive', async () => {
-    const { handoffs, block } = crashing();
-
-    block();
-    await vi.advanceTimersByTimeAsync(HANDOFF_HEARTBEAT * (HANDOFF_MISSES + 2));
-
-    expect(handoffs.pending(1)).toBeDefined();
-  });
-
-  it('keeps waiting through a navigation, which also silences the page for a while', async () => {
-    const { handoffs, tabs, crash } = crashing();
-    const tab = tabs.tabs.get(1);
-
-    if (!tab) throw new Error('No tab');
-
-    crash();
-    tab.pendingUrl = 'https://example.com/login';
-    await vi.advanceTimersByTimeAsync(HANDOFF_HEARTBEAT * (HANDOFF_MISSES + 2));
-
-    expect(handoffs.pending(1)).toBeDefined();
-
-    delete tab.pendingUrl;
-    await vi.advanceTimersByTimeAsync(HANDOFF_HEARTBEAT * (HANDOFF_MISSES - 1));
-    tabs.commit({ tabId: 1 });
-    await vi.advanceTimersByTimeAsync(HANDOFF_HEARTBEAT * (HANDOFF_MISSES - 1));
-
-    expect(handoffs.pending(1)).toBeDefined();
   });
 });
 
