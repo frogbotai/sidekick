@@ -33,6 +33,10 @@ const secrets = new WeakSet<Element>();
 
 const secretSelectors = new Set<string>();
 
+const secretPlaces = new Set<string>();
+
+const personal = new WeakMap<Element, string>();
+
 function targetOf(event: Event) {
   const target = event.composedPath()[0];
 
@@ -97,25 +101,49 @@ function isSecret(element: Element) {
   );
 }
 
+function placesOf(element: Element) {
+  const form = element.closest('form');
+  const scope = form ? selectorOf(form) : '';
+  const field = element.getAttribute('name');
+  const label = nameOf(element, roleOf(element) ?? '').trim();
+
+  return [field ? `${scope} name:${field}` : '', label ? `${scope} label:${label}` : ''].filter(
+    Boolean,
+  );
+}
+
 function rememberSecret(element: Element) {
   secrets.add(element);
   secretSelectors.add(selectorOf(element));
+
+  for (const place of placesOf(element)) secretPlaces.add(place);
+}
+
+function wasSecret(element: Element) {
+  return (
+    secrets.has(element) ||
+    isSecret(element) ||
+    secretSelectors.has(selectorOf(element)) ||
+    placesOf(element).some((place) => secretPlaces.has(place))
+  );
 }
 
 function privacyOf(element: Element): string | undefined {
-  if (secrets.has(element) || isSecret(element) || secretSelectors.has(selectorOf(element))) {
+  if (wasSecret(element)) {
     rememberSecret(element);
 
     return 'secret';
   }
 
-  const token = tokensOf(element).find((entry) => PERSONAL.test(entry));
+  const token =
+    tokensOf(element).find((entry) => PERSONAL.test(entry)) ??
+    (element instanceof HTMLInputElement && PERSONAL_TYPE.has(element.type)
+      ? element.type
+      : undefined);
 
-  if (token) return token;
+  if (token) personal.set(element, token);
 
-  if (element instanceof HTMLInputElement && PERSONAL_TYPE.has(element.type)) return element.type;
-
-  return undefined;
+  return token ?? personal.get(element);
 }
 
 function uniqueId(element: Element) {
@@ -276,8 +304,9 @@ export interface Recorder {
  * trusted events count, so a page can't add steps, and targets inside closed shadow roots are found from the point or the focus. Each step
  * goes to `send` as it happens, so a navigation can't drop it. A field that was ever a password
  * or secret keeps no value, even after a Show button makes it text or swaps in a new input at the
- * same selector: each press re-scans for secret fields before the page's own handlers run.
- * Personal fields send their autocomplete token as `masked` in place of the value (D3 B).
+ * same selector, or with the same name or label in the same form: each press re-scans for secret
+ * fields before the page's own handlers run. Personal fields send their autocomplete token as
+ * `masked` in place of the value, and stay masked if the page drops the token (D3 B).
  */
 export function createRecorder(send: (step: RecordedStep) => void): Recorder {
   let recording = false;
@@ -330,6 +359,7 @@ export function createRecorder(send: (step: RecordedStep) => void): Recorder {
 
       if (on) {
         secretSelectors.clear();
+        secretPlaces.clear();
         rememberSecrets(document);
 
         revealed.observe(document, {

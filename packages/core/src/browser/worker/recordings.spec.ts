@@ -262,9 +262,9 @@ describe('recordings after the PR #56 review (sidekick-21)', () => {
     await recordings.stop(1);
     land();
 
-    await vi.waitFor(() => expect(record.mock.calls.at(-1)).toEqual([1, false]));
+    await vi.waitFor(() => expect(record.mock.calls.filter(([, on]) => !on)).toHaveLength(2));
 
-    expect(record.mock.calls.filter(([, on]) => !on).length).toBe(2);
+    expect(record.mock.calls.at(-1)).toEqual([1, false]);
   });
 
   it('turns the page recorder off in recording tabs on dispose', async () => {

@@ -13,6 +13,7 @@ interface Recording {
   id: number;
   entries: Entry[];
   secret: Set<string>;
+  masked: Map<string, string>;
 }
 
 const LOAD_TIMEOUT_MS = 10_000;
@@ -28,7 +29,7 @@ export interface Recordings {
   recording(tabId: number): boolean;
   /**
    * A frame's step; a fill of the field the last step filled replaces it. A fill of a field that
-   * was redacted earlier in the recording stays redacted.
+   * was redacted or masked earlier in the recording stays so. Urls keep no query or fragment.
    */
   step(tabId: number, frameId: number, step: RecordedStep): void;
   /** Ends the tab's recording, or with `id` the recording `start` returned it for, and gives its steps. */
@@ -36,18 +37,47 @@ export interface Recordings {
   dispose(): void;
 }
 
-function redact({ kind, frameUrl, role, name, nearby, selector }: RecordedStep): RecordedStep {
-  return { kind, frameUrl, role, name, nearby, selector, redacted: true };
+/** A url without its query and fragment, where a GET form puts the values typed into it. */
+export function bareUrl(url: string): string {
+  try {
+    const parsed = new URL(url);
+
+    parsed.search = '';
+    parsed.hash = '';
+
+    return parsed.href;
+  } catch {
+    return url.split(/[?#]/)[0] ?? url;
+  }
 }
 
-function sticky(recording: Recording, frameId: number | undefined, step: DemonstrationStep) {
+function hidden(
+  { kind, frameUrl, role, name, nearby, selector }: RecordedStep,
+  privacy: { redacted: true } | { masked: string },
+): RecordedStep {
+  return { kind, frameUrl, role, name, nearby, selector, ...privacy };
+}
+
+function sticky(recording: Recording, frameId: number | undefined, step: RecordedStep) {
   if (step.kind !== 'fill') return step;
 
   const key = `${frameId ?? ''} ${step.selector}`;
 
   if (step.redacted) recording.secret.add(key);
 
-  return recording.secret.has(key) && !step.redacted ? redact(step) : step;
+  if (step.masked) recording.masked.set(key, step.masked);
+
+  if (recording.secret.has(key)) return step.redacted ? step : hidden(step, { redacted: true });
+
+  const masked = recording.masked.get(key);
+
+  return masked && !step.masked ? hidden(step, { masked }) : step;
+}
+
+function bare(step: DemonstrationStep): DemonstrationStep {
+  return step.kind === 'navigation'
+    ? { ...step, url: bareUrl(step.url) }
+    : { ...step, frameUrl: bareUrl(step.frameUrl) };
 }
 
 /** One recording per tab for `demonstrate` (sidekick-21), after browse's demonstration recorder. */
@@ -56,8 +86,15 @@ export function createRecordings({ page, tabs }: { page: Page; tabs: Tabs }): Re
   const aside = new Map<number, Entry[]>();
   let next = 0;
 
-  const arm = (tabId: number) =>
-    active.has(tabId) ? page.record(tabId, true).catch(() => undefined) : Promise.resolve();
+  const off = (tabId: number) => page.record(tabId, false).catch(() => undefined);
+
+  const arm = async (tabId: number) => {
+    if (!active.has(tabId)) return;
+
+    await page.record(tabId, true).catch(() => undefined);
+
+    if (!active.has(tabId)) await off(tabId);
+  };
 
   const add = (tabId: number, entry: Entry) => {
     const recording = active.get(tabId);
@@ -66,7 +103,8 @@ export function createRecordings({ page, tabs }: { page: Page; tabs: Tabs }): Re
 
     const { entries } = recording;
     const last = entries.at(-1);
-    const step = sticky(recording, entry.frameId, entry.step);
+    const bared = bare(entry.step);
+    const step = bared.kind === 'navigation' ? bared : sticky(recording, entry.frameId, bared);
 
     if (
       step.kind === 'fill' &&
@@ -99,7 +137,7 @@ export function createRecordings({ page, tabs }: { page: Page; tabs: Tabs }): Re
 
       if (earlier) aside.set(earlier.id, earlier.entries);
 
-      active.set(tabId, { id, entries: [], secret: new Set() });
+      active.set(tabId, { id, entries: [], secret: new Set(), masked: new Map() });
       await arm(tabId);
 
       return id;
@@ -118,12 +156,15 @@ export function createRecordings({ page, tabs }: { page: Page; tabs: Tabs }): Re
       }
 
       active.delete(tabId);
-      await page.record(tabId, false).catch(() => undefined);
+      await off(tabId);
 
       return (recording?.entries ?? []).map(({ step }) => step);
     },
     dispose: () => {
       stopCommits();
+
+      for (const tabId of active.keys()) void off(tabId);
+
       active.clear();
       aside.clear();
     },

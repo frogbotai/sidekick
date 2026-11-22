@@ -3,9 +3,9 @@ import { z } from 'zod';
 import { defineTool } from '../../../tool/tool';
 import { type BrowserEnv, getTab, notInGroup, runOf } from '../env';
 import { HANDOFF_TIMEOUT } from '../handoff';
-import { type DemonstrationStep, summarize } from '../recordings';
+import { bareUrl, type DemonstrationStep, summarize } from '../recordings';
 import { HANDOFF_MESSAGE_LIMIT } from './handoff';
-import { tabId } from './schema';
+import { byTab, tabId } from './schema';
 
 const step = z.object({
   kind: z.enum(['click', 'fill', 'check', 'select', 'file', 'navigation']),
@@ -38,7 +38,7 @@ export function demonstrateTools(env: BrowserEnv) {
       id: 'demonstrate',
       description: [
         'Ask the user to show you how to do something in the tab, when it is quicker for them to do it once than to describe it. The tab comes to the front with a card showing your message, a line saying their clicks and typing are recorded, and a Continue button, and this call waits until they click Continue.',
-        'It returns the steps they took (clicks, typing, checks, selects, chosen files and new pages) and a numbered summary. Passwords and codes come back as redacted and personal details (name, address, email, phone) as masked, so ask the user for those values when you repeat the flow. A browser dialog the user answers is not a step; the summary notes one when Sidekick saw it.',
+        'It returns the steps they took (clicks, typing, checks, selects, chosen files and new pages) and a numbered summary. Page addresses come back without their query or fragment. Passwords and codes come back as redacted and personal details (name, address, email, phone) as masked, so ask the user for those values when you repeat the flow. A browser dialog the user answers is not a step; the summary notes one when Sidekick saw it.',
         'To repeat it, take a new snapshot and match each step by role and name, using nearby text and then the selector only to break ties. timeout: ask in chat before asking again. cancelled: the run was stopped or the tab closed.',
       ].join(' '),
       input: z.object({
@@ -71,6 +71,7 @@ export function demonstrateTools(env: BrowserEnv) {
         summary: z.string().describe('One numbered line per step.'),
       }),
       permission: 'handoff',
+      lock: byTab,
       execute: async ({ tab_id, message, timeout_ms }, ctx) => {
         const { run, signal } = runOf(env, ctx);
         const tab = await getTab(env, tab_id, signal);
@@ -106,8 +107,8 @@ export function demonstrateTools(env: BrowserEnv) {
         return {
           output: {
             ...end,
-            started_url: tab.url,
-            ended_url: now?.url ?? lastUrl(steps, tab.url),
+            started_url: bareUrl(tab.url),
+            ended_url: bareUrl(now?.url ?? lastUrl(steps, tab.url)),
             steps,
             summary: dialogs ? `${summary}\n${DIALOG_NOTE}` : summary,
           },

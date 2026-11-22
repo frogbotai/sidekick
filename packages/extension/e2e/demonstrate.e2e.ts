@@ -116,7 +116,7 @@ test('the person demonstrates a flow while the card says it records, and the age
   expect(output).toMatchObject({
     status: 'resolved',
     started_url: `${origin()}/demonstrate.html`,
-    ended_url: `${origin()}/demonstrate.html?done`,
+    ended_url: `${origin()}/demonstrate.html`,
   });
 
   expect(output.steps).toEqual([
@@ -131,7 +131,7 @@ test('the person demonstrates a flow while the card says it records, and the age
     expect.objectContaining({ kind: 'check', role: 'checkbox', name: 'Gift wrap', checked: true }),
     expect.objectContaining({ kind: 'click', role: 'button', name: 'Find' }),
     expect.objectContaining({ kind: 'click', role: 'link', name: 'Checkout' }),
-    { kind: 'navigation', url: `${origin()}/demonstrate.html?done` },
+    { kind: 'navigation', url: `${origin()}/demonstrate.html` },
   ]);
 
   expect(JSON.stringify(output)).not.toContain('1 Main St');
@@ -184,4 +184,46 @@ test('the agent replays a demonstration on a re-rendered page by snapshot, role 
   expect(await page.locator('#x-q-2').inputValue()).toBe('red shoes');
   expect(await page.locator('#x-gift-2').isChecked()).toBe(true);
   expect(await page.evaluate(() => window.log)).toEqual(['find']);
+});
+
+test('a GET form keeps the typed password and address out of the result (sidekick-21 req. 5, D3 B)', async ({
+  context,
+  extensionId,
+  origin,
+  sidekick,
+}) => {
+  const page = await context.newPage();
+
+  await page.goto(`${origin()}/demonstrate.html`);
+
+  await page.evaluate(() => {
+    document.querySelector('[autocomplete="street-address"]')?.setAttribute('name', 'addr');
+    document.querySelector('[type="password"]')?.setAttribute('name', 'pw');
+
+    document
+      .querySelector('form')
+      ?.insertAdjacentHTML('beforeend', '<button type="submit">Sign in</button>');
+  });
+
+  const evaluate = await isolatedWorld(context, page, extensionId);
+  const run = await sidekick.start(page);
+  const reply = run.reply('demonstrate', { message: 'Show me how you sign in' });
+
+  await expect.poll(() => evaluate(CARD), { timeout: 20_000 }).toMatchObject({ recording: true });
+
+  await page.getByRole('textbox', { name: 'Address' }).fill('1 Main St');
+  await page.getByLabel('Password').fill('hunter2');
+  await page.getByRole('button', { name: 'Sign in' }).click();
+  await page.waitForURL(/pw=hunter2/);
+
+  await pressContinue(page, await isolatedWorld(context, page, extensionId));
+
+  const result = await reply;
+
+  if ('error' in result) throw new Error(result.error.message);
+
+  const output = result.ok as Demonstration;
+
+  expect(JSON.stringify(output)).not.toMatch(/hunter2|Main/);
+  expect(output.ended_url).toBe(`${origin()}/demonstrate.html`);
 });
