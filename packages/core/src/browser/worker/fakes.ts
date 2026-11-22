@@ -174,6 +174,7 @@ export function fakePage(log: Log, overrides: Partial<Page> = {}): Page {
       redacted: 0,
       truncated: false,
     })),
+    text: later(() => ({ title: 'Example', text: '# Example\n\nHello.', truncated: false })),
     inspect: later(() => ({
       frameId: 0,
       frameOrigin: 'https://example.com',
@@ -208,9 +209,24 @@ export function fakePage(log: Log, overrides: Partial<Page> = {}): Page {
     domQuiet: later(() => true),
     viewport: later(() => ({ width: 800, height: 600 })),
     iframes: later(() => []),
+    probe: later(() => ({
+      url: 'https://example.com/',
+      title: 'Example',
+      text: 'Example Domain',
+      textLength: 14,
+      scriptSrcs: [],
+      selectors: [],
+      visibleSelectors: [],
+    })),
     strip: later(() => []),
     indicator: later(() => undefined),
     stopAt: later(() => false),
+    webmcpList: later(() => ({
+      tools: [{ name: 'echo', description: 'Echoes', origin: 'https://example.com' }],
+      more: 0,
+    })),
+    webmcpCall: later(() => ({ result: 'echoed', truncated: false })),
+    webmcpCancel: later(() => undefined),
     ...overrides,
   };
 

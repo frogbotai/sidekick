@@ -56,6 +56,8 @@ export interface ToolDefinition<I extends z.ZodType = z.ZodType, O extends z.Zod
   input: I;
   output: O;
   permission: PermissionAction;
+  /** The tool can also act, asking `input` itself as `webmcp` call does, so it is never listed as read-only. */
+  acts?: boolean;
   /** The description one agent sees, when it depends on the caller, as `subagent`'s list of agents. */
   describe?: (agent: AgentInfo) => string;
   /** The resource a call holds while it runs, as `tab:7`: calls on one key run one at a time, in order. */
