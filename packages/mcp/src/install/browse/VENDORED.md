@@ -9,6 +9,7 @@ Changes from the original:
 - A JSON insertion keeps the formatting of every other line, and an uninstall restores the original bytes.
 - Each install copies the file to `<file>.sidekick-backup` first, and an uninstall puts those bytes back when the file holds only what the install added. A link to a missing file writes the file it names.
 - A file that doesn't parse returns `invalid` instead of throwing.
+- `readValue` returns what is at an entry's place, so an edited entry can be recognised.
 
 ```
 MIT License

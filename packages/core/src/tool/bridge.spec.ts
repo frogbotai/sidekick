@@ -180,6 +180,8 @@ function boot(
       'tab.ping': () => Promise.reject(new Error('unused')),
       'mcp.connect': () => Promise.reject(new Error('unused')),
       'mcp.disconnect': () => Promise.reject(new Error('unused')),
+      'mcp.pair': () => Promise.reject(new Error('unused')),
+      'mcp.unpair': () => Promise.reject(new Error('unused')),
       ...browser.handlers,
       ...bridge,
     },

@@ -6,9 +6,10 @@ import { type BrowserEnv, runOf } from '../browser/worker/env';
 import { mcpHubs, mcpPairings } from '../storage/items';
 import { defineTool } from '../tool/tool';
 import { type FakeSocket, fakeSocket, flush, setupWorker } from './fakes';
-import { createMcpHost, groupTitle, isLoopbackHub } from './hubs';
+import { createMcpHost, groupTitle } from './hubs';
 import { addPairing, renewPairing, revokePairing } from './pairings';
 import { KEEPALIVE } from './server';
+import { isLoopbackHub } from './transport';
 
 const HUB = 'ws://127.0.0.1:4100/secret-a';
 

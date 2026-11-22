@@ -11,7 +11,7 @@ import { Button, Input, Label, RadioGroup, RadioGroupItem } from '@frogbotai/ui'
 import { type FormEvent, useId, useState } from 'react';
 
 import { useStored } from '../../providers/useStored';
-import { commandFor, MCP_CLIENT_NAMES } from './commands';
+import { commandFor, INSTALL_COMMAND, MCP_CLIENT_NAMES } from './commands';
 
 interface Shown {
   pairingID: string;
@@ -60,6 +60,7 @@ export function ConnectedAgents({ disconnect }: { disconnect: (pairingID: string
   const [name, setName] = useState('');
   const [shown, setShown] = useState<Shown>();
   const [copied, setCopied] = useState(false);
+  const [installCopied, setInstallCopied] = useState(false);
 
   const show = (next: Shown | undefined) => {
     setCopied(false);
@@ -88,6 +89,23 @@ export function ConnectedAgents({ disconnect }: { disconnect: (pairingID: string
         Agent apps on this computer can use Sidekick’s browser tools. They act without asking in
         Sidekick; blocked sites still apply.
       </p>
+      <div className="sidekick-stack">
+        <p>
+          Run this in a terminal, or ask an agent to, to add Sidekick to OpenCode, Claude Code,
+          Codex or Cursor. You approve it here once.
+        </p>
+        <pre className="sidekick-command" aria-label="Install command">
+          {INSTALL_COMMAND}
+        </pre>
+        <div className="sidekick-row">
+          <Button
+            variant="secondary"
+            onClick={() => void copyCommand(INSTALL_COMMAND).then(() => setInstallCopied(true))}
+          >
+            {installCopied ? 'Copied' : 'Copy install command'}
+          </Button>
+        </div>
+      </div>
       {shown ? (
         <div className="sidekick-stack" role="status">
           <p>
@@ -150,6 +168,7 @@ export function ConnectedAgents({ disconnect }: { disconnect: (pairingID: string
           );
         })}
       </ul>
+      <p>Or add one agent app by hand, with its own key:</p>
       <form className="sidekick-stack" onSubmit={add} aria-label="Add an agent">
         <RadioGroup
           value={client}

@@ -75,3 +75,8 @@ export async function helperToken(
 
   return (await readKey(file))?.key;
 }
+
+/** Forgets this computer's pairing. */
+export async function removeKey(file = keyFile()) {
+  await rm(file, { force: true });
+}
