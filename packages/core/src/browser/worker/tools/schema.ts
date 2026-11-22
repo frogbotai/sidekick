@@ -48,7 +48,7 @@ export const challenge = z
   })
   .optional()
   .describe(
-    'Only when the page is a captcha, bot check or block page. handoff: stop and ask the person to solve it in this tab. stop: the site refused the visit; don’t retry or reload. continue: a check cleared by itself.',
+    'Only when the page is a captcha, bot check or block page. handoff: stop and ask the person to solve it in this tab with the handoff tool. stop: the site refused the visit; don’t retry or reload. continue: a check cleared by itself.',
   );
 
 export const action = z.object({
