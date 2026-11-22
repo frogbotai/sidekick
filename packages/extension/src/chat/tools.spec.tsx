@@ -43,6 +43,12 @@ function titles(toolName: string, call: Done) {
   ];
 }
 
+function steps(body: unknown) {
+  const list = body as { props: { children: { props: { children: string } }[] } };
+
+  return list.props.children.map((item) => item.props.children);
+}
+
 const button = { target: 'button “Sign in”' };
 
 const CASES: [string, Done, string, string][] = [
@@ -262,6 +268,7 @@ describe('tool cards', () => {
         'drag',
         'web_search',
         'webfetch',
+        'batch',
       ].toSorted(),
     );
   });
@@ -302,6 +309,57 @@ describe('tool cards', () => {
         approval: { id: 'c1', approved: false, reason: 'The user said no.' },
       } as ToolPartValue),
     ).toEqual({ icon: 'cursor', title: 'Click', subtitle: 'The user said no.' });
+  });
+
+  it('names a batch’s current step, and lists each step’s outcome once it ends', () => {
+    const line = TOOL_LINES.batch;
+
+    if (!line) throw new Error('No batch line');
+
+    const calls = [
+      { tool: 'snapshot', input: {} },
+      { tool: 'click', input: { ref: 'e3' } },
+      { tool: 'press', input: { key: 'Enter' } },
+    ];
+
+    expect(describeCall(line, running('batch', { calls })).title).toBe('Running 3 steps');
+
+    expect(
+      describeCall(line, running('batch', { calls }, { step: '2', of: '3', tool: 'click' })).title,
+    ).toBe('Running step 2 of 3: click');
+
+    const ok = describeCall(
+      line,
+      done('batch', {
+        input: { calls },
+        output: {
+          steps: [
+            { tool: 'snapshot', output: { title: 'Shop' } },
+            { tool: 'click', output: {} },
+            { tool: 'press', output: {} },
+          ],
+        },
+      }),
+    );
+
+    expect(ok.title).toBe('Ran 3 steps');
+    expect(steps(ok.body)).toEqual(['Read Shop', 'Clicked', 'Pressed Enter']);
+
+    const failed = describeCall(
+      line,
+      done('batch', {
+        input: { calls },
+        output: {
+          steps: [{ tool: 'snapshot', output: { title: 'Shop' } }],
+          failed: { index: 1, tool: 'click', code: 'stale_ref', message: 'e3 is gone.' },
+          skipped: 1,
+        },
+      }),
+    );
+
+    expect(failed.title).toBe('Ran 1 of 3 steps');
+    expect(failed.subtitle).toBe('click failed: e3 is gone.');
+    expect(steps(failed.body)).toEqual(['Read Shop', 'Click: e3 is gone.', 'Skipped press']);
   });
 
   it('lists search results, fetched pages, opened pages and tabs as links', () => {

@@ -142,6 +142,56 @@ function screenshotOf(output: Record<string, unknown>) {
   return data && mime ? `data:${mime};base64,${data}` : undefined;
 }
 
+function stepLabel(call: Record<string, unknown>, output: unknown, failed?: string) {
+  const tool = text(call.tool) ?? 'step';
+  const line = TOOL_LINES[tool];
+
+  if (!line) return failed ? `${tool}: ${failed}` : tool;
+
+  const status = line({ input: record(call.input), output: record(output), metadata: {} });
+
+  return failed ? `${status.failed}: ${failed}` : status.done;
+}
+
+function batchLine({ input, output, metadata }: ToolCall): ToolLine {
+  const calls = Array.isArray(input.calls) ? input.calls.map(record) : [];
+  const steps = Array.isArray(output.steps) ? output.steps.map(record) : [];
+  const failed = record(output.failed);
+  const failedTool = text(failed.tool);
+  const total = plural(calls.length, 'step');
+  const step = text(metadata.step);
+  const current = text(metadata.tool);
+  const items = calls.map((call, index) => {
+    if (index < steps.length) return stepLabel(call, steps[index]?.output);
+
+    if (failedTool && index === steps.length) {
+      return stepLabel(call, {}, text(failed.message) ?? 'failed');
+    }
+
+    return `Skipped ${text(call.tool) ?? 'step'}`;
+  });
+
+  return {
+    icon: 'workflow',
+    running:
+      step && current ? `Running step ${step} of ${calls.length}: ${current}` : `Running ${total}`,
+    done: failedTool ? `Ran ${steps.length} of ${total}` : `Ran ${total}`,
+    failed: `Run ${total}`,
+    ...(failedTool ? { subtitle: `${failedTool} failed: ${text(failed.message) ?? ''}` } : {}),
+    ...(steps.length || failedTool
+      ? {
+          body: (
+            <ol className="sidekick-batch-steps">
+              {items.map((item, index) => (
+                <li key={index}>{item}</li>
+              ))}
+            </ol>
+          ),
+        }
+      : {}),
+  };
+}
+
 /** Each tool's status lines, from its input, output and the element it reported (315 D2). */
 export const TOOL_LINES: Record<string, (call: ToolCall) => ToolLine> = {
   tabs_list: ({ output }) => {
@@ -403,6 +453,7 @@ export const TOOL_LINES: Record<string, (call: ToolCall) => ToolLine> = {
       links: linkTo(url),
     };
   },
+  batch: batchLine,
 };
 
 function callOf(part: ToolPartValue): ToolCall {

@@ -1,6 +1,7 @@
 import {
   agents,
   answerContent,
+  batchTool,
   callFrame,
   chromeCdp,
   chromeImages,
@@ -113,6 +114,8 @@ export default defineBackground(() => {
 
   tools.register('builtin', (draft) => {
     for (const tool of runtime.tools) draft.add(tool);
+
+    draft.add(batchTool({ tools, locks }));
   });
 
   server = serve(
