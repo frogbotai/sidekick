@@ -1,5 +1,6 @@
 import type { Page, Worker } from '@playwright/test';
 
+import { DARK_BACKGROUND, unreadableText } from './contrast';
 import { expect, liveBuild, test as base } from './fixtures';
 
 const test = base.extend({
@@ -165,4 +166,24 @@ test('a rerun of only MDN, Lexical and ProseMirror passes and keeps the editors 
   );
 
   expect(report.split('\n').filter((line) => line.includes('| ❌ |'))).toEqual([]);
+});
+
+test('the live page uses FrogBot’s theme, light and dark, with green Run and dark ink', async ({
+  context,
+  extensionId,
+}) => {
+  const page = await context.newPage();
+  const run = page.getByRole('button', { name: 'Run all tests' });
+
+  await page.goto(`chrome-extension://${extensionId}/live.html`);
+  await expect(run).toBeVisible();
+  await expect(page.locator('body')).toHaveCSS('background-color', 'rgb(255, 255, 255)');
+  await expect(run).toHaveCSS('background-color', 'rgb(58, 207, 106)');
+  await expect(run).toHaveCSS('color', 'rgb(4, 33, 13)');
+  await expect.poll(() => unreadableText(page)).toEqual([]);
+
+  await page.emulateMedia({ colorScheme: 'dark' });
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
+  await expect(page.locator('body')).toHaveCSS('background-color', DARK_BACKGROUND);
+  await expect.poll(() => unreadableText(page)).toEqual([]);
 });

@@ -11,7 +11,8 @@ const CSS = `
 @keyframes fb-overlay-in { from { opacity: 0; } to { opacity: 1; } }
 @media (prefers-reduced-motion: reduce) { .overlay__gradient { animation: none; } }
 .cursor { position: fixed; left: 0; top: 0; width: 22px; height: 22px; transform: translate(-100px, -100px); transition: transform 200ms ease-out; }
-.stop { position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%); pointer-events: auto; font: 600 13px system-ui, sans-serif; color: #fff; background: #b91c1c; border: 0; border-radius: 999px; padding: 8px 16px; cursor: pointer; box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3); }
+.stop { position: fixed; left: 50%; bottom: 16px; transform: translateX(-50%); pointer-events: auto; font: 700 14px/20px Inter, system-ui, sans-serif; color: #ffffff; background: #b91c1c; border: 0; border-radius: 9999px; padding: 8px 16px; cursor: pointer; box-shadow: 0 2px 10px rgba(5, 9, 18, 0.3); }
+.stop:hover { background: color-mix(in srgb, #b91c1c, #ffffff 16%); }
 `;
 
 const SVG = 'http://www.w3.org/2000/svg';
@@ -24,8 +25,8 @@ function arrow() {
   svg.setAttribute('width', '22');
   svg.setAttribute('height', '22');
   path.setAttribute('d', 'M3 2l7.5 19 2.6-7.9L21 10.5z');
-  path.setAttribute('fill', '#16a34a');
-  path.setAttribute('stroke', '#fff');
+  path.setAttribute('fill', '#3acf6a');
+  path.setAttribute('stroke', '#04210d');
   path.setAttribute('stroke-width', '1.5');
   path.setAttribute('stroke-linejoin', 'round');
   svg.append(path);
