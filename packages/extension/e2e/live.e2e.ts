@@ -1,4 +1,4 @@
-import type { Page } from '@playwright/test';
+import type { Page, Worker } from '@playwright/test';
 
 import { expect, liveBuild, test as base } from './fixtures';
 
@@ -36,6 +36,19 @@ async function clickStop(page: Page) {
   const { x, y } = result.value as { x: number; y: number };
 
   await page.mouse.click(x, y);
+}
+
+async function copyReport(panel: Page, worker: Worker) {
+  await panel.getByRole('button', { name: 'Copy results' }).click();
+
+  const stored = () =>
+    worker.evaluate(
+      async () => (await chrome.storage.local.get('liveReport')).liveReport as string,
+    );
+
+  await expect.poll(stored).toContain('When copied: ');
+
+  return stored();
 }
 
 test('the live runner runs every step against stand-in sites and reports them', async ({
@@ -77,11 +90,7 @@ test('the live runner runs every step against stand-in sites and reports them', 
 
   for (const no of await panel.getByRole('button', { name: 'No' }).all()) await no.click();
 
-  await panel.getByRole('button', { name: 'Copy results' }).click();
-
-  const report = await worker.evaluate(
-    async () => (await chrome.storage.local.get('liveReport')).liveReport as string,
-  );
+  const report = await copyReport(panel, worker);
 
   expect(report).toContain('## Live run (ticket 271');
   expect(report).not.toContain('(not settled)');
@@ -145,11 +154,7 @@ test('a rerun of only MDN, Lexical and ProseMirror passes and keeps the editors 
   await clickStop(front);
 
   await expect(panel.getByRole('heading', { name: 'Finished' })).toBeVisible({ timeout: 30_000 });
-  await panel.getByRole('button', { name: 'Copy results' }).click();
-
-  const report = await worker.evaluate(
-    async () => (await chrome.storage.local.get('liveReport')).liveReport as string,
-  );
+  const report = await copyReport(panel, worker);
 
   expect(report).toContain(
     'Sites: MDN (cross-origin live example), Lexical playground, ProseMirror demo.',

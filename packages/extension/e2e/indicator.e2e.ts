@@ -2,6 +2,7 @@ import {
   expect,
   INDICATOR,
   isolatedWorld,
+  OVERLAY_OPACITY,
   refFor,
   type SidekickRun,
   type SnapshotOutput,
@@ -78,12 +79,6 @@ for (const reducedMotion of ['no-preference', 'reduce'] as const) {
   });
 }
 
-const OPACITY = `(() => {
-  const overlay = ${INDICATOR}?.querySelector('.overlay');
-
-  return overlay ? getComputedStyle(overlay).opacity : null;
-})()`;
-
 const WATCH = `(() => {
   const root = ${INDICATOR};
   const overlay = root.querySelector('.overlay');
@@ -119,7 +114,7 @@ async function steadyAcrossScreenshots(
   evaluate: (expression: string) => Promise<unknown>,
   run: SidekickRun,
 ) {
-  await expect.poll(() => evaluate(OPACITY)).toBe('1');
+  await expect.poll(() => evaluate(OVERLAY_OPACITY)).toBe('1');
   await evaluate(WATCH);
   await run.call('screenshot');
   await run.call('screenshot');

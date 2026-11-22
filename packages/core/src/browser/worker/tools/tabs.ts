@@ -3,9 +3,10 @@ import { z } from 'zod';
 import { defineTool, ToolError } from '../../../tool/tool';
 import { normalizeUrl, originOf } from '../../../tool/url';
 import { race } from '../abort';
+import { detect } from '../detect';
 import { type BrowserEnv, documentOf, enter, finish, getTab, runOf, untrusted } from '../env';
 import type { TabInfo } from '../types';
-import { action, byTab, tab, tabId, tabList } from './schema';
+import { action, byTab, challenge, tab, tabId, tabList } from './schema';
 
 function describe(tabs: TabInfo[]) {
   return {
@@ -94,7 +95,7 @@ export function tabTools(env: BrowserEnv) {
         url: z.string().optional().describe('An http(s) URL; about:blank when left out.'),
         focus: z.boolean().optional(),
       }),
-      output: tab.pick({ tab_id: true, url: true }).extend({ settled: z.boolean() }),
+      output: tab.pick({ tab_id: true, url: true }).extend({ settled: z.boolean(), challenge }),
       permission: 'navigate',
       execute: async ({ url, focus }, ctx) => {
         const { run, signal } = runOf(env, ctx);
@@ -114,9 +115,12 @@ export function tabTools(env: BrowserEnv) {
         await attachIfAllowed(env, opened.id, signal);
 
         const settled = await env.settler.settle(opened.id, signal, undefined, { load: true });
-        const current = await race(env.tabs.get(opened.id), signal);
+        const landed = await race(env.tabs.get(opened.id), signal);
+        const found = await detect(env, opened.id, landed.url, signal);
+        const current = found ? await race(env.tabs.get(opened.id), signal) : landed;
+        const output = { tab_id: opened.id, url: current.url, settled };
 
-        return untrusted({ tab_id: opened.id, url: current.url, settled });
+        return untrusted(found ? { ...output, challenge: found } : output);
       },
     }),
     defineTool({
