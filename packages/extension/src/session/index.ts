@@ -29,6 +29,7 @@ import { availableModels, parseModelRef, resolveModel } from '@frogbotai/sidekic
 
 import type { WindowChat } from '../chat/transport';
 import type { SidekickWorker } from '../entrypoints/sidepanel/worker';
+import { createHandoffRequests, type HandoffRequests } from '../handoff/requests';
 import { createPermissionRequests, type PermissionRequests } from '../permission/requests';
 import { currentCatalog } from '../providers/catalog';
 import { runSaver } from './runs';
@@ -86,6 +87,8 @@ export interface Sessions {
   chat: WindowChat;
   /** The worker's waiting permission asks. */
   permissions: PermissionRequests;
+  /** The worker's waiting handoffs. */
+  handoffs: HandoffRequests;
 }
 
 /** The URL of the window's active tab, which a message's site comes from. */
@@ -239,5 +242,6 @@ export async function startSessions(
     close,
     chat: await windowChat(windowId, close),
     permissions: createPermissionRequests(worker),
+    handoffs: createHandoffRequests(worker),
   };
 }

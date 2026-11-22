@@ -92,7 +92,7 @@ function bad(id: string, input: z.ZodType = z.object({})): ToolDefinition {
 }
 
 describe('browser tools in the tools registry', () => {
-  it('registers all 26, and sends a bad id or schema to errors()', async () => {
+  it('registers all 27, and sends a bad id or schema to errors()', async () => {
     const { runtime } = await setupBrowser();
 
     disposers.push(
@@ -106,7 +106,7 @@ describe('browser tools in the tools registry', () => {
       }),
     );
 
-    expect(tools.list().map(({ id }) => id)).toEqual(Object.keys(SAMPLES));
+    expect(tools.list().map(({ id }) => id)).toEqual([...Object.keys(SAMPLES), 'handoff']);
     expect(tools.errors()).toHaveLength(4);
     expect(tools.errors().every(({ source }) => source === 'builtin')).toBe(true);
   });

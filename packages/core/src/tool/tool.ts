@@ -10,6 +10,7 @@ export const PERMISSION_ACTIONS = [
   'websearch',
   'webfetch',
   'subagent',
+  'handoff',
   'settings',
 ] as const;
 
@@ -86,6 +87,7 @@ export const TOOL_ERROR_CODES = [
   'input_mismatch',
   'not_editable',
   'dialog_open',
+  'handed_off',
   'timeout',
   'script_error',
   'stopped',

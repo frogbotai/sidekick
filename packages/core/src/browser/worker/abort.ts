@@ -4,21 +4,25 @@ export function stopped() {
   return new ToolError('stopped', 'The run was stopped. Wait for the user before acting again.');
 }
 
+function abortError(signal: AbortSignal) {
+  return signal.reason instanceof ToolError ? signal.reason : stopped();
+}
+
 export function checkpoint(signal: AbortSignal) {
-  if (signal.aborted) throw stopped();
+  if (signal.aborted) throw abortError(signal);
 }
 
 export function delay(ms: number, signal?: AbortSignal): Promise<void> {
   return new Promise((resolve, reject) => {
     if (signal?.aborted) {
-      reject(stopped());
+      reject(abortError(signal));
 
       return;
     }
 
     const onAbort = () => {
       clearTimeout(timer);
-      reject(stopped());
+      reject(signal ? abortError(signal) : stopped());
     };
 
     const timer = setTimeout(() => {
@@ -41,7 +45,7 @@ export function race<T>(
   let onAbort = () => {};
 
   const interrupted = new Promise<never>((_, reject) => {
-    onAbort = () => reject(stopped());
+    onAbort = () => reject(abortError(signal));
 
     signal.addEventListener('abort', onAbort, { once: true });
 

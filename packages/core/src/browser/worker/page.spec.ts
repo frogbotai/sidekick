@@ -24,8 +24,9 @@ async function browserOverContent(html: string) {
   const { handlers } = createContent({
     top: false,
     worker: {
-      visible: () => Promise.resolve(false),
+      state: () => Promise.resolve({ visible: false }),
       stop: () => Promise.resolve(),
+      resolve: () => Promise.resolve(),
       identify: () => Promise.resolve({ frameId: 0, key: 'worker-key' }),
       recording: () => Promise.resolve(false),
       step: () => Promise.resolve(),

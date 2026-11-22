@@ -8,6 +8,7 @@ import type { Challenge } from './challenge';
 import { detect } from './detect';
 import { dialogOpen, type Dialogs } from './dialogs';
 import type { Emulation } from './emulation';
+import type { Handoffs } from './handoff';
 import type { Recordings } from './recordings';
 import type { Run, Runs } from './runs';
 import type { Sessions } from './sessions';
@@ -43,6 +44,7 @@ export interface BrowserEnv {
   screens: Map<number, ScreenMap>;
   /** New-document commits per tab, so a call can tell its page was replaced. */
   documents: Map<number, number>;
+  handoffs: Handoffs;
   mac: boolean;
 }
 
@@ -95,6 +97,7 @@ export interface EnterOptions {
   dialog?: boolean;
 }
 
+/** Starts a tab call: waits out a handoff on the tab, and ends with `handed_off` if one starts (sidekick-13 req. 6), then checks the run and permission. */
 export async function enter(
   env: BrowserEnv,
   ctx: ToolContext,
@@ -102,8 +105,17 @@ export async function enter(
   action: PermissionAction,
   { resource, dialog = false }: EnterOptions = {},
 ): Promise<Act> {
-  const { run, signal } = runOf(env, ctx);
-  const tab = await getTab(env, tabId, signal);
+  const started = runOf(env, ctx);
+  let tab = await getTab(env, tabId, started.signal);
+
+  if (env.handoffs.pending(tabId)) {
+    while (env.handoffs.pending(tabId)) await env.handoffs.idle(tabId, started.signal);
+
+    tab = await getTab(env, tabId, started.signal);
+  }
+
+  const { run } = started;
+  const signal = AbortSignal.any([started.signal, env.handoffs.guard(tabId)]);
 
   if (!env.runs.owns(run, tab)) throw notInGroup(tabId);
 

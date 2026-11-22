@@ -13,6 +13,7 @@ const VERBS: Record<PermissionAction, string> = {
   websearch: 'search the web for',
   webfetch: 'read pages on',
   subagent: 'start the subagent',
+  handoff: 'hand you',
   settings: 'change the settings of',
 };
 

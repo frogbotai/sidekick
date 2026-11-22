@@ -7,7 +7,7 @@ import { Client } from '@modelcontextprotocol/client';
 import { StdioClientTransport } from '@modelcontextprotocol/client/stdio';
 import type { BrowserContext, Worker } from '@playwright/test';
 
-import { expect, refFor, test } from './fixtures';
+import { expect, INDICATOR, isolatedWorld, refFor, test } from './fixtures';
 
 const HELPER = path.resolve(import.meta.dirname, '../../mcp/dist/cli.js');
 
@@ -182,6 +182,60 @@ test.describe('the MCP bridge', () => {
 
     await restarted.client.close();
     await second.client.close();
+  });
+
+  test('hands a tab to the person with no side panel open, and returns resolved on a trusted Continue (sidekick-13)', async ({
+    context,
+    extensionId,
+    origin,
+  }) => {
+    const sw = await serviceWorker(context, extensionId);
+    const token = await pair(sw, 'OpenCode', 'opencode');
+    const helper = await startHelper(context, extensionId, token, 'handoff');
+
+    await Promise.all([helper.connect(), helper.openConnect()]);
+
+    const tabId = await firstTab(helper.client);
+
+    await helper.client.callTool({
+      name: 'navigate',
+      arguments: { tab_id: tabId, url: `${origin()}/labelled.html` },
+    });
+
+    const handoff = helper.client.callTool({
+      name: 'handoff',
+      arguments: { tab_id: tabId, message: 'Sign in, then Continue' },
+    });
+
+    const page = context.pages().find((candidate) => candidate.url().endsWith('/labelled.html'));
+
+    if (!page) throw new Error('No labelled.html tab');
+
+    const evaluate = await isolatedWorld(context, page, extensionId);
+    const button = `${INDICATOR}?.querySelector('.handoff:popover-open button')?.getBoundingClientRect().toJSON()`;
+
+    await expect.poll(() => evaluate(button), { timeout: 20_000 }).toBeTruthy();
+
+    expect(await sw.evaluate((id) => chrome.action.getBadgeText({ tabId: id }), tabId)).toBe(
+      'WAIT',
+    );
+
+    const box = (await evaluate(button)) as { x: number; y: number; width: number; height: number };
+
+    await page.bringToFront();
+    await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+
+    const result = await handoff;
+
+    expect(result.isError).toBeFalsy();
+
+    expect(JSON.parse((result.content as { text: string }[])[0]?.text ?? '{}')).toEqual({
+      status: 'resolved',
+    });
+
+    expect(await sw.evaluate((id) => chrome.action.getBadgeText({ tabId: id }), tabId)).toBe('');
+
+    await helper.client.close();
   });
 
   test('runs a snapshot and a click in one batch call', async ({

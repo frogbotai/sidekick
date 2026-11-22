@@ -90,7 +90,7 @@ export interface Commit {
   sameDocument: boolean;
 }
 
-/** The parts of `chrome.tabs`, `tabGroups`, `windows` and `webNavigation` the worker uses. */
+/** The parts of `chrome.tabs`, `tabGroups`, `windows`, `webNavigation` and `action` the worker uses. */
 export interface Tabs {
   get(tabId: number): Promise<TabInfo>;
   /** The active tab of a window, for a chat's first browser call (278 D1). */
@@ -114,6 +114,10 @@ export interface Tabs {
   onCommitted(listener: (commit: Commit) => void): () => void;
   /** Main-frame navigation errors only, with Chrome's text, like `net::ERR_NAME_NOT_RESOLVED`. */
   onNavigationError(listener: (failure: { tabId: number; error: string }) => void): () => void;
+  /** A tab closed. */
+  onRemoved(listener: (tabId: number) => void): () => void;
+  /** Sets one tab's toolbar badge text; empty clears it. */
+  badge(tabId: number, text: string): Promise<void>;
 }
 
 /** A ref's frame and what it needs before acting. */
@@ -278,4 +282,12 @@ export interface Page {
   ): Promise<{ tools: PageTool[]; more: number }>;
   webmcpCall(tabId: number, input: WebmcpCall): Promise<PageToolResult>;
   webmcpCancel(tabId: number, token: string): Promise<void>;
+  /** Shows the handoff card in the top frame, or removes it with `null`. */
+  handoff(tabId: number, card: HandoffCard | null): Promise<void>;
+}
+
+/** What the page's handoff card shows: the agent's message, and the id Continue answers. */
+export interface HandoffCard {
+  id: string;
+  message: string;
 }

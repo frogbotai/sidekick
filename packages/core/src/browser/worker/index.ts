@@ -1,5 +1,7 @@
 export { chromeCdp, chromeImages, chromeTabs } from './chrome';
 export type { ActionOutput, BrowserEnv, ScreenMap } from './env';
+export type { HandoffAsk, HandoffEnd, Handoffs } from './handoff';
+export { HANDOFF_BADGE, HANDOFF_TIMEOUT } from './handoff';
 export type { ChromePageOptions } from './page';
 export { chromePage, frameOfRef } from './page';
 export type { RefStore } from './refs';
@@ -18,6 +20,7 @@ export type {
   Direction,
   Encoder,
   FrameInfo,
+  HandoffCard,
   Images,
   Page,
   Point,

@@ -3,6 +3,7 @@ import { createCaptures } from './capture';
 import { createDialogs } from './dialogs';
 import { createEmulation } from './emulation';
 import type { BrowserEnv } from './env';
+import { createHandoffs } from './handoff';
 import { createRecordings } from './recordings';
 import { createRuns } from './runs';
 import { createSessions } from './sessions';
@@ -42,6 +43,7 @@ export function createBrowserRuntime({
   const emulation = createEmulation({ cdp, sessions, runs, tabs });
   const recordings = createRecordings({ page, tabs });
   const documents = new Map<number, number>();
+  const handoffs = createHandoffs({ tabs, page });
   const env: BrowserEnv = {
     cdp,
     page,
@@ -57,6 +59,7 @@ export function createBrowserRuntime({
     videos,
     screens: new Map(),
     documents,
+    handoffs,
     mac,
   };
 
@@ -76,6 +79,7 @@ export function createBrowserRuntime({
       videos.dispose();
       sessions.dispose();
       runs.dispose();
+      handoffs.dispose();
       recordings.dispose();
     },
   };

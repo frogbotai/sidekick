@@ -2,6 +2,7 @@ import { contentProtocol, EVAL_TAG, type frameProtocol, type RecordedStep } from
 import { callWorker } from '../../rpc/content';
 import type { Handlers } from '../../rpc/define';
 import { ToolError, type ToolErrorCode, type ToolErrorDetail } from '../../tool/tool';
+import type { HandoffCard } from '../worker/types';
 import {
   assignFrames,
   type Identify,
@@ -65,10 +66,14 @@ function painted() {
 export interface ContentOptions {
   /** Whether this frame shows the indicator: the top frame only. */
   top?: boolean;
-  /** Asks the worker whether this tab is in a run and which frame this is, and tells it about a trusted Stop. */
+  /**
+   * Asks the worker whether this tab is in a run or waits on a handoff, and which frame this is,
+   * and tells it about a trusted Stop or Continue.
+   */
   worker?: {
-    visible: () => Promise<boolean>;
+    state: () => Promise<{ visible: boolean; handoff?: HandoffCard }>;
     stop: () => Promise<void>;
+    resolve: (id: string) => Promise<void>;
     identify: Identify;
     /** Whether the person's tab is being recorded, for a frame that loads mid-recording. */
     recording: () => Promise<boolean>;
@@ -77,8 +82,9 @@ export interface ContentOptions {
 }
 
 const chromeWorker: NonNullable<ContentOptions['worker']> = {
-  visible: async () => (await callWorker(contentProtocol, 'indicator.state', {})).visible,
+  state: () => callWorker(contentProtocol, 'indicator.state', {}),
   stop: async () => void (await callWorker(contentProtocol, 'indicator.stop', {})),
+  resolve: async (id) => void (await callWorker(contentProtocol, 'handoff.continue', { id })),
   identify: () => callWorker(contentProtocol, 'frame.identify', {}),
   recording: async () => (await callWorker(contentProtocol, 'recorder.state', {})).on,
   step: async (step) => void (await callWorker(contentProtocol, 'recorder.step', step)),
@@ -109,15 +115,22 @@ export function createContent({
   };
 
   const showIndicator = () => {
-    indicator ??= createIndicator(() => void worker.stop().catch(() => undefined));
+    indicator ??= createIndicator({
+      onStop: () => void worker.stop().catch(() => undefined),
+      onContinue: (id) => void worker.resolve(id).catch(() => undefined),
+    });
 
     return indicator;
   };
 
   if (top) {
     void worker
-      .visible()
-      .then((visible) => visible && showIndicator().set({ visible: true }))
+      .state()
+      .then(({ visible, handoff }) => {
+        if (visible) showIndicator().set({ visible: true });
+
+        if (handoff) showIndicator().handoff(handoff);
+      })
       .catch(() => undefined);
   }
 
@@ -223,6 +236,12 @@ export function createContent({
         return null;
       }),
     'page.stopAt': ({ point }) => guard(() => top && indicator?.covers(point) === true),
+    'page.handoff': ({ card }) =>
+      guard(() => {
+        if (top && (card || indicator)) showIndicator().handoff(card);
+
+        return null;
+      }),
     'page.hasText': ({ text }) =>
       guard(() => renderedText(document.body?.innerText ?? '').includes(renderedText(text))),
     'page.isVisible': ({ ref, doc: expected }) => guard(() => isShown(resolve(ref, expected))),

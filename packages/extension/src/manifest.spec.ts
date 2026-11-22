@@ -150,12 +150,12 @@ describe('built manifest', () => {
 });
 
 describe('built files', () => {
-  it('ships the content script as one classic script under 76 KB, raised from 64 KB for page_text, webmcp and the recorder', async () => {
+  it('ships the content script as one classic script under 80 KB, raised from 64 KB for page_text, webmcp, the recorder and the handoff card', async () => {
     const source = await readFile(path.join(outDir, 'frame.js'), 'utf8');
 
     expect(source).not.toMatch(/(^|[;\s}])import[\s{*("']/);
     expect(source).not.toMatch(/(^|[;\s}])export[\s{*]/);
-    expect(source.length).toBeLessThan(76_000);
+    expect(source.length).toBeLessThan(80_000);
   });
 
   it('leaves the e2e and live-test pages out of production', async () => {

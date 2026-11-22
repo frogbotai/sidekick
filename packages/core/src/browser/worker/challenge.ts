@@ -246,5 +246,5 @@ export function warning(
 
   const still = waitedMs > 0 ? `, still there after ${seconds} s` : '';
 
-  return `Blocked by a ${vendor} ${kind} check on ${origin}${still}. Don’t retry, reload or try to solve it: stop and ask the person to solve it in this tab, then continue.`;
+  return `Blocked by a ${vendor} ${kind} check on ${origin}${still}. Don’t retry, reload or try to solve it: stop and ask the person to solve it in this tab with the handoff tool, then continue.`;
 }

@@ -9,6 +9,11 @@ export const BATCH = 'batch';
 
 export const MAX_STEPS = 50;
 
+const ALONE = new Map([
+  [BATCH, 'A batch can’t contain batch; list its steps instead'],
+  ['handoff', 'A batch can’t contain handoff; call it on its own and decide on its result'],
+]);
+
 /** The text one batch returns, after browse's script results. */
 export const MAX_RESULT_CHARS = 100_000;
 
@@ -133,7 +138,7 @@ function cancelled() {
 export function batchTool({ tools, locks }: BatchToolOptions) {
   return defineTool({
     id: BATCH,
-    description: `Run up to ${MAX_STEPS} browser tool calls in order, in one call, for steps that need no decision in between, such as filling a form and pressing Enter. Each call is { tool, input }, with the input that tool takes on its own. Every step asks the permissions it would on its own. Every call is checked before any runs; the batch stops at the first step that fails, and its result lists the steps that ran, the failed step and how many were skipped. A batch can’t contain batch. ${UNTRUSTED}`,
+    description: `Run up to ${MAX_STEPS} browser tool calls in order, in one call, for steps that need no decision in between, such as filling a form and pressing Enter. Each call is { tool, input }, with the input that tool takes on its own. Every step asks the permissions it would on its own. Every call is checked before any runs; the batch stops at the first step that fails, and its result lists the steps that ran, the failed step and how many were skipped. A batch can’t contain batch or handoff. ${UNTRUSTED}`,
     input,
     output,
     permission: 'input',
@@ -141,10 +146,10 @@ export function batchTool({ tools, locks }: BatchToolOptions) {
       const ready: Exclude<ReturnType<typeof prepareCall>, ToolError>[] = [];
 
       for (const [index, call] of calls.entries()) {
-        const entry =
-          call.tool === BATCH
-            ? new ToolError('invalid_target', 'A batch can’t contain batch; list its steps instead')
-            : prepareCall(tools, call.tool, call.input);
+        const alone = ALONE.get(call.tool);
+        const entry = alone
+          ? new ToolError('invalid_target', alone)
+          : prepareCall(tools, call.tool, call.input);
 
         if (entry instanceof ToolError) {
           throw new ToolError(

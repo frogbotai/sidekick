@@ -1,13 +1,20 @@
 import {
-  type LinkListItem,
   toolCard,
   type ToolCardDescription,
   type ToolPartValue,
   type ToolRenderer,
 } from '@frogbotai/ui/chat/tools';
-import type { IconName } from '@frogbotai/ui/icons/registry';
-import type { ReactNode } from 'react';
 
+import {
+  ENDED,
+  HISTORY,
+  linkTo,
+  opening,
+  recording,
+  screenshotOf,
+  type ToolCall,
+  type ToolLine,
+} from './lines';
 import {
   clickVerb,
   count,
@@ -23,107 +30,6 @@ import {
   waitedFor,
   web,
 } from './text';
-
-/** One call's input, output and progress, as the status lines read them. */
-export interface ToolCall {
-  input: Record<string, unknown>;
-  output: Record<string, unknown>;
-  metadata: Record<string, unknown>;
-}
-
-/** What a card says for one call: the line while it runs, once done, and after "Failed:" or "Denied:". */
-export interface ToolLine {
-  icon: IconName;
-  running: string;
-  done: string;
-  failed: string;
-  subtitle?: string;
-  links?: readonly LinkListItem[];
-  body?: ReactNode;
-}
-
-function linkTo(url: string | undefined): readonly LinkListItem[] | undefined {
-  return web(url) ? [{ url: url as string }] : undefined;
-}
-
-function opening(url: string | undefined, link: string | undefined): ToolLine {
-  if (!url || !web(url)) {
-    return {
-      icon: 'browser',
-      running: 'Opening a new tab',
-      done: 'Opened a new tab',
-      failed: 'Open a new tab',
-    };
-  }
-
-  const host = hostOf(url);
-
-  return {
-    icon: 'browser',
-    running: `Opening ${host}`,
-    done: `Opened ${host}`,
-    failed: `Open ${host}`,
-    links: linkTo(link ?? url),
-  };
-}
-
-const ENDED: Record<string, string> = {
-  tab_closed: 'the tab closed',
-  detached: 'the debugger was detached',
-  max_duration: 'it reached its time limit',
-  run_stopped: 'the task ended',
-};
-
-const HISTORY: Record<string, ToolLine> = {
-  back: { icon: 'go-backward', running: 'Going back', done: 'Went back', failed: 'Go back' },
-  forward: {
-    icon: 'go-forward',
-    running: 'Going forward',
-    done: 'Went forward',
-    failed: 'Go forward',
-  },
-  reload: {
-    icon: 'refresh',
-    running: 'Refreshing',
-    done: 'Refreshed page',
-    failed: 'Refresh page',
-  },
-};
-
-function screenshotOf(output: Record<string, unknown>) {
-  const content = Array.isArray(output.content) ? output.content.map(record) : [];
-  const image = content.find((item) => item.type === 'image');
-  const data = text(image?.data);
-  const mime = text(image?.mimeType);
-
-  return data && mime ? `data:${mime};base64,${data}` : undefined;
-}
-
-function recording(icon: IconName, what: string, unit: string) {
-  return ({ input, output }: ToolCall): ToolLine => {
-    const entries = plural(count(output.entries), unit);
-
-    if (input.action === 'start') {
-      return {
-        icon,
-        running: `Starting to record ${what}`,
-        done: `Recording ${what}`,
-        failed: `Record ${what}`,
-      };
-    }
-
-    if (input.action === 'stop') {
-      return {
-        icon,
-        running: `Stopping recording ${what}`,
-        done: `Stopped recording ${what}, ${entries}`,
-        failed: `Stop recording ${what}`,
-      };
-    }
-
-    return { icon, running: `Reading ${what}`, done: `Read ${entries}`, failed: `Read ${what}` };
-  };
-}
 
 function stepLabel(call: Record<string, unknown>, output: unknown, failed?: string) {
   const tool = text(call.tool) ?? 'step';
@@ -222,6 +128,22 @@ export const TOOL_LINES: Record<string, (call: ToolCall) => ToolLine> = {
       running: 'Reading page',
       done: title ? `Read ${short(title)}` : 'Read page',
       failed: 'Read page',
+    };
+  },
+  handoff: ({ input, output }) => {
+    const done =
+      output.status === 'resolved'
+        ? 'You continued'
+        : output.status === 'timeout'
+          ? 'Stopped waiting for you'
+          : 'Handoff cancelled';
+
+    return {
+      icon: 'user-shield',
+      running: 'Waiting for you',
+      done,
+      failed: 'Hand over the tab',
+      subtitle: text(input.message),
     };
   },
   page_text: ({ output }) => {

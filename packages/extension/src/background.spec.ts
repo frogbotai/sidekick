@@ -43,7 +43,7 @@ function start() {
       getTargets: () => Promise.resolve([]),
       detach: () => Promise.resolve(),
     },
-    tabs: { query },
+    tabs: { query, onRemoved: event() },
     webNavigation: {
       onCreatedNavigationTarget: event(),
       onCommitted: event(),
@@ -82,10 +82,10 @@ describe('background', () => {
     expect(setAccessLevel).toHaveBeenCalledWith({ accessLevel: 'TRUSTED_CONTEXTS' });
   });
 
-  it('registers the 30 browser tools and batch as built-ins', () => {
+  it('registers the 31 browser tools and batch as built-ins', () => {
     start();
 
-    expect(tools.list()).toHaveLength(31);
+    expect(tools.list()).toHaveLength(32);
     expect(tools.get('batch')?.permission).toBe('input');
     expect(tools.errors()).toEqual([]);
   });

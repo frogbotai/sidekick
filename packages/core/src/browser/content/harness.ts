@@ -34,10 +34,15 @@ export async function failure(promise: Promise<unknown>) {
 }
 
 /** One frame's content script over happy-dom, with a fake worker. */
-export function setup({ visible = false, recording = false } = {}) {
+export function setup({
+  visible = false,
+  recording = false,
+  handoff,
+}: { visible?: boolean; recording?: boolean; handoff?: { id: string; message: string } } = {}) {
   const worker = {
-    visible: vi.fn(() => Promise.resolve(visible)),
+    state: vi.fn(() => Promise.resolve({ visible, ...(handoff ? { handoff } : {}) })),
     stop: vi.fn(() => Promise.resolve()),
+    resolve: vi.fn((_id: string) => Promise.resolve()),
     identify: vi.fn(() => Promise.resolve({ frameId: 0, key: 'secret' })),
     recording: vi.fn(() => Promise.resolve(recording)),
     step: vi.fn((_step: RecordedStep) => Promise.resolve()),
@@ -46,7 +51,10 @@ export function setup({ visible = false, recording = false } = {}) {
   const { handlers, indicator, recorder } = createContent({ top: true, worker });
 
   cleanups.push(
-    () => indicator()?.set({ visible: false }),
+    () => {
+      indicator()?.handoff(null);
+      indicator()?.set({ visible: false });
+    },
     () => recorder.set(false),
   );
 
