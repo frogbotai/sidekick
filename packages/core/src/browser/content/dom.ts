@@ -386,3 +386,20 @@ export async function stable(read: () => string) {
     last = now;
   }
 }
+
+/** Playwright's visible: a non-empty box, not `visibility: hidden`, not inside `display: none`. */
+export function isShown(element: Element) {
+  const box = element.getBoundingClientRect();
+
+  if (box.width <= 0 || box.height <= 0) return false;
+
+  return (
+    typeof element.checkVisibility !== 'function' ||
+    element.checkVisibility({ visibilityProperty: true })
+  );
+}
+
+/** The page's rendered text with runs of whitespace as one space. */
+export function renderedText(text: string) {
+  return text.replace(/\s+/g, ' ').trim();
+}

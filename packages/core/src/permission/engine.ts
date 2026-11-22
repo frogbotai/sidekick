@@ -76,6 +76,7 @@ interface Waiting {
   ask: PermissionAsk;
   scope: PermissionScope;
   web: boolean;
+  step: number | undefined;
   resolve: () => void;
   reject: (error: Error) => void;
   detach: () => void;
@@ -109,7 +110,14 @@ export function createPermissionEngine(options: PermissionEngineOptions): Permis
   const once = new Map<string, Set<string>>();
   const stamped = new Map<string, number>();
 
-  const onceKey = (callID: string, action: string, site: string) => `${callID} ${action} ${site}`;
+  const onceKey = (
+    callID: string,
+    action: string,
+    site: string,
+    web: boolean,
+    step: number | undefined,
+  ) =>
+    `${callID} ${action} ${site}${step !== undefined && web && isSensitive(site) ? `#${step}` : ''}`;
 
   const stamp = (key: string) => {
     const at = now();
@@ -138,6 +146,7 @@ export function createPermissionEngine(options: PermissionEngineOptions): Permis
     action: PermissionAction,
     site: string,
     web: boolean,
+    step: number | undefined,
   ): Promise<Verdict> => {
     if (web) {
       const blocked = (await blockedSites.get()).find((entry) => coversSite(entry.site, site));
@@ -176,7 +185,7 @@ export function createPermissionEngine(options: PermissionEngineOptions): Permis
 
     if (action === 'tabs') return { effect: 'allow' };
 
-    if (once.get(scope.sessionID)?.has(onceKey(scope.callID, action, site))) {
+    if (once.get(scope.sessionID)?.has(onceKey(scope.callID, action, site, web, step))) {
       return { effect: 'allow' };
     }
 
@@ -208,7 +217,13 @@ export function createPermissionEngine(options: PermissionEngineOptions): Permis
     else entry.resolve();
   };
 
-  const wait = (scope: PermissionScope, ask: PermissionAsk, web: boolean, signal?: AbortSignal) =>
+  const wait = (
+    scope: PermissionScope,
+    ask: PermissionAsk,
+    web: boolean,
+    step: number | undefined,
+    signal?: AbortSignal,
+  ) =>
     new Promise<void>((resolve, reject) => {
       const cancelled = () => new ToolError('cancelled', 'The tool call was cancelled.');
 
@@ -224,6 +239,7 @@ export function createPermissionEngine(options: PermissionEngineOptions): Permis
         ask,
         scope,
         web,
+        step,
         resolve,
         reject,
         detach: () => signal?.removeEventListener('abort', onAbort),
@@ -242,7 +258,7 @@ export function createPermissionEngine(options: PermissionEngineOptions): Permis
       const checked = request.frameOrigin ?? request.resource;
       const site = siteOf(checked);
       const web = isWebOrigin(checked);
-      const verdict = await decide(scope, request.action, site, web);
+      const verdict = await decide(scope, request.action, site, web, request.step);
 
       if (verdict.effect === 'allow') return;
 
@@ -262,6 +278,7 @@ export function createPermissionEngine(options: PermissionEngineOptions): Permis
           always: verdict.always,
         },
         web,
+        request.step,
         signal,
       );
     },
@@ -287,7 +304,7 @@ export function createPermissionEngine(options: PermissionEngineOptions): Permis
       if (reply === 'once' || !ask.always) {
         const keys = once.get(ask.sessionID) ?? new Set();
 
-        keys.add(onceKey(ask.callID, ask.action, ask.site));
+        keys.add(onceKey(ask.callID, ask.action, ask.site, entry.web, entry.step));
         once.set(ask.sessionID, keys);
         settle(entry);
 
@@ -299,7 +316,13 @@ export function createPermissionEngine(options: PermissionEngineOptions): Permis
       settle(entry);
 
       for (const other of [...waiting.values()]) {
-        const verdict = await decide(other.scope, other.ask.action, other.ask.site, other.web);
+        const verdict = await decide(
+          other.scope,
+          other.ask.action,
+          other.ask.site,
+          other.web,
+          other.step,
+        );
 
         if (verdict.effect === 'allow') settle(other);
       }

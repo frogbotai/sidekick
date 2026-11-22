@@ -1,4 +1,4 @@
-import { readKey } from '../key.js';
+import { readKey, removeKey, writeKey } from '../key.js';
 import {
   AGENT_NAMES,
   type AgentLocation,
@@ -9,7 +9,8 @@ import {
   type Environment,
   SERVER,
 } from './agents.js';
-import { editConfig, type EditResult, readEntry } from './browse/edit.js';
+import { editConfig, type EditResult, readEntry, readValue } from './browse/edit.js';
+import type { Pairing } from './pair.js';
 import { agentFlags, agentPlan } from './plan.js';
 
 /** The subcommands of the helper's bin. */
@@ -27,6 +28,7 @@ export interface CommandIO {
     agents: readonly AgentLocation[],
     initial: AgentName[],
   ) => Promise<AgentName[] | undefined>;
+  pairing: Pairing;
 }
 
 const INSTALL = `${COMMAND.join(' ')} install`;
@@ -53,10 +55,74 @@ async function choose(args: readonly string[], agents: AgentLocation[], io: Comm
   return io.pick(agents, plan.selected);
 }
 
-async function pairingLine(io: CommandIO) {
-  if (await readKey(io.keyFile)) return 'Sidekick is paired on this computer.';
+const PENDING = `Pairing is pending: run \`${INSTALL}\` again to pair with Sidekick in Chrome.`;
 
-  return `Pairing is pending: run \`${INSTALL}\` again to pair with Sidekick in Chrome.`;
+const PENDING_REASONS = {
+  chrome: 'Couldn’t open Chrome.',
+  extension: 'Chrome opened, but Sidekick didn’t answer. Install or turn on Sidekick in Chrome.',
+  expired: 'The request wasn’t approved in time.',
+} as const;
+
+async function pairAgents(agents: readonly string[], io: CommandIO) {
+  if (await readKey(io.keyFile)) {
+    io.log(
+      `Sidekick is paired on this computer. If you revoked it in Sidekick’s settings, run \`${COMMAND.join(' ')} uninstall\`, then install again.`,
+    );
+
+    return;
+  }
+
+  const outcome = await io.pairing.pair(agents, io.log);
+
+  if ('key' in outcome) {
+    await writeKey(outcome.key, io.keyFile);
+    io.log(`✓ Paired with Sidekick in Chrome, as ${outcome.key.computer}. Key: ${io.keyFile}`);
+
+    return;
+  }
+
+  io.log(`${PENDING_REASONS[outcome.pending]} ${PENDING}`);
+}
+
+const HELPER = COMMAND[2];
+
+function usesKey(agent: AgentLocation) {
+  const state = readEntry(agent.entry);
+
+  if (state === 'owned') return true;
+
+  if (state !== 'other') return false;
+
+  const text = JSON.stringify(readValue(agent.entry)) ?? '';
+
+  return text.includes(HELPER) && !text.includes('SIDEKICK_TOKEN');
+}
+
+async function unpairAgents(io: CommandIO) {
+  const key = await readKey(io.keyFile);
+
+  if (!key) return;
+
+  const remaining = agentLocations(io.environment).filter(usesKey);
+
+  if (remaining.length) {
+    io.log(
+      `The pairing stays for ${remaining.map(({ label }) => label).join(', ')}: ${io.keyFile}`,
+    );
+
+    return;
+  }
+
+  if (await io.pairing.unpair(key, io.log)) {
+    await removeKey(io.keyFile);
+    io.log('✓ Revoked the pairing in Sidekick and removed its key.');
+
+    return;
+  }
+
+  io.log(
+    `Couldn’t reach Sidekick, so the pairing is still active: ${io.keyFile} keeps its key. Revoke it in Sidekick’s settings, under Connected agents.`,
+  );
 }
 
 async function install(args: readonly string[], io: CommandIO) {
@@ -81,6 +147,7 @@ async function install(args: readonly string[], io: CommandIO) {
 
   let failed = false;
   const added: string[] = [];
+  const ready: string[] = [];
 
   for (const agent of agents.filter(({ name }) => selected.includes(name))) {
     const { label, entry } = agent;
@@ -94,10 +161,12 @@ async function install(args: readonly string[], io: CommandIO) {
 
     if (outcome.result === 'added') {
       added.push(label);
+      ready.push(label);
       io.log(`✓ ${label}: added ${SERVER} to ${entry.file}`);
 
       if (outcome.backup) io.log(`  Backup of the original: ${outcome.backup}`);
     } else if (outcome.result === 'unchanged') {
+      ready.push(label);
       io.log(`✓ ${label}: already set up in ${entry.file}`);
     } else if (outcome.result === 'conflict') {
       io.log(`! ${label}: ${entry.file} already has its own "${SERVER}" entry, left as is`);
@@ -111,7 +180,7 @@ async function install(args: readonly string[], io: CommandIO) {
 
   if (added.length) io.log(`Restart ${added.join(', ')} to load Sidekick.`);
 
-  io.log(await pairingLine(io));
+  if (ready.length) await pairAgents(ready, io);
 
   return failed ? 1 : 0;
 }
@@ -147,8 +216,12 @@ async function uninstall(args: readonly string[], io: CommandIO) {
 
   if (!removed && !failed) io.log('Nothing to remove.');
 
-  if (await readKey(io.keyFile)) {
-    io.log(`The pairing is still active: ${io.keyFile} keeps its key.`);
+  if (failed) {
+    if (await readKey(io.keyFile)) {
+      io.log(`The pairing stays until uninstall succeeds: ${io.keyFile}`);
+    }
+  } else {
+    await unpairAgents(io);
   }
 
   return failed ? 1 : 0;
