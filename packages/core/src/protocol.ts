@@ -93,6 +93,23 @@ const scrollStart = z.object({
 
 const scrollEnd = z.object({ moved: z.number(), at_end: z.boolean() });
 
+const recordedStep = z.object({
+  kind: z.enum(['click', 'fill', 'check', 'select']),
+  frameUrl: z.string(),
+  role: z.string(),
+  name: z.string(),
+  nearby: z.string(),
+  selector: z.string(),
+  value: z.optional(z.string()),
+  masked: z.optional(z.string()),
+  redacted: z.optional(z.boolean()),
+  checked: z.optional(z.boolean()),
+  options: z.optional(z.array(z.string())),
+});
+
+/** One thing the person did while Sidekick recorded the tab, as the frame saw it. */
+export type RecordedStep = z.infer<typeof recordedStep>;
+
 const origins = z.array(z.string());
 
 const pageTool = z.object({
@@ -171,6 +188,20 @@ export const sidekickProtocol = defineProtocol({
       ]),
     },
     'mcp.disconnect': { input: z.object({ pairingID: id }), output: z.object({}) },
+    'mcp.pair': {
+      input: z.object({ hub: z.string(), pair: z.string(), computer: z.string() }),
+      output: z.union([
+        z.object({ paired: z.literal(true), name: z.string() }),
+        z.object({ paired: z.literal(false), reason: z.enum(['not_loopback', 'unreachable']) }),
+      ]),
+    },
+    'mcp.unpair': {
+      input: z.object({ hub: z.string(), token: z.string() }),
+      output: z.union([
+        z.object({ unpaired: z.literal(true) }),
+        z.object({ unpaired: z.literal(false), reason: z.enum(['not_loopback', 'unreachable']) }),
+      ]),
+    },
   },
   events: {
     'run.stopped': z.object({
@@ -301,10 +332,15 @@ export const frameProtocol = defineProtocol({
       output: outcome(z.array(z.string())),
     },
     'page.indicator': {
-      input: z.object({ visible: z.optional(z.boolean()), cursor: z.optional(point) }),
+      input: z.object({
+        visible: z.optional(z.boolean()),
+        cursor: z.optional(point),
+        hidden: z.optional(z.boolean()),
+      }),
       output: outcome(z.null()),
     },
     'page.stopAt': { input: z.object({ point }), output: outcome(z.boolean()) },
+    'page.record': { input: z.object({ on: z.boolean() }), output: outcome(z.null()) },
     'page.webmcpList': {
       input: z.object({ fromOrigins: origins }),
       output: outcome(z.object({ tools: z.array(pageTool), more: z.int().check(z.nonnegative()) })),
@@ -335,5 +371,7 @@ export const contentProtocol = defineProtocol({
     'indicator.state': { input: z.object({}), output: z.object({ visible: z.boolean() }) },
     'indicator.stop': { input: z.object({}), output: z.object({}) },
     'frame.identify': { input: z.object({}), output: z.object({ frameId, key: z.string() }) },
+    'recorder.state': { input: z.object({}), output: z.object({ on: z.boolean() }) },
+    'recorder.step': { input: recordedStep, output: z.object({}) },
   },
 });

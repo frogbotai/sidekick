@@ -3,12 +3,18 @@ import { z } from 'zod';
 
 import { tools } from '../../registry';
 import { createToolCaller } from '../../tool/bridge';
-import { defineTool, type ToolDefinition, UNTRUSTED } from '../../tool/tool';
-import { later } from './fakes';
+import { defineTool, type ToolDefinition, ToolError, UNTRUSTED } from '../../tool/tool';
+import { MAX_BASELINES } from './baselines';
+import { later, solid } from './fakes';
 import { drain, failure, setupBrowser } from './harness';
 import { MAX_CHARS_CAP } from './tools/read';
 
-const SAMPLES: Record<string, { input: Record<string, unknown>; resource: string }> = {
+type Setup = Awaited<ReturnType<typeof setupBrowser>>;
+
+const SAMPLES: Record<
+  string,
+  { input: Record<string, unknown>; resource: string; before?: (setup: Setup) => Promise<unknown> }
+> = {
   tabs_list: { input: {}, resource: '*' },
   tabs_open: { input: { url: 'new.test/a' }, resource: 'https://new.test' },
   tabs_switch: { input: { tab_id: 1 }, resource: 'https://example.com' },
@@ -17,8 +23,25 @@ const SAMPLES: Record<string, { input: Record<string, unknown>; resource: string
   snapshot: { input: { tab_id: 1 }, resource: 'https://example.com' },
   page_text: { input: { tab_id: 1 }, resource: 'https://example.com' },
   screenshot: { input: { tab_id: 1 }, resource: 'https://example.com' },
+  screenshot_diff: {
+    input: { tab_id: 1, baseline: 'before' },
+    resource: 'https://example.com',
+    before: ({ tool, ctx }) =>
+      drain(tool('screenshot').execute({ tab_id: 1, name: 'before' }, ctx)),
+  },
   scroll: { input: { tab_id: 1, direction: 'down' }, resource: 'https://example.com' },
   scroll_to: { input: { tab_id: 1, ref: 'f0e1' }, resource: 'https://example.com' },
+  record_start: { input: { tab_id: 1 }, resource: 'https://example.com' },
+  record_status: {
+    input: { tab_id: 1 },
+    resource: 'https://example.com',
+    before: ({ tool, ctx }) => drain(tool('record_start').execute({ tab_id: 1 }, ctx)),
+  },
+  record_stop: {
+    input: { tab_id: 1 },
+    resource: 'https://example.com',
+    before: ({ tool, ctx }) => drain(tool('record_start').execute({ tab_id: 1 }, ctx)),
+  },
   click: { input: { tab_id: 1, ref: 'f0e1' }, resource: 'https://example.com' },
   hover: { input: { tab_id: 1, ref: 'f0e1' }, resource: 'https://example.com' },
   fill: { input: { tab_id: 1, ref: 'f0e1', text: 'hi' }, resource: 'https://example.com' },
@@ -53,7 +76,7 @@ function bad(id: string, input: z.ZodType = z.object({})): ToolDefinition {
 }
 
 describe('browser tools in the tools registry', () => {
-  it('registers all 16, and sends a bad id or schema to errors()', async () => {
+  it('registers all 20, and sends a bad id or schema to errors()', async () => {
     const { runtime } = await setupBrowser();
 
     disposers.push(
@@ -74,8 +97,14 @@ describe('browser tools in the tools registry', () => {
 
   it.each(Object.entries(SAMPLES))(
     '%s asserts its action and resource before anything else',
-    async (id, { input, resource }) => {
-      const { tool, ctx, log } = await setupBrowser();
+    async (id, { input, resource, before }) => {
+      const setup = await setupBrowser();
+      const { tool, ctx, log } = setup;
+
+      await before?.(setup);
+      log.length = 0;
+      ctx.asserts.length = 0;
+
       const definition = tool(id);
       const result = await drain(definition.execute(definition.input.parse(input), ctx));
 
@@ -275,5 +304,188 @@ describe('snapshot limits (331 req. 5)', () => {
     const { output } = await drain(setup.tool('snapshot').execute({ tab_id: 1 }, setup.ctx));
 
     expect(output).toMatchObject({ url: 'https://example.com/after' });
+  });
+});
+
+describe('screenshot_diff against a named baseline (sidekick-19 req. 7, 8, 10)', () => {
+  async function diffed(setup: Setup, input: Record<string, unknown> = {}) {
+    const diff = setup.tool('screenshot_diff');
+
+    return drain(
+      diff.execute(diff.input.parse({ tab_id: 1, baseline: 'before', ...input }), setup.ctx),
+    );
+  }
+
+  async function baseline(setup: Setup, input: Record<string, unknown> = {}) {
+    await drain(
+      setup.tool('screenshot').execute({ tab_id: 1, name: 'before', ...input }, setup.ctx),
+    );
+  }
+
+  it('returns zero changed pixels and a gray PNG when nothing changed', async () => {
+    const setup = await setupBrowser();
+
+    await baseline(setup);
+
+    const result = await diffed(setup);
+
+    expect(result.output).toEqual({
+      url: 'https://example.com/',
+      width: 800,
+      height: 600,
+      changed_pixels: 0,
+      changed_share: 0,
+    });
+
+    expect(result.content?.[0]).toEqual({ type: 'text', text: UNTRUSTED });
+
+    expect(result.content?.[1]).toEqual({
+      type: 'file',
+      uri: `data:image/png;base64,${btoa('png 800x600')}`,
+      mime: 'image/png',
+      name: 'diff',
+    });
+
+    expect(setup.images.encoded[0]?.data.slice(0, 4)).not.toEqual(
+      new Uint8ClampedArray([255, 0, 0, 255]),
+    );
+  });
+
+  it('counts the pixels that changed since the baseline and marks them red', async () => {
+    const setup = await setupBrowser();
+
+    setup.images.paint = (index, size) => {
+      const image = solid(size, [255, 255, 255, 255]);
+
+      if (index === 1) {
+        for (let pixel = 0; pixel < 100; pixel++) image.data.set([0, 0, 0, 255], pixel * 4);
+      }
+
+      return image;
+    };
+
+    await baseline(setup);
+
+    const result = await diffed(setup);
+
+    expect(result.output).toMatchObject({ changed_pixels: 100, changed_share: 0.000208 });
+    expect([...(setup.images.encoded[0]?.data.slice(0, 4) ?? [])]).toEqual([255, 0, 0, 255]);
+  });
+
+  it('captures again with the baseline’s scale and element', async () => {
+    const setup = await setupBrowser();
+
+    await baseline(setup, { scale: 0.5, ref: 'f0e1' });
+    setup.cdp.sent.length = 0;
+
+    const result = await diffed(setup);
+    const clip = setup.cdp.sent.find(({ method }) => method === 'Page.captureScreenshot')?.params
+      .clip;
+
+    expect(clip).toMatchObject({ width: 100, height: 100, scale: 0.5 });
+    expect(result.output).toMatchObject({ width: 50, height: 50 });
+  });
+
+  it('refuses a capture of another size, telling the agent to keep the viewport', async () => {
+    const setup = await setupBrowser();
+
+    await baseline(setup);
+
+    setup.cdp.replies.set('Page.getLayoutMetrics', () => ({
+      cssVisualViewport: { pageX: 0, pageY: 0, clientWidth: 700, clientHeight: 600 },
+      visualViewport: { clientWidth: 700 },
+    }));
+
+    const error = await failure(diffed(setup));
+
+    expect(error).toMatchObject({
+      code: 'size_mismatch',
+      message: expect.stringContaining('baseline 800×600, now 700×600'),
+    });
+
+    expect(setup.images.encoded).toHaveLength(0);
+  });
+
+  it('says a missing baseline is gone and how to take it', async () => {
+    const setup = await setupBrowser();
+
+    const error = await failure(diffed(setup, { baseline: 'never' }));
+
+    expect(error).toMatchObject({
+      code: 'no_baseline',
+      message: expect.stringContaining('Take one with screenshot and name “never”'),
+    });
+  });
+
+  it('keeps only the newest baselines, replacing one taken again under its name', async () => {
+    const setup = await setupBrowser();
+
+    for (let index = 0; index <= MAX_BASELINES; index++) {
+      await baseline(setup, { name: `b${index}` });
+    }
+
+    expect(await failure(diffed(setup, { baseline: 'b0' }))).toMatchObject({ code: 'no_baseline' });
+
+    expect((await diffed(setup, { baseline: `b${MAX_BASELINES}` })).output).toMatchObject({
+      changed_pixels: 0,
+    });
+  });
+
+  it('reports a nonzero share when one pixel changed', async () => {
+    const setup = await setupBrowser();
+
+    setup.images.paint = (index, size) => {
+      const image = solid(size, [255, 255, 255, 255]);
+
+      if (index === 1) image.data.set([0, 0, 0, 255], 0);
+
+      return image;
+    };
+
+    await baseline(setup);
+
+    expect((await diffed(setup)).output).toMatchObject({
+      changed_pixels: 1,
+      changed_share: 0.00000208,
+    });
+  });
+
+  it.each([
+    ['refused for its size', true],
+    ['made', false],
+  ])(
+    'keeps stale_screenshot after a navigation and a diff %s (271 D2)',
+    async (outcome, resize) => {
+      const setup = await setupBrowser();
+
+      await baseline(setup, { scale: 0.5 });
+      setup.tabs.commit({ tabId: 1 });
+
+      if (resize) {
+        setup.cdp.replies.set('Page.getLayoutMetrics', () => ({
+          cssVisualViewport: { pageX: 0, pageY: 0, clientWidth: 700, clientHeight: 600 },
+          visualViewport: { clientWidth: 700 },
+        }));
+      }
+
+      const diff = await diffed(setup).then(
+        () => 'made',
+        (error: unknown) => (error instanceof ToolError ? error.code : String(error)),
+      );
+
+      expect(diff).toBe(outcome === 'made' ? 'made' : 'size_mismatch');
+
+      const click = setup.tool('click').execute({ tab_id: 1, x: 100, y: 50 }, setup.ctx);
+
+      expect(await failure(click)).toMatchObject({ code: 'stale_screenshot' });
+    },
+  );
+
+  it('refuses a threshold outside 0 to 1 at the schema', async () => {
+    const { tool } = await setupBrowser();
+
+    expect(
+      tool('screenshot_diff').input.safeParse({ tab_id: 1, baseline: 'a', threshold: 2 }).success,
+    ).toBe(false);
   });
 });

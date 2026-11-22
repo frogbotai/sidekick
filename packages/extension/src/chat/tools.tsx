@@ -94,6 +94,13 @@ function opening(url: string | undefined, link: string | undefined): ToolLine {
   };
 }
 
+const ENDED: Record<string, string> = {
+  tab_closed: 'the tab closed',
+  detached: 'the debugger was detached',
+  max_duration: 'it reached its time limit',
+  run_stopped: 'the task ended',
+};
+
 const HISTORY: Record<string, ToolLine> = {
   back: { icon: 'go-backward', running: 'Going back', done: 'Went back', failed: 'Go back' },
   forward: {
@@ -256,6 +263,61 @@ export const TOOL_LINES: Record<string, (call: ToolCall) => ToolLine> = {
       ...(src
         ? { body: <img className="sidekick-tool-image" src={src} alt="screenshot result" /> }
         : {}),
+    };
+  },
+  screenshot_diff: ({ input, output }) => {
+    const src = screenshotOf(output);
+    const baseline = text(input.baseline);
+    const since = baseline ? ` since “${short(baseline)}”` : '';
+    const changed = typeof output.changed_pixels === 'number' ? output.changed_pixels : undefined;
+
+    return {
+      icon: 'image',
+      running: 'Comparing screenshots',
+      done:
+        changed === undefined
+          ? 'Compared screenshots'
+          : changed === 0
+            ? `No change${since}`
+            : `${changed.toLocaleString('en-US')} pixel${changed === 1 ? '' : 's'} changed${since}`,
+      failed: 'Compare screenshots',
+      ...(src
+        ? { body: <img className="sidekick-tool-image" src={src} alt="screenshot diff" /> }
+        : {}),
+    };
+  },
+  record_start: () => ({
+    icon: 'video',
+    running: 'Starting a recording',
+    done: 'Recording the tab',
+    failed: 'Start a recording',
+  }),
+  record_status: ({ output }) => {
+    const seconds =
+      typeof output.duration_ms === 'number' ? Math.round(output.duration_ms / 1000) : undefined;
+
+    const ended = text(output.ended);
+
+    return {
+      icon: 'video',
+      running: 'Checking the recording',
+      done:
+        output.recording === true
+          ? `Recording${seconds === undefined ? '' : ` for ${seconds} s`}`
+          : ended
+            ? `Recording stopped: ${ENDED[ended] ?? ended}`
+            : 'Not recording',
+      failed: 'Check the recording',
+    };
+  },
+  record_stop: ({ output }) => {
+    const file = text(output.file);
+
+    return {
+      icon: 'download',
+      running: 'Saving the recording',
+      done: file ? `Saved ${file} to Downloads` : 'Saved the recording',
+      failed: 'Save the recording',
     };
   },
   scroll: ({ input, output }) => {

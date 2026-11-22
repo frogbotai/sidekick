@@ -6,6 +6,8 @@ import { BUILTIN_AGENTS } from '../agent/builtin';
 import {
   type FakeCdp,
   fakeCdp,
+  fakeEncoder,
+  fakeImages,
   fakePage,
   fakeTabs,
   later,
@@ -139,7 +141,14 @@ function boot(
 ): Boot {
   const log: Log = [];
   const cdp = fakeCdp(log);
-  const runtime = createBrowserRuntime({ cdp, page: fakePage(log, page), tabs, mac: false });
+  const runtime = createBrowserRuntime({
+    cdp,
+    page: fakePage(log, page),
+    tabs,
+    images: fakeImages(log),
+    encoder: fakeEncoder(log),
+    mac: false,
+  });
 
   const browser = createBrowserWorker(runtime);
   const registry = createRegistry<ToolDefinition>('tools');
@@ -173,6 +182,8 @@ function boot(
       'tab.ping': () => Promise.reject(new Error('unused')),
       'mcp.connect': () => Promise.reject(new Error('unused')),
       'mcp.disconnect': () => Promise.reject(new Error('unused')),
+      'mcp.pair': () => Promise.reject(new Error('unused')),
+      'mcp.unpair': () => Promise.reject(new Error('unused')),
       ...browser.handlers,
       ...bridge,
     },
