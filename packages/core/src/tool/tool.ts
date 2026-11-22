@@ -68,6 +68,8 @@ export interface ToolDefinition<I extends z.ZodType = z.ZodType, O extends z.Zod
 export const TOOL_ERROR_CODES = [
   'stale_ref',
   'stale_screenshot',
+  'no_baseline',
+  'size_mismatch',
   'navigated',
   'not_visible',
   'obscured',

@@ -49,6 +49,18 @@ export interface Capture extends Size {
   mime: string;
 }
 
+/** An image as 8-bit RGBA rows, as `ImageData` holds it. */
+export interface Rgba extends Size {
+  data: Uint8ClampedArray;
+}
+
+/** Captures to pixels and pixels to PNG: `createImageBitmap` and `OffscreenCanvas` in the worker. */
+export interface Images {
+  decode(capture: Capture): Promise<Rgba>;
+  /** The image as a base64 PNG. */
+  png(image: Rgba): Promise<string>;
+}
+
 /** A tab's main frame committed: a new document, or a same-document `#` or history step. */
 export interface Commit {
   tabId: number;
@@ -212,7 +224,11 @@ export interface Page {
     frameId: number,
     input: { reported: string[]; surplus: number },
   ): Promise<string[]>;
-  indicator(tabId: number, state: { visible?: boolean; cursor?: Point }): Promise<void>;
+  /** `hidden` keeps a shown indicator out of the next captures without restarting its fade-in. */
+  indicator(
+    tabId: number,
+    state: { visible?: boolean; cursor?: Point; hidden?: boolean },
+  ): Promise<void>;
   /** Whether a top-level viewport point is on Sidekick's Stop button. */
   stopAt(tabId: number, point: Point): Promise<boolean>;
   /** The WebMCP tools the top frame sees, cross-origin ones from `fromOrigins` included. */
