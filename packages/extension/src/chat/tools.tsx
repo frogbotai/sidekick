@@ -110,6 +110,13 @@ function opening(url: string | undefined, link: string | undefined): ToolLine {
   };
 }
 
+const ENDED: Record<string, string> = {
+  tab_closed: 'the tab closed',
+  detached: 'the debugger was detached',
+  max_duration: 'it reached its time limit',
+  run_stopped: 'the task ended',
+};
+
 const HISTORY: Record<string, ToolLine> = {
   back: { icon: 'go-backward', running: 'Going back', done: 'Went back', failed: 'Go back' },
   forward: {
@@ -149,6 +156,56 @@ function screenshotOf(output: Record<string, unknown>) {
   const mime = text(image?.mimeType);
 
   return data && mime ? `data:${mime};base64,${data}` : undefined;
+}
+
+function stepLabel(call: Record<string, unknown>, output: unknown, failed?: string) {
+  const tool = text(call.tool) ?? 'step';
+  const line = TOOL_LINES[tool];
+
+  if (!line) return failed ? `${tool}: ${failed}` : tool;
+
+  const status = line({ input: record(call.input), output: record(output), metadata: {} });
+
+  return failed ? `${status.failed}: ${failed}` : status.done;
+}
+
+function batchLine({ input, output, metadata }: ToolCall): ToolLine {
+  const calls = Array.isArray(input.calls) ? input.calls.map(record) : [];
+  const steps = Array.isArray(output.steps) ? output.steps.map(record) : [];
+  const failed = record(output.failed);
+  const failedTool = text(failed.tool);
+  const total = plural(calls.length, 'step');
+  const step = text(metadata.step);
+  const current = text(metadata.tool);
+  const items = calls.map((call, index) => {
+    if (index < steps.length) return stepLabel(call, steps[index]?.output);
+
+    if (failedTool && index === steps.length) {
+      return stepLabel(call, {}, text(failed.message) ?? 'failed');
+    }
+
+    return `Skipped ${text(call.tool) ?? 'step'}`;
+  });
+
+  return {
+    icon: 'workflow',
+    running:
+      step && current ? `Running step ${step} of ${calls.length}: ${current}` : `Running ${total}`,
+    done: failedTool ? `Ran ${steps.length} of ${total}` : `Ran ${total}`,
+    failed: `Run ${total}`,
+    ...(failedTool ? { subtitle: `${failedTool} failed: ${text(failed.message) ?? ''}` } : {}),
+    ...(steps.length || failedTool
+      ? {
+          body: (
+            <ol className="sidekick-batch-steps">
+              {items.map((item, index) => (
+                <li key={index}>{item}</li>
+              ))}
+            </ol>
+          ),
+        }
+      : {}),
+  };
 }
 
 /** Each tool's status lines, from its input, output and the element it reported (315 D2). */
@@ -222,6 +279,61 @@ export const TOOL_LINES: Record<string, (call: ToolCall) => ToolLine> = {
       ...(src
         ? { body: <img className="sidekick-tool-image" src={src} alt="screenshot result" /> }
         : {}),
+    };
+  },
+  screenshot_diff: ({ input, output }) => {
+    const src = screenshotOf(output);
+    const baseline = text(input.baseline);
+    const since = baseline ? ` since “${short(baseline)}”` : '';
+    const changed = typeof output.changed_pixels === 'number' ? output.changed_pixels : undefined;
+
+    return {
+      icon: 'image',
+      running: 'Comparing screenshots',
+      done:
+        changed === undefined
+          ? 'Compared screenshots'
+          : changed === 0
+            ? `No change${since}`
+            : `${changed.toLocaleString('en-US')} pixel${changed === 1 ? '' : 's'} changed${since}`,
+      failed: 'Compare screenshots',
+      ...(src
+        ? { body: <img className="sidekick-tool-image" src={src} alt="screenshot diff" /> }
+        : {}),
+    };
+  },
+  record_start: () => ({
+    icon: 'video',
+    running: 'Starting a recording',
+    done: 'Recording the tab',
+    failed: 'Start a recording',
+  }),
+  record_status: ({ output }) => {
+    const seconds =
+      typeof output.duration_ms === 'number' ? Math.round(output.duration_ms / 1000) : undefined;
+
+    const ended = text(output.ended);
+
+    return {
+      icon: 'video',
+      running: 'Checking the recording',
+      done:
+        output.recording === true
+          ? `Recording${seconds === undefined ? '' : ` for ${seconds} s`}`
+          : ended
+            ? `Recording stopped: ${ENDED[ended] ?? ended}`
+            : 'Not recording',
+      failed: 'Check the recording',
+    };
+  },
+  record_stop: ({ output }) => {
+    const file = text(output.file);
+
+    return {
+      icon: 'download',
+      running: 'Saving the recording',
+      done: file ? `Saved ${file} to Downloads` : 'Saved the recording',
+      failed: 'Save the recording',
     };
   },
   scroll: ({ input, output }) => {
@@ -385,6 +497,7 @@ export const TOOL_LINES: Record<string, (call: ToolCall) => ToolLine> = {
       links: linkTo(url),
     };
   },
+  batch: batchLine,
 };
 
 function callOf(part: ToolPartValue): ToolCall {

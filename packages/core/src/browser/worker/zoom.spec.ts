@@ -202,6 +202,31 @@ describe('screenshot region and zoom (sidekick-28 req. 8–13)', () => {
     expect(description).toContain('scale up to 4');
     expect(description).toContain('only cropped, not sharpened');
   });
+
+  it('diffs a named region against the same page area after later screenshots move the map', async () => {
+    const { tool, ctx, cdp } = await setupBrowser();
+
+    await drain(tool('screenshot').execute({ tab_id: 1 }, ctx));
+
+    await drain(
+      tool('screenshot').execute(
+        { tab_id: 1, region: { x: 100, y: 50, width: 200, height: 100 }, name: 'before' },
+        ctx,
+      ),
+    );
+
+    await drain(tool('screenshot').execute({ tab_id: 1, scale: 0.5 }, ctx));
+
+    const diff = await drain(
+      tool('screenshot_diff').execute({ tab_id: 1, baseline: 'before' }, ctx),
+    );
+
+    const [named, diffed] = [clips(cdp.sent).at(-3), clips(cdp.sent).at(-1)];
+
+    expect(named).toMatchObject({ width: 200, height: 100 });
+    expect(diffed).toEqual(named);
+    expect(diff.output).toMatchObject({ width: 200, height: 100, changed_pixels: 0 });
+  });
 });
 
 describe('page_text (sidekick-28 req. 1–2, 6–7)', () => {

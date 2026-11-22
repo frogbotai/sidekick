@@ -154,6 +154,7 @@ describe('eval without a ref (sidekick-17 req. 15-17)', () => {
 
   it('fails at once with the dialog’s message when the script opens one, and dismisses it', async () => {
     const { tool, ctx, cdp } = await setupBrowser();
+    const idle = cdp.listeners();
 
     cdp.replies.set('Runtime.evaluate', () => {
       cdp.emit({
@@ -183,11 +184,12 @@ describe('eval without a ref (sidekick-17 req. 15-17)', () => {
       }),
     );
 
-    expect(cdp.listeners()).toBe(0);
+    expect(cdp.listeners()).toBe(idle);
   });
 
   it('stops the script after its first dialog and keeps dismissing dialogs until it ends', async () => {
     const { tool, ctx, cdp } = await setupBrowser();
+    const idle = cdp.listeners();
     const dialog = (message: string) =>
       cdp.emit({
         tabId: 1,
@@ -218,7 +220,7 @@ describe('eval without a ref (sidekick-17 req. 15-17)', () => {
       sentMethods(cdp.sent).filter((method) => method === 'Page.handleJavaScriptDialog'),
     ).toHaveLength(2);
 
-    expect(cdp.listeners()).toBe(0);
+    expect(cdp.listeners()).toBe(idle);
   });
 
   it('awaits a promise the script returns', async () => {
