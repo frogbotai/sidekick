@@ -25,6 +25,9 @@ const step = z.object({
   options: z.array(z.string()).optional(),
 });
 
+const DIALOG_NOTE =
+  'A browser dialog opened during the demonstration; the user answered it, and that part wasn’t recorded.';
+
 function lastUrl(steps: DemonstrationStep[], fallback: string) {
   return steps.findLast((entry) => entry.kind === 'navigation')?.url ?? fallback;
 }
@@ -35,7 +38,7 @@ export function demonstrateTools(env: BrowserEnv) {
       id: 'demonstrate',
       description: [
         'Ask the user to show you how to do something in the tab, when it is quicker for them to do it once than to describe it. The tab comes to the front with a card showing your message, a line saying their clicks and typing are recorded, and a Continue button, and this call waits until they click Continue.',
-        'It returns the steps they took (clicks, typing, checks, selects, chosen files and new pages) and a numbered summary. Passwords and codes come back as redacted and personal details (name, address, email, phone) as masked, so ask the user for those values when you repeat the flow. Browser dialogs are not recorded.',
+        'It returns the steps they took (clicks, typing, checks, selects, chosen files and new pages) and a numbered summary. Passwords and codes come back as redacted and personal details (name, address, email, phone) as masked, so ask the user for those values when you repeat the flow. A browser dialog the user answers is not a step; the summary notes one when Sidekick saw it.',
         'To repeat it, take a new snapshot and match each step by role and name, using nearby text and then the selector only to break ties. timeout: ask in chat before asking again. cancelled: the run was stopped or the tab closed.',
       ].join(' '),
       input: z.object({
@@ -75,6 +78,10 @@ export function demonstrateTools(env: BrowserEnv) {
         if (!env.runs.owns(run, tab)) throw notInGroup(tab_id);
 
         const recording = await env.recordings.start(tab_id);
+        const dialog = env.dialogs.opened(tab_id);
+        let dialogs = false;
+
+        void dialog.promise.then(() => (dialogs = true));
 
         const ended = env.handoffs.wait({
           tabId: tab_id,
@@ -89,6 +96,11 @@ export function demonstrateTools(env: BrowserEnv) {
 
         const end = await ended;
         const steps = await env.recordings.stop(tab_id, recording);
+
+        dialog.stop();
+
+        const summary = summarize(steps) || 'The user did nothing that was recorded.';
+
         const now = await env.tabs.get(tab_id).catch(() => undefined);
 
         return {
@@ -97,7 +109,7 @@ export function demonstrateTools(env: BrowserEnv) {
             started_url: tab.url,
             ended_url: now?.url ?? lastUrl(steps, tab.url),
             steps,
-            summary: summarize(steps) || 'The user did nothing that was recorded.',
+            summary: dialogs ? `${summary}\n${DIALOG_NOTE}` : summary,
           },
         };
       },
