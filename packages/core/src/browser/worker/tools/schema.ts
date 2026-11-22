@@ -31,6 +31,19 @@ export const pointer = {
 
 export const modifiers = z.array(z.enum(MODIFIERS)).max(4).optional();
 
+export const challenge = z
+  .object({
+    vendor: z.string(),
+    kind: z.enum(['non-interactive', 'interactive', 'block']),
+    status: z.enum(['cleared', 'blocked']),
+    recommendation: z.enum(['continue', 'handoff', 'stop']),
+    message: z.string(),
+  })
+  .optional()
+  .describe(
+    'Only when the page is a captcha, bot check or block page. handoff: stop and ask the person to solve it in this tab. stop: the site refused the visit; don’t retry or reload. continue: a check cleared by itself.',
+  );
+
 export const action = z.object({
   url: z.string(),
   navigated: z
@@ -39,6 +52,7 @@ export const action = z.object({
       'navigate: a new page loaded (a reload counts). Other actions: the URL changed during the action.',
     ),
   settled: z.boolean().describe('The page went quiet before the time limit.'),
+  challenge,
 });
 
 export const tab = z.object({

@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>WebMCP</title>
+  </head>
+  <body>
+    <h1>WebMCP fixture</h1>
+    <iframe id="pay" title="Pay frame" width="420" height="160"></iframe>
+    <script>
+      document.modelContext = {
+        getTools: () =>
+          Promise.resolve([
+            { name: 'main_world', description: 'Seen only by the page', origin: location.origin },
+          ]),
+        executeTool: () => Promise.resolve('main world ran'),
+      };
+
+      document.getElementById('pay').src = `http://127.0.0.1:${location.port}/frame-inner.html`;
+    </script>
+  </body>
+</html>

@@ -14,6 +14,7 @@ import {
   registerBuiltinAgents,
   registerBuiltinCommands,
   registerBuiltinModes,
+  registerFindTool,
   registerSubagentTool,
   registerUserCommands,
   registerWorkerTools,
@@ -180,6 +181,7 @@ export async function startSessions(
   });
 
   registerSubagentTool({ engine: base, agents, models });
+  registerFindTool({ engine: base, agents, models });
 
   const endRun = (sessionID: string) =>
     worker.call('run.end', { sessionID, close: true }).catch(() => undefined);

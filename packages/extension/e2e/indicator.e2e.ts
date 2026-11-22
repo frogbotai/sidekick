@@ -2,6 +2,7 @@ import {
   expect,
   INDICATOR,
   isolatedWorld,
+  OVERLAY_OPACITY,
   refFor,
   type SidekickRun,
   type SnapshotOutput,
@@ -32,6 +33,8 @@ const RING = `(() => {
     },
   };
 })()`;
+
+const RAINBOW = /rgb\((102, 235, 150|120, 182, 252|203, 154, 254|245, 152, 162)\)/;
 
 interface Ring {
   animation: string;
@@ -64,7 +67,10 @@ for (const reducedMotion of ['no-preference', 'reduce'] as const) {
     const ring = (await evaluate(RING)) as Ring;
 
     expect(ring.gradient).toContain('conic-gradient');
+    expect(ring.gradient).toContain('rgb(58, 207, 106)');
+    expect(ring.gradient).not.toMatch(RAINBOW);
     expect(ring.filter).toContain('drop-shadow');
+    expect(ring.filter).toContain('rgba(58, 207, 106, 0.6)');
     expect(ring.tint).toBe('rgba(16, 24, 40, 0.25)');
     expect(ring.inset).toBe('6px');
     expect(ring.box).toMatchObject(ring.viewport);
@@ -77,12 +83,6 @@ for (const reducedMotion of ['no-preference', 'reduce'] as const) {
     }
   });
 }
-
-const OPACITY = `(() => {
-  const overlay = ${INDICATOR}?.querySelector('.overlay');
-
-  return overlay ? getComputedStyle(overlay).opacity : null;
-})()`;
 
 const WATCH = `(() => {
   const root = ${INDICATOR};
@@ -119,7 +119,7 @@ async function steadyAcrossScreenshots(
   evaluate: (expression: string) => Promise<unknown>,
   run: SidekickRun,
 ) {
-  await expect.poll(() => evaluate(OPACITY)).toBe('1');
+  await expect.poll(() => evaluate(OVERLAY_OPACITY)).toBe('1');
   await evaluate(WATCH);
   await run.call('screenshot');
   await run.call('screenshot');

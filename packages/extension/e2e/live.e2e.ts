@@ -1,5 +1,6 @@
-import type { Page } from '@playwright/test';
+import type { Page, Worker } from '@playwright/test';
 
+import { DARK_BACKGROUND, unreadableText } from './contrast';
 import { expect, liveBuild, test as base } from './fixtures';
 
 const test = base.extend({
@@ -36,6 +37,19 @@ async function clickStop(page: Page) {
   const { x, y } = result.value as { x: number; y: number };
 
   await page.mouse.click(x, y);
+}
+
+async function copyReport(panel: Page, worker: Worker) {
+  await panel.getByRole('button', { name: 'Copy results' }).click();
+
+  const stored = () =>
+    worker.evaluate(
+      async () => (await chrome.storage.local.get('liveReport')).liveReport as string,
+    );
+
+  await expect.poll(stored).toContain('When copied: ');
+
+  return stored();
 }
 
 test('the live runner runs every step against stand-in sites and reports them', async ({
@@ -77,11 +91,7 @@ test('the live runner runs every step against stand-in sites and reports them', 
 
   for (const no of await panel.getByRole('button', { name: 'No' }).all()) await no.click();
 
-  await panel.getByRole('button', { name: 'Copy results' }).click();
-
-  const report = await worker.evaluate(
-    async () => (await chrome.storage.local.get('liveReport')).liveReport as string,
-  );
+  const report = await copyReport(panel, worker);
 
   expect(report).toContain('## Live run (ticket 271');
   expect(report).not.toContain('(not settled)');
@@ -145,11 +155,7 @@ test('a rerun of only MDN, Lexical and ProseMirror passes and keeps the editors 
   await clickStop(front);
 
   await expect(panel.getByRole('heading', { name: 'Finished' })).toBeVisible({ timeout: 30_000 });
-  await panel.getByRole('button', { name: 'Copy results' }).click();
-
-  const report = await worker.evaluate(
-    async () => (await chrome.storage.local.get('liveReport')).liveReport as string,
-  );
+  const report = await copyReport(panel, worker);
 
   expect(report).toContain(
     'Sites: MDN (cross-origin live example), Lexical playground, ProseMirror demo.',
@@ -160,4 +166,24 @@ test('a rerun of only MDN, Lexical and ProseMirror passes and keeps the editors 
   );
 
   expect(report.split('\n').filter((line) => line.includes('| ❌ |'))).toEqual([]);
+});
+
+test('the live page uses FrogBot’s theme, light and dark, with green Run and dark ink', async ({
+  context,
+  extensionId,
+}) => {
+  const page = await context.newPage();
+  const run = page.getByRole('button', { name: 'Run all tests' });
+
+  await page.goto(`chrome-extension://${extensionId}/live.html`);
+  await expect(run).toBeVisible();
+  await expect(page.locator('body')).toHaveCSS('background-color', 'rgb(255, 255, 255)');
+  await expect(run).toHaveCSS('background-color', 'rgb(58, 207, 106)');
+  await expect(run).toHaveCSS('color', 'rgb(4, 33, 13)');
+  await expect.poll(() => unreadableText(page)).toEqual([]);
+
+  await page.emulateMedia({ colorScheme: 'dark' });
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
+  await expect(page.locator('body')).toHaveCSS('background-color', DARK_BACKGROUND);
+  await expect.poll(() => unreadableText(page)).toEqual([]);
 });

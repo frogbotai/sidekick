@@ -75,6 +75,23 @@ test('opens the side panel styled like FrogBot', async ({ openPanel }) => {
   await expect.poll(() => unreadableText(panel)).toEqual([]);
 });
 
+test('the connect page uses FrogBot’s theme, light and dark', async ({ context, extensionId }) => {
+  const page = await context.newPage();
+  const main = page.locator('main');
+
+  await page.goto(`chrome-extension://${extensionId}/connect.html`);
+  const heading = page.getByRole('heading', { name: 'Sidekick' });
+
+  await expect(heading).toBeVisible();
+  await expect(heading).toHaveCSS('font-size', '18px');
+  await expect(main).toHaveCSS('background-color', 'rgb(255, 255, 255)');
+  await expect.poll(() => unreadableText(page)).toEqual([]);
+
+  await page.emulateMedia({ colorScheme: 'dark' });
+  await expect(main).toHaveCSS('background-color', DARK_BACKGROUND);
+  await expect.poll(() => unreadableText(page)).toEqual([]);
+});
+
 test('follows the stored theme, live and before first render', async ({ openPanel }) => {
   const panel = await openPanel();
   const html = panel.locator('html');

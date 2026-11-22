@@ -16,6 +16,7 @@ import { createBrowserRuntime } from '../browser/worker/runtime';
 import { createBrowserWorker } from '../browser/worker/serve';
 import type { Page } from '../browser/worker/types';
 import { createForms } from '../form';
+import { listingOf } from '../mcp/server';
 import {
   createPermissionEngine,
   type PermissionEngine,
@@ -237,6 +238,15 @@ describe('the worker tool bridge', () => {
 
     expect(registry.errors()).toEqual([]);
     expect(WORKER_SOURCE).toBe('worker');
+  });
+
+  it('keeps webmcp offered as read but never read-only through the proxy', async () => {
+    boot();
+
+    const { tool } = await panel();
+
+    expect(listingOf(tool('webmcp'))).not.toHaveProperty('annotations');
+    expect(tool('webmcp').permission).toBe('read');
   });
 
   it('keeps a ToolError’s stale_ref code and detail through the proxy', async () => {
