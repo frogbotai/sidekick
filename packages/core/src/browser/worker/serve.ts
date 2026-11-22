@@ -22,6 +22,11 @@ export interface ClientRunCall {
   lastWindow?: () => Promise<number | undefined>;
 }
 
+export interface ClientGroup {
+  title: string;
+  tabs: { id: number; title: string; url: string }[];
+}
+
 export interface BrowserWorker {
   handlers: Pick<Handlers<SidekickMethods>, 'run.start' | 'run.stop' | 'run.end'>;
   /**
@@ -36,6 +41,8 @@ export interface BrowserWorker {
   clientRun: (call: ClientRunCall) => Promise<{ id: string }>;
   /** Stops a connection's run, when its socket closes. */
   endClient: (connectionID: string) => void;
+  /** A connection's tab group and its tabs while its run lasts, without starting one. */
+  clientGroup: (connectionID: string) => Promise<ClientGroup | null>;
   content: (sender: ContentSender) => Handlers<ContentMethods>;
   connect: (server: Server<typeof sidekickProtocol>) => void;
   dispose: () => void;
@@ -46,7 +53,7 @@ export interface BrowserWorker {
  * one run per chat, the indicator in each run's tabs, and the indicator's Stop.
  */
 export function createBrowserWorker({ env }: BrowserRuntime): BrowserWorker {
-  const { runs, tabs, page, sessions, recordings } = env;
+  const { runs, tabs, page, sessions, emulation, recordings } = env;
   const shown = new Map<string, Set<number>>();
   const hidden = new Set<string>();
   const bySession = new Map<string, string>();
@@ -150,9 +157,13 @@ export function createBrowserWorker({ env }: BrowserRuntime): BrowserWorker {
         if (close) {
           bySession.delete(sessionID);
           runs.stop(runId, 'user');
-        } else if (!hidden.has(runId)) {
-          hidden.add(runId);
-          showRun(runId, false);
+        } else {
+          void emulation.release(runId);
+
+          if (!hidden.has(runId)) {
+            hidden.add(runId);
+            showRun(runId, false);
+          }
         }
 
         return {};
@@ -200,6 +211,19 @@ export function createBrowserWorker({ env }: BrowserRuntime): BrowserWorker {
       byClient.delete(connectionID);
 
       if (runId) runs.stop(runId, 'user');
+    },
+    clientGroup: async (connectionID) => {
+      const runId = byClient.get(connectionID);
+      const run = runId === undefined ? undefined : runs.get(runId);
+
+      if (!run) return null;
+
+      const inGroup = await tabs.inGroup(run.groupId).catch(() => []);
+
+      return {
+        title: run.label,
+        tabs: inGroup.map(({ id, title, url }) => ({ id, title, url })),
+      };
     },
     content: ({ tabId, frameId }) => ({
       'frame.identify': () => ({ frameId, key: page.key }),

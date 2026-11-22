@@ -291,3 +291,25 @@ describe('the infobar’s Cancel (271 D2)', () => {
     expect(cdp.attaching).toEqual([1, 1]);
   });
 });
+
+describe('attach listeners (sidekick-17)', () => {
+  it('runs attach listeners before the first command, and a failing one never fails the attach', async () => {
+    const { runtime, cdp } = await setupBrowser();
+    const { sessions } = runtime.env;
+    const order: string[] = [];
+
+    sessions.onAttached(() => Promise.reject(new Error('gone')));
+
+    sessions.onAttached((tabId) => {
+      order.push(`attached ${tabId}`);
+
+      return Promise.resolve();
+    });
+
+    cdp.replies.set('DOM.enable', () => order.push('DOM.enable'));
+
+    await drain(sessions.send(1, 'DOM.enable', {}));
+
+    expect(order).toEqual(['attached 1', 'DOM.enable']);
+  });
+});

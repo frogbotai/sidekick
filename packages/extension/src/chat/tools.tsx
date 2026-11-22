@@ -8,7 +8,21 @@ import {
 import type { IconName } from '@frogbotai/ui/icons/registry';
 import type { ReactNode } from 'react';
 
-import { count, hostOf, joined, plural, record, short, text, web } from './text';
+import {
+  clickVerb,
+  count,
+  emulated,
+  hostOf,
+  joined,
+  plural,
+  record,
+  short,
+  tabTitle,
+  text,
+  uploaded,
+  waitedFor,
+  web,
+} from './text';
 
 /** One call's input, output and progress, as the status lines read them. */
 export interface ToolCall {
@@ -26,22 +40,6 @@ export interface ToolLine {
   subtitle?: string;
   links?: readonly LinkListItem[];
   body?: ReactNode;
-}
-
-function waitedFor(input: Record<string, unknown>, target: string | undefined) {
-  const quote = (value: unknown) => `“${short(text(value) ?? '')}”`;
-
-  if (text(input.text)) return quote(input.text);
-
-  if (text(input.text_gone)) return `${quote(input.text_gone)} to go away`;
-
-  if (text(input.url)) return `the URL to contain ${quote(input.url)}`;
-
-  if (text(input.ref)) {
-    return `${target ?? 'an element'} to ${input.state === 'hidden' ? 'hide' : 'show'}`;
-  }
-
-  return 'the page to load';
 }
 
 function linkTo(url: string | undefined): readonly LinkListItem[] | undefined {
@@ -91,22 +89,6 @@ const HISTORY: Record<string, ToolLine> = {
     failed: 'Refresh page',
   },
 };
-
-function clickVerb(input: Record<string, unknown>) {
-  if (input.button === 'right') return ['Right-clicking', 'Right-clicked', 'Right-click'];
-
-  if (input.count === 2) return ['Double-clicking', 'Double-clicked', 'Double-click'];
-
-  if (input.count === 3) return ['Triple-clicking', 'Triple-clicked', 'Triple-click'];
-
-  return ['Clicking', 'Clicked', 'Click'];
-}
-
-function tabTitle(output: Record<string, unknown>, tabId: unknown) {
-  const tabs = Array.isArray(output.tabs) ? output.tabs.map(record) : [];
-
-  return text(tabs.find((tab) => tab.tab_id === tabId)?.title);
-}
 
 function screenshotOf(output: Record<string, unknown>) {
   const content = Array.isArray(output.content) ? output.content.map(record) : [];
@@ -455,13 +437,7 @@ export const TOOL_LINES: Record<string, (call: ToolCall) => ToolLine> = {
     };
   },
   upload: ({ input, metadata }) => {
-    const names = (Array.isArray(input.files) ? input.files : []).flatMap((file) => {
-      const name = text(record(file).name) ?? text(record(file).attachment);
-
-      return name ? [name] : [];
-    });
-
-    const what = names.length === 1 ? `“${short(names[0] ?? '')}”` : plural(names.length, 'file');
+    const what = uploaded(input);
 
     return {
       icon: 'upload',
@@ -490,6 +466,23 @@ export const TOOL_LINES: Record<string, (call: ToolCall) => ToolLine> = {
     failed: 'Run a script',
     subtitle: text(metadata.target),
   }),
+  emulate: ({ input }) => {
+    const to = emulated(input);
+
+    return to
+      ? {
+          icon: 'resize',
+          running: `Switching to ${to}`,
+          done: `Switched to ${to}`,
+          failed: `Switch to ${to}`,
+        }
+      : {
+          icon: 'resize',
+          running: 'Resetting the tab’s look',
+          done: 'Reset the tab’s look',
+          failed: 'Reset the tab’s look',
+        };
+  },
   web_search: ({ input, output }) => {
     const query = `“${short(text(input.query) ?? '')}”`;
     const results = Array.isArray(output.results) ? output.results.map(record) : [];

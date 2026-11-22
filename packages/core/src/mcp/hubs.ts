@@ -8,6 +8,7 @@ import type { ToolDefinition } from '../tool/tool';
 import { pairHandlers } from './pair';
 import { findPairing } from './pairings';
 import { createMcpServer, KEEPALIVE } from './server';
+import { connectionTools } from './tools';
 import { isLoopbackHub, openSocket, type Socket, socketTransport } from './transport';
 
 const NAME_LENGTH = 32;
@@ -50,7 +51,7 @@ export type McpConnectResult = Awaited<ReturnType<McpHandlers['mcp.connect']>>;
 export interface McpHostOptions {
   tools: Pick<Registry<ToolDefinition>, 'list' | 'subscribe'>;
   caller: ToolCaller;
-  worker: Pick<BrowserWorker, 'clientRun' | 'endClient'>;
+  worker: Pick<BrowserWorker, 'clientRun' | 'endClient' | 'clientGroup'>;
   /** The last-focused normal window, where a connection's later runs open their tab. */
   lastWindow: () => Promise<number | undefined>;
   version: string;
@@ -132,6 +133,7 @@ export function createMcpHost(options: McpHostOptions): McpHost {
       version,
       connectionID: connection.id,
       client: { id: pairing.id, name: pairing.name },
+      extra: connectionTools({ connectionID: connection.id, pairing, worker, version }),
       run: async () => {
         const run = await worker.clientRun({
           connectionID: connection.id,

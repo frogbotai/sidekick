@@ -12,5 +12,7 @@ export {
 } from './pairings';
 export type { McpServerOptions } from './server';
 export { createMcpServer, KEEPALIVE, listingOf, MCP_AGENT, resultOf } from './server';
+export type { ConnectionToolsOptions } from './tools';
+export { connectionTools, READABLE_SETTINGS, WRITABLE_SETTINGS } from './tools';
 export type { Socket } from './transport';
 export { DIAL_TIMEOUT, isLoopbackHub, socketTransport } from './transport';
