@@ -16,7 +16,7 @@ export const NOT_CONNECTED =
 export const CONNECT_TIMEOUT = 30_000;
 
 export const NO_TOKEN =
-  'SIDEKICK_TOKEN isn’t set. In Sidekick’s settings, open Connected agents, add this app and run the command it shows.';
+  'Sidekick isn’t paired on this computer. Run `npx -y @frogbotai/sidekick-mcp install`, or add this app in Sidekick’s settings under Connected agents and run the command it shows.';
 
 export const NO_CONNECTION =
   'Sidekick didn’t connect. Check that Chrome is open with Sidekick installed, and that the command came from Sidekick’s settings (Connected agents); New command there replaces an old token.';
