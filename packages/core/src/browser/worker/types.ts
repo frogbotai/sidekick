@@ -133,6 +133,33 @@ export interface ScrollEnd {
   at_end: boolean;
 }
 
+/** One tool a page offers through WebMCP; every field is the page's own text. */
+export interface PageTool {
+  name: string;
+  title?: string;
+  description: string;
+  input_schema?: unknown;
+  annotations?: Record<string, boolean>;
+  /** The origin of the document that registered it. */
+  origin: string;
+  truncated?: boolean;
+}
+
+/** What a WebMCP call returned: the tool's text, or the message it failed with. */
+export interface PageToolResult {
+  result?: string;
+  truncated?: boolean;
+  error?: string;
+}
+
+export interface WebmcpCall {
+  token: string;
+  name: string;
+  origin: string;
+  input: Record<string, unknown>;
+  fromOrigins: string[];
+}
+
 export interface Snapshot {
   title: string;
   text: string;
@@ -190,4 +217,11 @@ export interface Page {
   stopAt(tabId: number, point: Point): Promise<boolean>;
   /** Turns the person's-steps recorder on or off in every frame of the tab. */
   record(tabId: number, on: boolean): Promise<void>;
+  /** The WebMCP tools the top frame sees, cross-origin ones from `fromOrigins` included. */
+  webmcpList(
+    tabId: number,
+    input: { fromOrigins: string[] },
+  ): Promise<{ tools: PageTool[]; more: number }>;
+  webmcpCall(tabId: number, input: WebmcpCall): Promise<PageToolResult>;
+  webmcpCancel(tabId: number, token: string): Promise<void>;
 }

@@ -222,6 +222,12 @@ export function fakePage(log: Log, overrides: Partial<Page> = {}): Page {
     indicator: later(() => undefined),
     stopAt: later(() => false),
     record: later(() => undefined),
+    webmcpList: later(() => ({
+      tools: [{ name: 'echo', description: 'Echoes', origin: 'https://example.com' }],
+      more: 0,
+    })),
+    webmcpCall: later(() => ({ result: 'echoed', truncated: false })),
+    webmcpCancel: later(() => undefined),
     ...overrides,
   };
 

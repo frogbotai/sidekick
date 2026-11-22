@@ -456,5 +456,10 @@ export function chromePage({ tabs, inject, refs = memoryRefStore() }: ChromePage
         ),
       );
     },
+    webmcpList: (tabId, input) => call(tabId, 0, 'page.webmcpList', input),
+    webmcpCall: (tabId, input) => call(tabId, 0, 'page.webmcpCall', input, { inject: false }),
+    webmcpCancel: async (tabId, token) => {
+      await call(tabId, 0, 'page.webmcpCancel', { token }, { inject: false });
+    },
   };
 }
