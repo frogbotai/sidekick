@@ -11,6 +11,7 @@ export type TestRequest =
   | { sidekickTest: 'start'; tabId: number; label: string }
   | { sidekickTest: 'stop'; runId: string }
   | { sidekickTest: 'runs' }
+  | { sidekickTest: 'detach'; tabId: number }
   | { sidekickTest: 'call'; runId: string; tool: string; input: unknown };
 
 export interface TestError {
@@ -81,6 +82,10 @@ async function answer({ env }: BrowserRuntime, request: TestRequest): Promise<Te
 
       case 'stop':
         env.runs.stop(request.runId, 'user');
+
+        return { ok: {} };
+      case 'detach':
+        await env.cdp.detach(request.tabId);
 
         return { ok: {} };
       case 'runs':

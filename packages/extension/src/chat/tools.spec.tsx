@@ -239,6 +239,13 @@ const CASES: [string, Done, string, string][] = [
   ],
   ['eval', { input: { script: 'document.title' } }, 'Running a script', 'Ran a script'],
   [
+    'emulate',
+    { input: { viewport: { width: 390, height: 844, mobile: true }, color_scheme: 'dark' } },
+    'Switching to 390×844 phone, dark mode',
+    'Switched to 390×844 phone, dark mode',
+  ],
+  ['emulate', { input: { reset: true } }, 'Resetting the tab’s look', 'Reset the tab’s look'],
+  [
     'drag',
     {
       input: { from: 'f0e1', to: 'f0e2' },
@@ -324,6 +331,7 @@ describe('tool cards', () => {
         'console_capture',
         'wait_for',
         'eval',
+        'emulate',
         'web_search',
         'webfetch',
         'batch',

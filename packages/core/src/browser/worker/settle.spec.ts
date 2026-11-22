@@ -16,6 +16,7 @@ function sessions(attached: boolean): Sessions {
     send: later(() => ({})),
     attached: () => attached,
     hold: () => () => undefined,
+    onAttached: () => () => undefined,
     onStripped: () => () => undefined,
     dispose: () => undefined,
   };

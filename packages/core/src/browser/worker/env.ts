@@ -7,6 +7,7 @@ import type { Captures } from './capture';
 import type { Challenge } from './challenge';
 import { detect } from './detect';
 import { dialogOpen, type Dialogs } from './dialogs';
+import type { Emulation } from './emulation';
 import type { Recordings } from './recordings';
 import type { Run, Runs } from './runs';
 import type { Sessions } from './sessions';
@@ -34,6 +35,7 @@ export interface BrowserEnv {
   dialogs: Dialogs;
   runs: Runs;
   captures: Captures;
+  emulation: Emulation;
   /** The person's demonstrations, one per tab (sidekick-21). */
   recordings: Recordings;
   /** Tab video recordings, one per tab (sidekick-19). */

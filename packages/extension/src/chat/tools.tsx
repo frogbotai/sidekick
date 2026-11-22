@@ -8,7 +8,7 @@ import {
 import type { IconName } from '@frogbotai/ui/icons/registry';
 import type { ReactNode } from 'react';
 
-import { count, hostOf, joined, plural, record, short, text, web } from './text';
+import { count, emulated, hostOf, joined, plural, record, short, text, web } from './text';
 
 /** One call's input, output and progress, as the status lines read them. */
 export interface ToolCall {
@@ -473,6 +473,23 @@ export const TOOL_LINES: Record<string, (call: ToolCall) => ToolLine> = {
     failed: 'Run a script',
     subtitle: text(metadata.target),
   }),
+  emulate: ({ input }) => {
+    const to = emulated(input);
+
+    return to
+      ? {
+          icon: 'resize',
+          running: `Switching to ${to}`,
+          done: `Switched to ${to}`,
+          failed: `Switch to ${to}`,
+        }
+      : {
+          icon: 'resize',
+          running: 'Resetting the tab’s look',
+          done: 'Reset the tab’s look',
+          failed: 'Reset the tab’s look',
+        };
+  },
   web_search: ({ input, output }) => {
     const query = `“${short(text(input.query) ?? '')}”`;
     const results = Array.isArray(output.results) ? output.results.map(record) : [];

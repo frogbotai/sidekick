@@ -29,6 +29,8 @@ export interface Sessions {
   attached(tabId: number): boolean;
   /** Keeps the tab's session from idle-detaching until the returned release is called. */
   hold(tabId: number): () => void;
+  /** Runs after each attach, before its first command; the attach waits for it. */
+  onAttached(listener: (tabId: number) => Promise<void>): () => void;
   onStripped(listener: (event: Stripped) => void): () => void;
   dispose(): void;
 }
@@ -103,6 +105,7 @@ export function createSessions({
   >();
 
   const strippedListeners = new Set<(event: Stripped) => void>();
+  const attachedListeners = new Set<(tabId: number) => Promise<void>>();
 
   const holds = new Map<number, Set<symbol>>();
 
@@ -168,6 +171,14 @@ export function createSessions({
     for (const method of ['Network.enable', 'Page.enable']) {
       await race(cdp.send(tabId, method, {}), NEVER, { ms: COMMAND_TIMEOUT_MS, what: method });
     }
+
+    await Promise.all(
+      [...attachedListeners].map((listener) =>
+        race(listener(tabId), NEVER, { ms: COMMAND_TIMEOUT_MS, what: 'Restoring the tab' }).catch(
+          () => undefined,
+        ),
+      ),
+    );
   };
 
   const ensure = async (tabId: number, signal = NEVER) => {
@@ -254,6 +265,11 @@ export function createSessions({
 
         touch(tabId);
       };
+    },
+    onAttached: (listener) => {
+      attachedListeners.add(listener);
+
+      return () => void attachedListeners.delete(listener);
     },
     onStripped: (listener) => {
       strippedListeners.add(listener);
