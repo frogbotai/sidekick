@@ -1,10 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { batchTool } from '../../tool/batch';
 import { createToolCaller } from '../../tool/bridge';
+import { createKeyedLock } from '../../tool/lock';
 import { ToolError } from '../../tool/tool';
 import { fakePage, fakeTabs, later, type Log } from './fakes';
 import { createHandoffs, HANDOFF_HEARTBEAT, HANDOFF_MISSES, HANDOFF_TIMEOUT } from './handoff';
-import { drain, OUTSIDE_TAB, setupBrowser, START_TAB } from './harness';
+import { callerOf, drain, OUTSIDE_TAB, setupBrowser, START_TAB } from './harness';
 import { createBrowserWorker } from './serve';
 import type { HandoffCard } from './types';
 
@@ -397,5 +399,72 @@ describe('Continue through the worker', () => {
     await expect(result).resolves.toEqual({ status: 'resolved' });
 
     expect(emitted.map(({ type }) => type)).toEqual(['handoff.asked', 'handoff.ended']);
+  });
+});
+
+describe('the independent review of PR #52', () => {
+  it('refuses handoff as a batch step, so no step acts on the tab after a timeout', async () => {
+    const setup = await setupBrowser();
+    const byId = new Map(setup.runtime.tools.map((tool) => [tool.id, tool]));
+    const batch = batchTool({ tools: { get: (id) => byId.get(id) }, locks: createKeyedLock() });
+    const calls = [
+      { tool: 'handoff', input: { tab_id: 1, message: 'Confirm the payment', timeout_ms: 1_000 } },
+      { tool: 'snapshot', input: { tab_id: 1 } },
+    ];
+
+    const error = await drain(batch.execute(batch.input.parse({ calls }), setup.ctx)).catch(
+      (thrown: unknown) => thrown,
+    );
+
+    expect(error).toMatchObject({ code: 'invalid_target' });
+    expect(setup.log).not.toContain('page.snapshot');
+    expect(setup.runtime.env.handoffs.pending(1)).toBeUndefined();
+  });
+
+  it('ends a wait_for that started before the handoff, instead of returning mid-handoff (req. 6)', async () => {
+    let signedIn = false;
+    const setup = await setupBrowser({ page: { hasText: later(() => signedIn) } });
+    const call = callerOf(setup);
+    const { handoffs } = setup.runtime.env;
+    const waited = call('wait_for', { tab_id: 1, text: 'Welcome back', timeout_ms: 30_000 });
+    let served: unknown;
+
+    void waited.then((outcome) => (served = outcome));
+    await vi.advanceTimersByTimeAsync(500);
+
+    void call('handoff', { tab_id: 1, message: 'Sign in' });
+    await vi.waitFor(() => expect(handoffs.pending(1)).toBeDefined());
+
+    signedIn = true;
+    await vi.advanceTimersByTimeAsync(5_000);
+
+    expect(handoffs.pending(1)).toBeDefined();
+    expect(served).toMatchObject({ error: { code: 'handed_off' } });
+  });
+
+  it('keeps waiting on a live tab the content script can’t reach, like a PDF (req. 3, 8)', async () => {
+    const log: Log = [];
+    const page = fakePage(log, {
+      handoff: () =>
+        Promise.reject(new Error('Could not establish connection. Receiving end does not exist.')),
+    });
+
+    const tabs = fakeTabs(log, [{ ...START_TAB, url: 'https://example.com/statement.pdf' }]);
+    const handoffs = createHandoffs({ tabs, page });
+    const result = handoffs.wait({
+      tabId: 1,
+      message: 'Download the statement, then Continue',
+      timeout: HANDOFF_TIMEOUT,
+      signal: new AbortController().signal,
+    });
+
+    let ended: unknown;
+
+    void result.then((end) => (ended = end));
+    await vi.advanceTimersByTimeAsync(HANDOFF_HEARTBEAT * 10);
+
+    expect(ended).toBeUndefined();
+    expect(handoffs.resolve(handoffs.pending(1)?.id ?? '')).toBe(true);
+    await expect(result).resolves.toEqual({ status: 'resolved' });
   });
 });
