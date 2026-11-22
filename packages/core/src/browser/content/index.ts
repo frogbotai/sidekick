@@ -19,6 +19,7 @@ import {
   selectContents,
   selectOptions,
 } from './fields';
+import { setFiles } from './files';
 import { frameSources, stripFrames } from './frames';
 import { createIndicator, type Indicator } from './indicator';
 import { probePage } from './probe';
@@ -191,6 +192,8 @@ export function createContent({
       guard(() => checkState(resolve(ref, expected), ref)),
     'page.selectOptions': ({ ref, doc: expected, values }) =>
       guard(() => selectOptions(resolve(ref, expected), ref, values)),
+    'page.setFiles': ({ ref, doc: expected, files }) =>
+      guard(() => setFiles(resolve(ref, expected), ref, files)),
     'page.scrollStart': ({ ref, doc: expected, point, direction, amount, children, key }) =>
       guard(async () => {
         if (children) await assignFrames(children, { key });

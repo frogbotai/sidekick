@@ -6,6 +6,7 @@ import type {
   CdpEvent,
   Commit,
   Encoder,
+  FileData,
   Images,
   Page,
   Rgba,
@@ -230,6 +231,7 @@ export function fakePage(log: Log, overrides: Partial<Page> = {}): Page {
     })),
     checkState: later(() => ({ role: 'checkbox', checked: false, disabled: false })),
     selectOptions: later((_tabId: number, _ref: string, values: string[]) => values),
+    setFiles: later((_tabId: number, _ref: string, files: FileData[]) => files.length),
     scrollStart: later(() => ({
       token: 't1',
       container: 'document',

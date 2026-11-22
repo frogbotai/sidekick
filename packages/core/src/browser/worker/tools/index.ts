@@ -8,6 +8,7 @@ import { pageTools } from './page';
 import { readTools } from './read';
 import { recordTools } from './record';
 import { tabTools } from './tabs';
+import { uploadTools } from './upload';
 import { webmcpTools } from './webmcp';
 
 export function browserTools(env: BrowserEnv): ToolDefinition[] {
@@ -17,6 +18,7 @@ export function browserTools(env: BrowserEnv): ToolDefinition[] {
     ...recordTools(env),
     ...inputTools(env),
     ...dialogTools(env),
+    ...uploadTools(env),
     ...captureTools(env),
     ...pageTools(env),
     ...emulateTools(env),

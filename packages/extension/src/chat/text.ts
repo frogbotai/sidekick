@@ -61,3 +61,49 @@ export function emulated(input: Record<string, unknown>) {
     .filter((part) => typeof part === 'string' && part)
     .join(', ');
 }
+
+/** What a `wait_for` call waits for, as a phrase like “Done” to go away. */
+export function waitedFor(input: Record<string, unknown>, target: string | undefined) {
+  const quote = (value: unknown) => `“${short(text(value) ?? '')}”`;
+
+  if (text(input.text)) return quote(input.text);
+
+  if (text(input.text_gone)) return `${quote(input.text_gone)} to go away`;
+
+  if (text(input.url)) return `the URL to contain ${quote(input.url)}`;
+
+  if (text(input.ref)) {
+    return `${target ?? 'an element'} to ${input.state === 'hidden' ? 'hide' : 'show'}`;
+  }
+
+  return 'the page to load';
+}
+
+/** The files an `upload` call sets, as “resume.pdf” or “2 files”. */
+export function uploaded(input: Record<string, unknown>) {
+  const names = (Array.isArray(input.files) ? input.files : []).flatMap((file) => {
+    const name = text(record(file).name) ?? text(record(file).attachment);
+
+    return name ? [name] : [];
+  });
+
+  return names.length === 1 ? `“${short(names[0] ?? '')}”` : plural(names.length, 'file');
+}
+
+/** The verb forms for a click, as running, done and failed. */
+export function clickVerb(input: Record<string, unknown>) {
+  if (input.button === 'right') return ['Right-clicking', 'Right-clicked', 'Right-click'];
+
+  if (input.count === 2) return ['Double-clicking', 'Double-clicked', 'Double-click'];
+
+  if (input.count === 3) return ['Triple-clicking', 'Triple-clicked', 'Triple-click'];
+
+  return ['Clicking', 'Clicked', 'Click'];
+}
+
+/** The title of the tab with `tabId` in a tabs listing. */
+export function tabTitle(output: Record<string, unknown>, tabId: unknown) {
+  const tabs = Array.isArray(output.tabs) ? output.tabs.map(record) : [];
+
+  return text(tabs.find((tab) => tab.tab_id === tabId)?.title);
+}

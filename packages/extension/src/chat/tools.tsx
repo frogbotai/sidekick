@@ -8,7 +8,21 @@ import {
 import type { IconName } from '@frogbotai/ui/icons/registry';
 import type { ReactNode } from 'react';
 
-import { count, emulated, hostOf, joined, plural, record, short, text, web } from './text';
+import {
+  clickVerb,
+  count,
+  emulated,
+  hostOf,
+  joined,
+  plural,
+  record,
+  short,
+  tabTitle,
+  text,
+  uploaded,
+  waitedFor,
+  web,
+} from './text';
 
 /** One call's input, output and progress, as the status lines read them. */
 export interface ToolCall {
@@ -26,22 +40,6 @@ export interface ToolLine {
   subtitle?: string;
   links?: readonly LinkListItem[];
   body?: ReactNode;
-}
-
-function waitedFor(input: Record<string, unknown>, target: string | undefined) {
-  const quote = (value: unknown) => `“${short(text(value) ?? '')}”`;
-
-  if (text(input.text)) return quote(input.text);
-
-  if (text(input.text_gone)) return `${quote(input.text_gone)} to go away`;
-
-  if (text(input.url)) return `the URL to contain ${quote(input.url)}`;
-
-  if (text(input.ref)) {
-    return `${target ?? 'an element'} to ${input.state === 'hidden' ? 'hide' : 'show'}`;
-  }
-
-  return 'the page to load';
 }
 
 function linkTo(url: string | undefined): readonly LinkListItem[] | undefined {
@@ -91,22 +89,6 @@ const HISTORY: Record<string, ToolLine> = {
     failed: 'Refresh page',
   },
 };
-
-function clickVerb(input: Record<string, unknown>) {
-  if (input.button === 'right') return ['Right-clicking', 'Right-clicked', 'Right-click'];
-
-  if (input.count === 2) return ['Double-clicking', 'Double-clicked', 'Double-click'];
-
-  if (input.count === 3) return ['Triple-clicking', 'Triple-clicked', 'Triple-click'];
-
-  return ['Clicking', 'Clicked', 'Click'];
-}
-
-function tabTitle(output: Record<string, unknown>, tabId: unknown) {
-  const tabs = Array.isArray(output.tabs) ? output.tabs.map(record) : [];
-
-  return text(tabs.find((tab) => tab.tab_id === tabId)?.title);
-}
 
 function screenshotOf(output: Record<string, unknown>) {
   const content = Array.isArray(output.content) ? output.content.map(record) : [];
@@ -452,6 +434,17 @@ export const TOOL_LINES: Record<string, (call: ToolCall) => ToolLine> = {
       running: 'Reading the dialog',
       done: message ? `Dialog “${short(message)}”` : 'No dialog open',
       failed: 'Read the dialog',
+    };
+  },
+  upload: ({ input, metadata }) => {
+    const what = uploaded(input);
+
+    return {
+      icon: 'upload',
+      running: `Attaching ${what}`,
+      done: `Attached ${what}`,
+      failed: `Attach ${what}`,
+      subtitle: text(metadata.target),
     };
   },
   network_capture: recording('activity', 'requests', 'request'),

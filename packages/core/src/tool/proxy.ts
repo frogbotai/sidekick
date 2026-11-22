@@ -5,7 +5,8 @@ import type { sidekickProtocol } from '../protocol';
 import type { Registry } from '../registry/registry';
 import type { WorkerClient } from '../rpc/client';
 import { RpcError } from '../rpc/wire';
-import { type ToolDefinition, ToolError } from './tool';
+import { type AttachmentLookup, withAttachments } from './attachment';
+import { type ToolContext, type ToolDefinition, ToolError } from './tool';
 
 /** The registry source worker tools register under, the way users' tools register under theirs. */
 export const WORKER_SOURCE = 'worker';
@@ -15,6 +16,8 @@ export type SidekickClient = Pick<WorkerClient<typeof sidekickProtocol>, 'call' 
 export interface WorkerToolOptions {
   /** The panel's window, where a chat's first browser call starts its run (278 D1). */
   windowId?: number;
+  /** Finds a chat's attached file by name, so an input can name one as `{ attachment }` instead of sending its bytes. */
+  attachment?: (filename: string, ctx: ToolContext) => ReturnType<AttachmentLookup>;
 }
 
 export const NOT_CONNECTED =
@@ -41,7 +44,7 @@ function listTools(client: SidekickClient) {
 function proxy(
   client: SidekickClient,
   info: Awaited<ReturnType<typeof listTools>>[number],
-  { windowId }: WorkerToolOptions,
+  { windowId, attachment }: WorkerToolOptions,
 ): ToolDefinition {
   return {
     id: info.id,
@@ -62,6 +65,10 @@ function proxy(
       });
 
       try {
+        const sent = attachment
+          ? await withAttachments(input, (filename) => attachment(filename, ctx))
+          : input;
+
         const reply = await client.call(
           'tool.call',
           {
@@ -70,7 +77,7 @@ function proxy(
             callID: ctx.callID,
             agent: ctx.agent,
             tool: info.id,
-            input,
+            input: sent,
             ...(windowId === undefined ? {} : { windowId }),
             ...(ctx.session.rootID && ctx.session.rootID !== ctx.session.id
               ? { runSessionID: ctx.session.rootID }

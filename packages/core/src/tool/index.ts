@@ -1,3 +1,5 @@
+export type { AttachmentLookup } from './attachment';
+export { attachedFile, withAttachments } from './attachment';
 export type { BatchToolOptions } from './batch';
 export { batchTool } from './batch';
 export type {

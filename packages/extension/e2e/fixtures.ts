@@ -79,6 +79,7 @@ declare global {
     domainValue: () => string;
     nameservers: () => string[];
     answers: (boolean | string | null)[];
+    changes: number;
   }
 }
 

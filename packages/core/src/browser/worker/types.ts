@@ -201,6 +201,13 @@ export interface Snapshot {
   truncated: boolean;
 }
 
+/** A file to hand a page: its name, MIME type and base64 bytes. */
+export interface FileData {
+  name: string;
+  mimeType: string;
+  data: string;
+}
+
 /** The page's main text as markdown, cut at `max_chars`. */
 export interface PageText {
   title: string;
@@ -231,6 +238,8 @@ export interface Page {
   /** `invalid_target` for anything but a checkbox, radio, switch or checkable menu item. */
   checkState(tabId: number, ref: string): Promise<CheckState>;
   selectOptions(tabId: number, ref: string, values: string[]): Promise<string[]>;
+  /** Sets base64 files on an `<input type=file>` and fires `input` and `change`; gives how many it holds. */
+  setFiles(tabId: number, ref: string, files: FileData[]): Promise<number>;
   scrollStart(
     tabId: number,
     input: { ref?: string; direction: Direction; amount?: number },

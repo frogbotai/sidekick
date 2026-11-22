@@ -52,6 +52,14 @@ const SAMPLES: Record<
   press: { input: { tab_id: 1, key: 'Enter' }, resource: 'https://example.com' },
   drag: { input: { tab_id: 1, from: 'f0e1', to: 'f0e2' }, resource: 'https://example.com' },
   dialog: { input: { tab_id: 1, action: 'get' }, resource: 'https://example.com' },
+  upload: {
+    input: {
+      tab_id: 1,
+      ref: 'f0e1',
+      files: [{ name: 'a.txt', mimeType: 'text/plain', data: 'YQ==' }],
+    },
+    resource: 'https://example.com',
+  },
   network_capture: { input: { tab_id: 1, action: 'start' }, resource: 'https://example.com' },
   console_capture: { input: { tab_id: 1, action: 'start' }, resource: 'https://example.com' },
   wait_for: { input: { tab_id: 1, text: 'Done' }, resource: 'https://example.com' },
