@@ -5,6 +5,7 @@ import { inputTools } from './input';
 import { pageTools } from './page';
 import { readTools } from './read';
 import { tabTools } from './tabs';
+import { webmcpTools } from './webmcp';
 
 export function browserTools(env: BrowserEnv): ToolDefinition[] {
   return [
@@ -13,5 +14,6 @@ export function browserTools(env: BrowserEnv): ToolDefinition[] {
     ...inputTools(env),
     ...pageTools(env),
     ...emulateTools(env),
+    ...webmcpTools(env),
   ];
 }

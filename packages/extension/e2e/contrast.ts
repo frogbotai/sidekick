@@ -1,6 +1,6 @@
 import type { Page } from '@playwright/test';
 
-/** The dark background, `--ramp-grey-800`, Sidekick's blue-grey (ticket 423). */
+/** The dark background, FrogBot UI's `--background` in dark mode (`--neutral-950`). */
 export const DARK_BACKGROUND = 'rgb(9, 14, 27)';
 
 const MINIMUM_CONTRAST = 3;
