@@ -20,6 +20,7 @@ import { fingerprintOf, isRedacted } from './roles';
 import { frameBox, scrollBegin, scrollFallback, scrollFinish, scrollToElement } from './scroll';
 import { snapshotFrame } from './snapshot';
 import { readText } from './text';
+import { callTool, cancelTool, listTools } from './webmcp';
 
 export type PageHandlers = Omit<Handlers<(typeof frameProtocol)['methods']>, 'frame.ping'>;
 
@@ -179,6 +180,14 @@ export function createContent({
         return null;
       }),
     'page.stopAt': ({ point }) => guard(() => top && indicator?.covers(point) === true),
+    'page.webmcpList': ({ fromOrigins }) => guard(() => listTools(fromOrigins)),
+    'page.webmcpCall': (input) => guard(() => callTool(input)),
+    'page.webmcpCancel': ({ token }) =>
+      guard(() => {
+        cancelTool(token);
+
+        return null;
+      }),
   };
 
   return { handlers, indicator: () => indicator };
