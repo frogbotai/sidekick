@@ -2,16 +2,26 @@ import type { PermissionAction, ToolContext, ToolMetadata, ToolResult } from '..
 import { ToolError, UNTRUSTED } from '../../tool/tool';
 import { originOf } from '../../tool/url';
 import { checkpoint, race, stopped } from './abort';
+import { type Aftermath, diff, type Watch, watch } from './aftermath';
+import type { Captures } from './capture';
+import type { Challenge } from './challenge';
+import { detect } from './detect';
+import { dialogOpen, type Dialogs } from './dialogs';
+import type { Emulation } from './emulation';
 import type { Handoffs } from './handoff';
+import type { Recordings } from './recordings';
 import type { Run, Runs } from './runs';
 import type { Sessions } from './sessions';
-import type { Settler } from './settle';
-import type { Cdp, Page, Point, RefInfo, Size, TabInfo, Tabs } from './types';
+import type { SettleOptions, Settler } from './settle';
+import type { Cdp, Images, Page, Point, Rect, RefInfo, Size, TabInfo, Tabs } from './types';
+import type { Videos } from './videos';
 
 /** Screenshot pixels to viewport CSS pixels for one tab (271 D3). */
 export interface ScreenMap {
   offset: Point;
   scale: Point;
+  /** The screenshot's size in its own pixels, which a `region` must fall inside. */
+  image: Size;
   /** The tab's `documents` count when the capture started; x/y fail `stale_screenshot` once it moves on. */
   document: number;
 }
@@ -20,9 +30,17 @@ export interface BrowserEnv {
   cdp: Cdp;
   page: Page;
   tabs: Tabs;
+  images: Images;
   sessions: Sessions;
   settler: Settler;
+  dialogs: Dialogs;
   runs: Runs;
+  captures: Captures;
+  emulation: Emulation;
+  /** The person's demonstrations, one per tab (sidekick-21). */
+  recordings: Recordings;
+  /** Tab video recordings, one per tab (sidekick-19). */
+  videos: Videos;
   screens: Map<number, ScreenMap>;
   /** New-document commits per tab, so a call can tell its page was replaced. */
   documents: Map<number, number>;
@@ -72,13 +90,20 @@ export function runOf(env: BrowserEnv, ctx: ToolContext) {
   return { run, signal };
 }
 
+export interface EnterOptions {
+  /** The origin to ask about, when it isn't the tab's, as for `navigate`'s target. */
+  resource?: string;
+  /** Answers a dialog: runs while one is open, and skips the moved-site check a pending load would fail. */
+  dialog?: boolean;
+}
+
 /** Starts a tab call: waits out a handoff on the tab (sidekick-13 req. 6), then checks the run and permission. */
 export async function enter(
   env: BrowserEnv,
   ctx: ToolContext,
   tabId: number,
   action: PermissionAction,
-  resource?: string,
+  { resource, dialog = false }: EnterOptions = {},
 ): Promise<Act> {
   const { run, signal } = runOf(env, ctx);
   let tab = await getTab(env, tabId, signal);
@@ -91,19 +116,44 @@ export async function enter(
 
   if (!env.runs.owns(run, tab)) throw notInGroup(tabId);
 
+  const pending = env.dialogs.get(tabId);
+
+  if (pending && action !== 'tabs' && !dialog) throw dialogOpen(pending);
+
   const origin = originOf(tab.url);
 
   await race(ctx.permission.assert({ action, resource: resource ?? origin }), signal);
 
   const act: Act = { env, ctx, run, signal, tabId, tab, origin, action, metadata: {} };
 
-  await recheck(act);
+  if (!dialog) await recheck(act);
 
   return act;
 }
 
+/**
+ * Runs a page call that a dialog would block. It fails `dialog_open` at once when one is open, or
+ * as soon as one opens, so a blocked page never holds the tab's lock.
+ */
+export async function onPage<T>(act: Act, call: () => Promise<T>): Promise<T> {
+  const { dialogs } = act.env;
+  const pending = dialogs.get(act.tabId);
+
+  if (pending) throw dialogOpen(pending);
+
+  const opened = dialogs.opened(act.tabId);
+
+  try {
+    const blocked = opened.promise.then((dialog) => Promise.reject(dialogOpen(dialog)));
+
+    return await race(Promise.race([call(), blocked]), act.signal);
+  } finally {
+    opened.stop();
+  }
+}
+
 export async function inspect(act: Act, ref: string): Promise<RefInfo> {
-  const info = await race(act.env.page.inspect(act.tabId, ref), act.signal);
+  const info = await onPage(act, () => act.env.page.inspect(act.tabId, ref));
 
   if (info.frameOrigin !== act.origin) {
     await race(
@@ -148,7 +198,7 @@ export async function inspectTarget(act: Act, ref: string, key = 'target') {
 
 /** The focused field for `fill` without a ref: `not_editable` when nothing editable has focus. */
 export async function focusedField(act: Act) {
-  const field = await race(act.env.page.focused(act.tabId), act.signal);
+  const field = await onPage(act, () => act.env.page.focused(act.tabId));
 
   if (!field.editable) {
     throw new ToolError(
@@ -174,7 +224,12 @@ export async function focusedField(act: Act) {
   return field;
 }
 
+/** Before input: the tab is still in the group, on the same site, and no dialog blocks it. */
 export async function recheck(act: Act) {
+  const pending = act.env.dialogs.get(act.tabId);
+
+  if (pending) throw dialogOpen(pending);
+
   const tab = await getTab(act.env, act.tabId, act.signal);
 
   if (!act.env.runs.owns(act.run, tab)) throw notInGroup(act.tabId);
@@ -218,11 +273,7 @@ export function documentOf(env: BrowserEnv, tabId: number) {
   return env.documents.get(tabId) ?? 0;
 }
 
-export function fromScreenshot(env: BrowserEnv, tabId: number, point: Point): Point {
-  const map = env.screens.get(tabId);
-
-  if (!map) return point;
-
+function current(env: BrowserEnv, tabId: number, map: ScreenMap) {
   if (map.document < documentOf(env, tabId)) {
     throw new ToolError(
       'stale_screenshot',
@@ -230,28 +281,85 @@ export function fromScreenshot(env: BrowserEnv, tabId: number, point: Point): Po
     );
   }
 
+  return map;
+}
+
+export function fromScreenshot(env: BrowserEnv, tabId: number, point: Point): Point {
+  const found = env.screens.get(tabId);
+
+  if (!found) return point;
+
+  const map = current(env, tabId, found);
+  const { width, height } = map.image;
+
+  if (point.x < 0 || point.y < 0 || point.x > width || point.y > height) {
+    throw new ToolError(
+      'invalid_target',
+      `(${point.x}, ${point.y}) is outside your last screenshot, which is ${width}×${height}. Pick a point inside it.`,
+    );
+  }
+
   return { x: map.offset.x + point.x * map.scale.x, y: map.offset.y + point.y * map.scale.y };
+}
+
+/** A region of the tab's last screenshot, cut to the image, in viewport CSS pixels. */
+export function fromScreenshotRect(env: BrowserEnv, tabId: number, region: Rect): Rect {
+  const found = env.screens.get(tabId);
+
+  if (!found) {
+    throw new ToolError(
+      'stale_screenshot',
+      'A region is in pixels of your last screenshot. Take a screenshot first.',
+    );
+  }
+
+  const map = current(env, tabId, found);
+  const left = Math.max(0, region.x);
+  const top = Math.max(0, region.y);
+  const right = Math.min(map.image.width, region.x + region.width);
+  const bottom = Math.min(map.image.height, region.y + region.height);
+
+  if (region.width <= 0 || region.height <= 0 || right <= left || bottom <= top) {
+    throw new ToolError(
+      'invalid_target',
+      `The region is outside your last screenshot, which is ${map.image.width}×${map.image.height}. Pick an area inside it.`,
+    );
+  }
+
+  return {
+    x: map.offset.x + left * map.scale.x,
+    y: map.offset.y + top * map.scale.y,
+    width: (right - left) * map.scale.x,
+    height: (bottom - top) * map.scale.y,
+  };
 }
 
 export function screenMap(clip: Point & Size, image: Size, document: number): ScreenMap {
   return {
     offset: { x: clip.x, y: clip.y },
     scale: { x: clip.width / image.width, y: clip.height / image.height },
+    image: { width: image.width, height: image.height },
     document,
   };
 }
 
-/** Resolves a pointer target, by ref or screenshot pixels, through req. 13's checks up to the hit-test. */
+/**
+ * Resolves a pointer target, by ref or screenshot pixels, through req. 13's checks. The scroll
+ * into view and hit-test come from the returned step, run inside `settleAfter`, so a dialog a
+ * scroll handler raises ends the call too.
+ */
 export async function aim(
   act: Act,
   input: { ref?: string; x?: number; y?: number },
-): Promise<Point> {
-  if (input.ref !== undefined) {
-    await inspectTarget(act, input.ref);
+): Promise<(during: Act) => Promise<Point>> {
+  const { ref } = input;
+
+  if (ref !== undefined) {
+    await inspectTarget(act, ref);
     await recheck(act);
     await act.env.sessions.ensure(act.tabId, act.signal);
 
-    return scrollIntoView(act, input.ref);
+    return (during) => scrollIntoView(during, ref);
   }
 
   if (input.x === undefined || input.y === undefined) {
@@ -264,14 +372,18 @@ export async function aim(
   await recheck(act);
   await act.env.sessions.ensure(act.tabId, act.signal);
 
-  return offStop(act, fromScreenshot(act.env, act.tabId, { x: input.x, y: input.y }));
+  const point = await offStop(act, fromScreenshot(act.env, act.tabId, { x: input.x, y: input.y }));
+
+  return () => Promise.resolve(point);
 }
 
 /** Refuses a screenshot point on Sidekick's Stop button; a frame that can't answer has no Stop. */
 export async function offStop(act: Act, point: Point): Promise<Point> {
-  const onStop = await race(act.env.page.stopAt(act.tabId, point), act.signal).catch(
+  const onStop = await onPage(act, () => act.env.page.stopAt(act.tabId, point)).catch(
     (error: unknown) => {
-      if (act.signal.aborted) throw error;
+      if (act.signal.aborted || (error instanceof ToolError && error.code === 'dialog_open')) {
+        throw error;
+      }
 
       return false;
     },
@@ -291,16 +403,54 @@ export async function cursor(act: Act, point: Point) {
   await act.env.page.indicator(act.tabId, { cursor: point }).catch(() => undefined);
 }
 
-export interface ActionOutput {
+export interface ActionOutput extends Aftermath {
   url: string;
-  navigated: boolean;
   settled: boolean;
+  /** Only when the action ended on a captcha, bot check or block page. */
+  challenge?: Challenge;
 }
 
-export async function finish(act: Act, settled: boolean): Promise<ActionOutput> {
-  const tab = await getTab(act.env, act.tabId, act.signal);
+/**
+ * The action result: the tab's URL, what changed since `watched` began (nothing without it), and
+ * whether it ended on a wall (D2). A page a dialog blocks can't be probed, so it isn't.
+ */
+export async function finish(act: Act, settled: boolean, watched?: Watch): Promise<ActionOutput> {
+  const { env, tabId } = act;
+  const landed = await getTab(env, tabId, act.signal);
+  const blocked = env.dialogs.get(tabId);
+  const challenge = blocked ? undefined : await detect(env, tabId, landed.url, act.signal);
+  const tab = challenge ? await getTab(env, tabId, act.signal) : landed;
+  const dialog = env.dialogs.get(tabId);
+  const after = await diff({ tabs: env.tabs, watched, documents: documentOf(env, tabId), dialog });
+  const output = { url: tab.url, settled, ...after };
 
-  return { url: tab.url, navigated: tab.url !== act.tab.url, settled };
+  return challenge ? { ...output, challenge } : output;
+}
+
+/** Starts watching the tab, for `finish`; stop it when the call ends. */
+export function watchTab(act: Act) {
+  return watch(act.env.tabs, act.tabId, documentOf(act.env, act.tabId));
+}
+
+/**
+ * Runs `input` and waits for the page to settle, then gives the action result. A dialog ends the
+ * wait at once, and stops `input` before its next step, so it never acts on the dialog's page.
+ */
+export async function settleAfter(
+  act: Act,
+  input?: (act: Act) => Promise<unknown>,
+  options?: SettleOptions,
+) {
+  const watched = watchTab(act);
+
+  try {
+    const during = input && ((signal: AbortSignal) => input({ ...act, signal }));
+    const settled = await act.env.settler.settle(act.tabId, act.signal, during, options);
+
+    return await finish(act, settled, watched);
+  } finally {
+    watched.stop();
+  }
 }
 
 export function untrusted<O>(output: O, content: ToolResult['content'] = []): ToolResult<O> {

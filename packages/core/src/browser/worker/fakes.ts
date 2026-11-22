@@ -1,7 +1,24 @@
 import type { PermissionRequest, ToolContext, ToolMetadata } from '../../tool/tool';
-import type { Cdp, CdpEvent, Commit, Page, Size, TabInfo, Tabs } from './types';
+import { jpegSize } from './jpeg';
+import type {
+  Capture,
+  Cdp,
+  CdpEvent,
+  Commit,
+  Encoder,
+  FileData,
+  Images,
+  Page,
+  Rgba,
+  Size,
+  TabInfo,
+  Tabs,
+} from './types';
 
 export type Log = string[];
+
+/** The main frame's CDP id in `fakeCdp`'s `Page.getFrameTree`. */
+export const MAIN_FRAME = 'main-frame';
 
 export interface SentCommand {
   tabId: number;
@@ -78,8 +95,13 @@ export interface FakeCdp extends Cdp {
   leftover: number[];
   attachErrors: Error[];
   sendErrors: Map<string, Error[]>;
-  replies: Map<string, (params: Record<string, unknown>) => unknown>;
+  replies: Map<string, (params: Record<string, unknown>, tabId: number) => unknown>;
   emit: (event: CdpEvent) => void;
+  /** Raises a dialog on the tab, as `Page.javascriptDialogOpening`; answering it closes it. */
+  openDialog: (
+    tabId: number,
+    dialog: { type: string; message: string; defaultPrompt?: string },
+  ) => void;
   detachByChrome: (tabId: number, reason: string) => void;
   listeners: () => number;
   /** The screen's device pixel ratio: `Page.captureScreenshot` renders clip × scale × ratio. */
@@ -98,7 +120,16 @@ export function fakeCdp(log: Log): FakeCdp {
     leftover: [],
     attachErrors: [],
     sendErrors: new Map(),
-    replies: new Map<string, (params: Record<string, unknown>) => unknown>([
+    replies: new Map<string, (params: Record<string, unknown>, tabId: number) => unknown>([
+      [
+        'Page.handleJavaScriptDialog',
+        (_params, tabId) => {
+          events.emit({ tabId, method: 'Page.javascriptDialogClosed', params: {} });
+
+          return {};
+        },
+      ],
+      ['Page.getFrameTree', () => ({ frameTree: { frame: { id: MAIN_FRAME } } })],
       [
         'Page.getLayoutMetrics',
         () => ({
@@ -148,12 +179,14 @@ export function fakeCdp(log: Log): FakeCdp {
         throw new Error(`Debugger is not attached to the tab with id: ${tabId}.`);
       }
 
-      return fake.replies.get(method)?.(params) ?? {};
+      return fake.replies.get(method)?.(params, tabId) ?? {};
     }),
     attachedTabs: later(() => [...fake.leftover]),
     onEvent: events.add,
     onDetach: detaches.add,
     emit: events.emit,
+    openDialog: (tabId, params) =>
+      events.emit({ tabId, method: 'Page.javascriptDialogOpening', params }),
     detachByChrome: (tabId, reason) => {
       fake.sessions.delete(tabId);
       detaches.emit(tabId, reason);
@@ -174,6 +207,7 @@ export function fakePage(log: Log, overrides: Partial<Page> = {}): Page {
       redacted: 0,
       truncated: false,
     })),
+    text: later(() => ({ title: 'Example', text: '# Example\n\nHello.', truncated: false })),
     inspect: later(() => ({
       frameId: 0,
       frameOrigin: 'https://example.com',
@@ -197,6 +231,7 @@ export function fakePage(log: Log, overrides: Partial<Page> = {}): Page {
     })),
     checkState: later(() => ({ role: 'checkbox', checked: false, disabled: false })),
     selectOptions: later((_tabId: number, _ref: string, values: string[]) => values),
+    setFiles: later((_tabId: number, _ref: string, files: FileData[]) => files.length),
     scrollStart: later(() => ({
       token: 't1',
       container: 'document',
@@ -208,10 +243,29 @@ export function fakePage(log: Log, overrides: Partial<Page> = {}): Page {
     domQuiet: later(() => true),
     viewport: later(() => ({ width: 800, height: 600 })),
     iframes: later(() => []),
+    probe: later(() => ({
+      url: 'https://example.com/',
+      title: 'Example',
+      text: 'Example Domain',
+      textLength: 14,
+      scriptSrcs: [],
+      selectors: [],
+      visibleSelectors: [],
+    })),
     strip: later(() => []),
     indicator: later(() => undefined),
     stopAt: later(() => false),
     handoff: later(() => undefined),
+    hasText: later(() => true),
+    isVisible: later(() => true),
+    tag: later(() => undefined),
+    record: later(() => undefined),
+    webmcpList: later(() => ({
+      tools: [{ name: 'echo', description: 'Echoes', origin: 'https://example.com' }],
+      more: 0,
+    })),
+    webmcpCall: later(() => ({ result: 'echoed', truncated: false })),
+    webmcpCancel: later(() => undefined),
     ...overrides,
   };
 
@@ -348,6 +402,39 @@ export function fakeTabs(log: Log, initial: TabInfo[]): FakeTabs {
   return logged(log, 'tabs', fake);
 }
 
+export interface FakeImages extends Images {
+  /** The pixel colour of the next decoded capture, by decode count from 0; white unless set. */
+  paint: (index: number, size: Size) => Rgba;
+  /** Every image passed to `png`. */
+  encoded: Rgba[];
+}
+
+export function solid({ width, height }: Size, rgba: [number, number, number, number]): Rgba {
+  const data = new Uint8ClampedArray(width * height * 4);
+
+  for (let offset = 0; offset < data.length; offset += 4) data.set(rgba, offset);
+
+  return { width, height, data };
+}
+
+/** Decodes a fake JPEG to `paint`'s pixels at its real size; `png` records the image. */
+export function fakeImages(log: Log): FakeImages {
+  let decoded = 0;
+
+  const fake: FakeImages = {
+    paint: (_index, size) => solid(size, [255, 255, 255, 255]),
+    encoded: [],
+    decode: later((capture: Capture) => fake.paint(decoded++, jpegSize(capture.data) ?? capture)),
+    png: later((image: Rgba) => {
+      fake.encoded.push(image);
+
+      return btoa(`png ${image.width}x${image.height}`);
+    }),
+  };
+
+  return logged(log, 'images', fake);
+}
+
 export interface FakeContext extends ToolContext {
   asserts: PermissionRequest[];
   /** Every progress report, in order. */
@@ -382,4 +469,45 @@ export function fakeContext(log: Log, runId: string): FakeContext {
       }),
     },
   };
+}
+
+export interface FakeEncoder extends Encoder {
+  /** Frames per open recording, in the order they came. */
+  frames: Map<string, { data: string; timestamp: number; duration: number }[]>;
+  closed: { id: string; file: string }[];
+  cancelled: string[];
+}
+
+/** Keeps every frame in memory; `close` reports a 1 KB H.264 file at the first frame's size. */
+export function fakeEncoder(log: Log): FakeEncoder {
+  const fake: FakeEncoder = {
+    frames: new Map(),
+    closed: [],
+    cancelled: [],
+    open: later((id: string) => void fake.frames.set(id, [])),
+    frame: later((id: string, frame: { data: string; timestamp: number; duration: number }) => {
+      const frames = fake.frames.get(id);
+
+      if (!frames) throw new Error(`No recording ${id}`);
+
+      frames.push(frame);
+    }),
+    close: later((id: string, file: string) => {
+      const [first] = fake.frames.get(id) ?? [];
+
+      if (!first) throw new Error('No frames to save');
+
+      fake.closed.push({ id, file });
+
+      const size = jpegSize(first.data) ?? { width: 0, height: 0 };
+
+      return { file, codec: 'avc', bytes: 1024, ...size };
+    }),
+    cancel: later((id: string) => {
+      fake.cancelled.push(id);
+      fake.frames.delete(id);
+    }),
+  };
+
+  return logged(log, 'encoder', fake);
 }

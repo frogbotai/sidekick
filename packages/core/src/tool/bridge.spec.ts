@@ -6,6 +6,8 @@ import { BUILTIN_AGENTS } from '../agent/builtin';
 import {
   type FakeCdp,
   fakeCdp,
+  fakeEncoder,
+  fakeImages,
   fakePage,
   fakeTabs,
   later,
@@ -16,6 +18,7 @@ import { createBrowserRuntime } from '../browser/worker/runtime';
 import { createBrowserWorker } from '../browser/worker/serve';
 import type { Page } from '../browser/worker/types';
 import { createForms } from '../form';
+import { listingOf } from '../mcp/server';
 import {
   createPermissionEngine,
   type PermissionEngine,
@@ -138,7 +141,14 @@ function boot(
 ): Boot {
   const log: Log = [];
   const cdp = fakeCdp(log);
-  const runtime = createBrowserRuntime({ cdp, page: fakePage(log, page), tabs, mac: false });
+  const runtime = createBrowserRuntime({
+    cdp,
+    page: fakePage(log, page),
+    tabs,
+    images: fakeImages(log),
+    encoder: fakeEncoder(log),
+    mac: false,
+  });
 
   const browser = createBrowserWorker(runtime);
   const registry = createRegistry<ToolDefinition>('tools');
@@ -172,6 +182,8 @@ function boot(
       'tab.ping': () => Promise.reject(new Error('unused')),
       'mcp.connect': () => Promise.reject(new Error('unused')),
       'mcp.disconnect': () => Promise.reject(new Error('unused')),
+      'mcp.pair': () => Promise.reject(new Error('unused')),
+      'mcp.unpair': () => Promise.reject(new Error('unused')),
       ...browser.handlers,
       ...bridge,
     },
@@ -235,6 +247,15 @@ describe('the worker tool bridge', () => {
 
     expect(registry.errors()).toEqual([]);
     expect(WORKER_SOURCE).toBe('worker');
+  });
+
+  it('keeps webmcp offered as read but never read-only through the proxy', async () => {
+    boot();
+
+    const { tool } = await panel();
+
+    expect(listingOf(tool('webmcp'))).not.toHaveProperty('annotations');
+    expect(tool('webmcp').permission).toBe('read');
   });
 
   it('keeps a ToolError’s stale_ref code and detail through the proxy', async () => {
@@ -604,7 +625,15 @@ describe('one call at a time per tab (331 D1)', () => {
 
     const [navigated, snapped] = await settleAll([navigate, snapshot]);
 
-    expect(navigated.output).toEqual({ url, navigated: true, settled: true });
+    expect(navigated.output).toEqual({
+      url,
+      navigated: true,
+      settled: true,
+      urlChanged: false,
+      newTabs: [],
+      dialog: null,
+    });
+
     expect(snapped.output).toMatchObject({ url });
     expect(read).toEqual([url]);
   });
@@ -661,8 +690,23 @@ describe('one call at a time per tab (331 D1)', () => {
       tool('fill').execute({ tab_id: START_TAB.id, ref: 'f0e2', text: 'hi' }, context('c-fill')),
     ]);
 
-    expect(clicked.output).toEqual({ url: next, navigated: true, settled: true });
-    expect(filled.output).toEqual({ url: next, navigated: false, settled: true });
+    expect(clicked.output).toEqual({
+      url: next,
+      navigated: true,
+      settled: true,
+      urlChanged: false,
+      newTabs: [],
+      dialog: null,
+    });
+
+    expect(filled.output).toEqual({
+      url: next,
+      navigated: false,
+      settled: true,
+      urlChanged: false,
+      newTabs: [],
+      dialog: null,
+    });
   });
 
   it('drops a waiting call aborted before its turn, and a failing call frees the tab', async () => {

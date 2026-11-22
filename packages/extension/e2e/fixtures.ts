@@ -78,6 +78,8 @@ declare global {
     swaps: number;
     domainValue: () => string;
     nameservers: () => string[];
+    answers: (boolean | string | null)[];
+    changes: number;
   }
 }
 
@@ -373,7 +375,10 @@ export interface SnapshotOutput {
 export interface ActionOutput {
   url: string;
   navigated: boolean;
+  urlChanged: boolean;
   settled: boolean;
+  newTabs: { tab_id: number; url: string }[];
+  dialog: { type: string; message: string; defaultValue: string } | null;
 }
 
 /** Evaluates expressions in the extension content script's isolated world on `page`. */
@@ -415,5 +420,12 @@ export async function isolatedWorld(context: BrowserContext, page: Page, extensi
 export const INDICATOR = `[...document.documentElement.children]
   .map((element) => chrome.dom.openOrClosedShadowRoot(element))
   .find((root) => root?.querySelector('.stop'))`;
+
+/** An isolated-world expression for the indicator overlay's computed opacity, or `null` before it shows. */
+export const OVERLAY_OPACITY = `(() => {
+  const overlay = ${INDICATOR}?.querySelector('.overlay');
+
+  return overlay ? getComputedStyle(overlay).opacity : null;
+})()`;
 
 export { expect } from '@playwright/test';

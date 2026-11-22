@@ -1,4 +1,12 @@
 import type { Cache } from './cache.js';
+import {
+  disconnectedStatus,
+  type LastConnection,
+  OFFLINE_TOOLS,
+  offlineInitialize,
+  textResult,
+  withVersions,
+} from './status.js';
 
 /** The parts of a `ws` socket the relay uses. */
 export interface RelaySocket {
@@ -16,10 +24,18 @@ export const NOT_CONNECTED =
 export const CONNECT_TIMEOUT = 30_000;
 
 export const NO_TOKEN =
-  'SIDEKICK_TOKEN isn’t set. In Sidekick’s settings, open Connected agents, add this app and run the command it shows.';
+  'Sidekick isn’t paired on this computer. Run `npx -y @frogbotai/sidekick-mcp install`, or add this app in Sidekick’s settings under Connected agents and run the command it shows.';
 
 export const NO_CONNECTION =
   'Sidekick didn’t connect. Check that Chrome is open with Sidekick installed, and that the command came from Sidekick’s settings (Connected agents); New command there replaces an old token.';
+
+/** `status`'s `nextStep` when the last wake couldn't open Chrome. */
+export const NO_CHROME =
+  'Couldn’t open Chrome. Ask the person to open Chrome with Sidekick installed.';
+
+/** `status`'s `nextStep` with a token set and no wake yet. */
+export const NOT_WOKEN =
+  'Sidekick isn’t connected yet. Any browser tool call opens Chrome and connects it.';
 
 type Id = string | number;
 
@@ -40,6 +56,8 @@ export interface RelayOptions {
   wake: () => Promise<void>;
   hasToken: boolean;
   timeout?: number;
+  /** This package's version, which `status` reports. */
+  helperVersion?: string;
 }
 
 export interface Relay {
@@ -56,6 +74,9 @@ const isRequest = (message: Message) => message.id !== undefined && message.meth
 
 const isResponse = (message: Message) => message.id !== undefined && message.method === undefined;
 
+const callOf = (message: Message, name: string) =>
+  message.method === 'tools/call' && message.params?.name === name;
+
 function parse(data: unknown): Message | undefined {
   try {
     const value: unknown = JSON.parse(String(data));
@@ -70,7 +91,9 @@ function parse(data: unknown): Message | undefined {
  * Relays MCP between the client and Sidekick unchanged. It answers `initialize`, `tools/list` and
  * `ping` from the cache while no socket is live, wakes Sidekick on the first request that needs
  * the browser, replays the client's `initialize` on each new socket, and answers calls a dropped
- * socket cut off with `NOT_CONNECTED`.
+ * socket cut off with `NOT_CONNECTED`. While no socket is live it answers `status` itself, and fails
+ * `settings` at once, both with the next step for what it last saw; when Sidekick can't connect
+ * and nothing is cached, it answers `initialize` and `tools/list` itself so `status` stays listed.
  */
 export function createRelay({
   cache,
@@ -78,6 +101,7 @@ export function createRelay({
   wake,
   hasToken,
   timeout = CONNECT_TIMEOUT,
+  helperVersion = '0.0.0',
 }: RelayOptions): Relay {
   let socket: RelaySocket | undefined;
   let ready = false;
@@ -85,6 +109,8 @@ export function createRelay({
   let servedTools = false;
   let waiting: ReturnType<typeof setTimeout> | undefined;
   let next = 0;
+  let last: LastConnection;
+  let wokeWithoutToken = false;
   const queue: Message[] = [];
   const pending = new Map<Id, Message>();
   const own = new Map<Id, 'initialize' | 'tools'>();
@@ -125,25 +151,90 @@ export function createRelay({
   };
 
   const giveUp = (text: string) => {
-    for (const message of queue.splice(0)) if (isRequest(message)) fail(message, text);
+    for (const message of queue.splice(0)) {
+      if (!isRequest(message)) continue;
+
+      const result = offline(message, true);
+
+      if (result === undefined) fail(message, text);
+      else send({ jsonrpc: '2.0', id: message.id, result });
+    }
   };
 
   const ensure = () => {
     if (waiting || socket) return;
 
     if (!hasToken) {
-      void wake().catch(() => undefined);
+      if (!wokeWithoutToken) void wake().catch(() => undefined);
+
+      wokeWithoutToken = true;
       giveUp(NO_TOKEN);
 
       return;
     }
 
-    waiting = setTimeout(() => {
+    const timer = setTimeout(() => {
       waiting = undefined;
+      last = 'timed_out';
       giveUp(NO_CONNECTION);
     }, timeout);
 
-    void wake().catch(() => undefined);
+    waiting = timer;
+
+    void wake().catch(() => {
+      if (socket || waiting !== timer) return;
+
+      last = 'wake_failed';
+      clearTimeout(timer);
+      waiting = undefined;
+      giveUp(NO_CHROME);
+    });
+  };
+
+  const nextStep = () => {
+    if (!hasToken) return NO_TOKEN;
+
+    if (last === 'wake_failed') return NO_CHROME;
+
+    if (last === 'timed_out') return NO_CONNECTION;
+
+    return last === 'dropped' ? NOT_CONNECTED : NOT_WOKEN;
+  };
+
+  function offline(request: Message, unreachable: boolean): unknown {
+    if (callOf(request, 'status')) {
+      return textResult(disconnectedStatus({ hasToken, nextStep: nextStep(), helperVersion }));
+    }
+
+    if (callOf(request, 'settings')) return textResult({ nextStep: nextStep() }, true);
+
+    if (!unreachable) return undefined;
+
+    if (request.method === 'initialize') {
+      return offlineInitialize(request.params?.protocolVersion, helperVersion);
+    }
+
+    if (request.method === 'tools/list' && !request.params?.cursor) {
+      servedTools = true;
+
+      return { tools: OFFLINE_TOOLS };
+    }
+
+    return undefined;
+  }
+
+  const answerQueuedOffline = () => {
+    const rest = queue.splice(0).filter((message) => {
+      const result = isRequest(message) ? offline(message, false) : undefined;
+
+      if (result === undefined) return true;
+
+      send({ jsonrpc: '2.0', id: message.id, result });
+
+      return false;
+    });
+
+    queue.push(...rest);
   };
 
   const deliver = (message: Message) => {
@@ -227,6 +318,12 @@ export function createRelay({
       if (request?.method === 'tools/list' && !request.params?.cursor && message.result) {
         void cache.write({ tools: message.result });
       }
+
+      if (request && callOf(request, 'status') && message.result !== undefined) {
+        send({ ...message, result: withVersions(message.result, helperVersion) });
+
+        return;
+      }
     }
 
     send(message);
@@ -245,7 +342,9 @@ export function createRelay({
 
     socket = undefined;
     ready = false;
+    last = 'dropped';
     drop();
+    answerQueuedOffline();
 
     if (queue.some(isRequest)) ensure();
   };
@@ -255,6 +354,14 @@ export function createRelay({
       if (message.method === 'initialize') initialize = message;
 
       if (isRequest(message) && !socket) {
+        const result = offline(message, false);
+
+        if (result !== undefined) {
+          send({ jsonrpc: '2.0', id: message.id, result });
+
+          return;
+        }
+
         void fromCache(message).then((result) => {
           if (result === undefined || socket) deliver(message);
           else send({ jsonrpc: '2.0', id: message.id, result });

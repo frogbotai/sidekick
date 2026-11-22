@@ -49,8 +49,9 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-function dataURL(uri: string) {
-  const match = /^data:([^;,]+)?(;base64)?,(.*)$/s.exec(uri);
+/** A base64 `data:` URL's media type and data; `undefined` for anything else. */
+export function dataURL(uri: string) {
+  const match = /^data:([^;,]+)?(?:;[^;,=]+=[^;,]*)*(;base64)?,(.*)$/s.exec(uri);
 
   if (!match?.[2]) return undefined;
 
@@ -104,8 +105,10 @@ function demotions(messages: readonly SessionMessage[]): Demotions {
     for (const part of message.content) {
       if (part.type !== 'tool' || part.state.status !== 'completed') continue;
 
-      if (part.name === 'snapshot' || part.name === 'screenshot') {
-        found[part.name].push({ id: part.id, index });
+      if (part.name === 'snapshot') found.snapshot.push({ id: part.id, index });
+
+      if (part.name === 'screenshot' || part.name === 'screenshot_diff') {
+        found.screenshot.push({ id: part.id, index });
       }
     }
   });
@@ -149,6 +152,12 @@ function demotedOutput(tool: AssistantTool, output: unknown): ToolResultPart['ou
       url: String(fields.url ?? ''),
       width: Number(fields.width ?? 0),
       height: Number(fields.height ?? 0),
+      ...(tool.name === 'screenshot_diff'
+        ? {
+            changed_pixels: Number(fields.changed_pixels ?? 0),
+            changed_share: Number(fields.changed_share ?? 0),
+          }
+        : {}),
       screenshot: SCREENSHOT_REMOVED,
     },
   };

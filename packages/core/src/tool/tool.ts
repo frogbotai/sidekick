@@ -11,6 +11,7 @@ export const PERMISSION_ACTIONS = [
   'webfetch',
   'subagent',
   'handoff',
+  'settings',
 ] as const;
 
 export type PermissionAction = (typeof PERMISSION_ACTIONS)[number];
@@ -20,6 +21,8 @@ export interface PermissionRequest {
   action: PermissionAction;
   resource: string;
   frameOrigin?: string;
+  /** The batch step asking, so a once grant on a sensitive site covers that step alone. */
+  step?: number;
 }
 
 /** What a tool reports while it runs, kept on its tool part: `subagent` reports its child's `sessionID`. */
@@ -57,6 +60,8 @@ export interface ToolDefinition<I extends z.ZodType = z.ZodType, O extends z.Zod
   input: I;
   output: O;
   permission: PermissionAction;
+  /** The tool can also act, asking `input` itself as `webmcp` call does, so it is never listed as read-only. */
+  acts?: boolean;
   /** The description one agent sees, when it depends on the caller, as `subagent`'s list of agents. */
   describe?: (agent: AgentInfo) => string;
   /** The resource a call holds while it runs, as `tab:7`: calls on one key run one at a time, in order. */
@@ -67,6 +72,10 @@ export interface ToolDefinition<I extends z.ZodType = z.ZodType, O extends z.Zod
 export const TOOL_ERROR_CODES = [
   'stale_ref',
   'stale_screenshot',
+  'no_baseline',
+  'size_mismatch',
+  'recording_running',
+  'no_recording',
   'navigated',
   'not_visible',
   'obscured',
@@ -74,9 +83,12 @@ export const TOOL_ERROR_CODES = [
   'not_in_group',
   'unsupported_page',
   'invalid_target',
+  'invalid_input',
   'input_mismatch',
   'not_editable',
+  'dialog_open',
   'timeout',
+  'script_error',
   'stopped',
   'not_connected',
   'reconnect',

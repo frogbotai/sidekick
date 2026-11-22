@@ -4,6 +4,7 @@ import { callFrame } from '../../rpc/frames';
 import { RpcError } from '../../rpc/wire';
 import { ToolError, type ToolErrorCode, type ToolErrorDetail } from '../../tool/tool';
 import { removed } from '../content/refs';
+import { PROBE_CAP_MS } from './challenge';
 import { createRefCounter, memoryRefStore, type RefStore } from './refs';
 import { type FrameOutline, stitch } from './stitch';
 import type { Focused, Page, Point, ScrollStart, Tabs } from './types';
@@ -286,6 +287,21 @@ export function chromePage({ tabs, inject, refs = memoryRefStore() }: ChromePage
 
       return { title: first.title, ...stitch(outlines, start, max_chars) };
     },
+    text: (tabId, { ref, max_chars }) => {
+      if (ref === undefined) {
+        return call(tabId, 0, 'page.text', { max_chars }, { timeout: SNAPSHOT_TIMEOUT_MS });
+      }
+
+      const { frameId, input } = byRef(tabId, ref);
+
+      return call(
+        tabId,
+        frameId,
+        'page.text',
+        { ...input, max_chars },
+        { ref, timeout: SNAPSHOT_TIMEOUT_MS },
+      );
+    },
     inspect: async (tabId, ref) => {
       const { frameId, input } = byRef(tabId, ref);
       const info = await call(tabId, frameId, 'page.inspect', input, { ref });
@@ -319,10 +335,10 @@ export function chromePage({ tabs, inject, refs = memoryRefStore() }: ChromePage
         obscured_by: target.obscured_by ?? obscured,
       };
     },
-    focus: async (tabId, ref) => {
+    focus: async (tabId, ref, end) => {
       const { frameId, input } = byRef(tabId, ref);
 
-      await call(tabId, frameId, 'page.focus', input, { ref });
+      await call(tabId, frameId, 'page.focus', { ...input, end }, { ref });
     },
     selectContents: async (tabId, ref) => {
       const { frameId, input } = byRef(tabId, ref);
@@ -358,6 +374,11 @@ export function chromePage({ tabs, inject, refs = memoryRefStore() }: ChromePage
       const { frameId, input } = byRef(tabId, ref);
 
       return call(tabId, frameId, 'page.selectOptions', { ...input, values }, { ref });
+    },
+    setFiles: async (tabId, ref, files) => {
+      const { frameId, input } = byRef(tabId, ref);
+
+      return call(tabId, frameId, 'page.setFiles', { ...input, files }, { ref });
     },
     scrollStart: async (tabId, { ref, direction, amount }) => {
       if (ref !== undefined) {
@@ -424,6 +445,8 @@ export function chromePage({ tabs, inject, refs = memoryRefStore() }: ChromePage
 
       return found.flatMap(({ frameId, sources }) => (sources ? [{ frameId, sources }] : []));
     },
+    probe: (tabId, selectors) =>
+      call(tabId, 0, 'page.probe', { selectors }, { timeout: PROBE_CAP_MS }),
     strip: (tabId, frameId, input) => call(tabId, frameId, 'page.strip', input, { inject: false }),
     indicator: async (tabId, state) => {
       await call(tabId, 0, 'page.indicator', state);
@@ -431,6 +454,47 @@ export function chromePage({ tabs, inject, refs = memoryRefStore() }: ChromePage
     stopAt: (tabId, point) => call(tabId, 0, 'page.stopAt', { point }),
     handoff: async (tabId, card) => {
       await call(tabId, 0, 'page.handoff', { card });
+    },
+    hasText: async (tabId, text) => {
+      const frames = await tabs.frames(tabId).catch(() => [{ frameId: 0 }]);
+
+      const found = await Promise.all(
+        frames.map(({ frameId }) =>
+          call(tabId, frameId, 'page.hasText', { text }, { inject: frameId === 0 }).catch(
+            (error: unknown) => {
+              if (frameId === 0) throw error;
+
+              return false;
+            },
+          ),
+        ),
+      );
+
+      return found.includes(true);
+    },
+    isVisible: (tabId, ref) => {
+      const { frameId, input } = byRef(tabId, ref);
+
+      return call(tabId, frameId, 'page.isVisible', input, { ref });
+    },
+    tag: async (tabId, ref, token) => {
+      const { frameId, input } = byRef(tabId, ref);
+
+      await call(tabId, frameId, 'page.tag', { ...input, token }, { ref });
+    },
+    record: async (tabId, on) => {
+      const frames = await tabs.frames(tabId).catch(() => []);
+
+      await Promise.all(
+        frames.map(({ frameId }) =>
+          call(tabId, frameId, 'page.record', { on }, { inject: on }).catch(() => undefined),
+        ),
+      );
+    },
+    webmcpList: (tabId, input) => call(tabId, 0, 'page.webmcpList', input),
+    webmcpCall: (tabId, input) => call(tabId, 0, 'page.webmcpCall', input, { inject: false }),
+    webmcpCancel: async (tabId, token) => {
+      await call(tabId, 0, 'page.webmcpCancel', { token }, { inject: false });
     },
   };
 }

@@ -62,7 +62,10 @@ describe('check (329 D2 B)', () => {
       expect(result.output).toEqual({
         url: 'https://example.com/',
         navigated: false,
+        urlChanged: false,
         settled: true,
+        newTabs: [],
+        dialog: null,
         checked: true,
         changed: true,
       });

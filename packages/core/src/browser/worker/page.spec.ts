@@ -28,6 +28,8 @@ async function browserOverContent(html: string) {
       stop: () => Promise.resolve(),
       resolve: () => Promise.resolve(),
       identify: () => Promise.resolve({ frameId: 0, key: 'worker-key' }),
+      recording: () => Promise.resolve(false),
+      step: () => Promise.resolve(),
     },
   });
 

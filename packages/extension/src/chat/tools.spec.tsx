@@ -43,6 +43,12 @@ function titles(toolName: string, call: Done) {
   ];
 }
 
+function steps(body: unknown) {
+  const list = body as { props: { children: { props: { children: string } }[] } };
+
+  return list.props.children.map((item) => item.props.children);
+}
+
 const button = { target: 'button “Sign in”' };
 
 const CASES: [string, Done, string, string][] = [
@@ -101,7 +107,55 @@ const CASES: [string, Done, string, string][] = [
     'Reading page',
     'Read Rows',
   ],
+  [
+    'page_text',
+    { input: {}, output: { title: 'Rows', url: 'https://a.test/' } },
+    'Reading page text',
+    'Read the text of Rows',
+  ],
   ['screenshot', { input: {}, output: { width: 10 } }, 'Taking screenshot', 'Took a screenshot'],
+  [
+    'screenshot_diff',
+    { input: { baseline: 'before' }, output: { changed_pixels: 1200 } },
+    'Comparing screenshots',
+    '1,200 pixels changed since “before”',
+  ],
+  [
+    'screenshot_diff',
+    { input: { baseline: 'before' }, output: { changed_pixels: 0 } },
+    'Comparing screenshots',
+    'No change since “before”',
+  ],
+  [
+    'record_start',
+    { input: {}, output: { recording: true } },
+    'Starting a recording',
+    'Recording the tab',
+  ],
+  [
+    'record_status',
+    { input: {}, output: { recording: true, duration_ms: 12_400 } },
+    'Checking the recording',
+    'Recording for 12 s',
+  ],
+  [
+    'record_status',
+    { input: {}, output: { recording: false, ended: 'tab_closed' } },
+    'Checking the recording',
+    'Recording stopped: the tab closed',
+  ],
+  [
+    'record_stop',
+    { input: {}, output: { file: 'sidekick-recording-2026-11-18-03-00-00.mp4' } },
+    'Saving the recording',
+    'Saved sidekick-recording-2026-11-18-03-00-00.mp4 to Downloads',
+  ],
+  [
+    'screenshot',
+    { input: { region: { x: 0, y: 0, width: 10, height: 10 } }, output: { width: 10 } },
+    'Zooming in',
+    'Zoomed in',
+  ],
   [
     'scroll',
     { input: { direction: 'down' }, output: { at_end: true } },
@@ -177,6 +231,33 @@ const CASES: [string, Done, string, string][] = [
   ['select', { input: { values: ['red', 'blue'] } }, 'Choosing', 'Chose “red, blue”'],
   ['press', { input: { key: 'Enter' } }, 'Pressing Enter', 'Pressed Enter'],
   [
+    'type',
+    { input: { text: 'shoes', submit: true }, metadata: { target: 'textbox “Search”' } },
+    'Typing',
+    'Typed “shoes” and pressed Enter',
+  ],
+  ['wait_for', { input: { text: 'Done' } }, 'Waiting for “Done”', 'Waited for “Done”'],
+  [
+    'wait_for',
+    { input: { ref: 'f0e1', state: 'hidden' }, metadata: { target: 'progressbar' } },
+    'Waiting for progressbar to hide',
+    'Waited for progressbar to hide',
+  ],
+  [
+    'wait_for',
+    { input: { load: true } },
+    'Waiting for the page to load',
+    'Waited for the page to load',
+  ],
+  ['eval', { input: { script: 'document.title' } }, 'Running a script', 'Ran a script'],
+  [
+    'emulate',
+    { input: { viewport: { width: 390, height: 844, mobile: true }, color_scheme: 'dark' } },
+    'Switching to 390×844 phone, dark mode',
+    'Switched to 390×844 phone, dark mode',
+  ],
+  ['emulate', { input: { reset: true } }, 'Resetting the tab’s look', 'Reset the tab’s look'],
+  [
     'drag',
     {
       input: { from: 'f0e1', to: 'f0e2' },
@@ -184,6 +265,32 @@ const CASES: [string, Done, string, string][] = [
     },
     'Dragging',
     'Dragged listitem “A” to listitem “Done”',
+  ],
+  [
+    'dialog',
+    { input: { action: 'get' }, output: { dialog: { type: 'confirm', message: 'Delete it?' } } },
+    'Reading the dialog',
+    'Dialog “Delete it?”',
+  ],
+  [
+    'dialog',
+    { input: { action: 'get' }, output: { dialog: null } },
+    'Reading the dialog',
+    'No dialog open',
+  ],
+  ['dialog', { input: { action: 'accept' } }, 'Accepting the dialog', 'Accepted the dialog'],
+  ['dialog', { input: { action: 'dismiss' } }, 'Dismissing the dialog', 'Dismissed the dialog'],
+  [
+    'upload',
+    { input: { files: [{ name: 'resume.pdf', mimeType: 'application/pdf', data: 'AA==' }] } },
+    'Attaching “resume.pdf”',
+    'Attached “resume.pdf”',
+  ],
+  [
+    'upload',
+    { input: { files: [{ attachment: 'a.png' }, { attachment: 'b.png' }] } },
+    'Attaching 2 files',
+    'Attached 2 files',
   ],
   [
     'web_search',
@@ -197,6 +304,24 @@ const CASES: [string, Done, string, string][] = [
     'Fetching mdn.test',
     'Fetched mdn.test',
   ],
+  [
+    'network_capture',
+    { input: { tab_id: 1, action: 'start' }, output: { capturing: true, entries: [] } },
+    'Starting to record requests',
+    'Recording requests',
+  ],
+  [
+    'network_capture',
+    { input: { tab_id: 1, action: 'read' }, output: { entries: [{}, {}] } },
+    'Reading requests',
+    'Read 2 requests',
+  ],
+  [
+    'console_capture',
+    { input: { tab_id: 1, action: 'stop' }, output: { entries: [{}] } },
+    'Stopping recording the console',
+    'Stopped recording the console, 1 message',
+  ],
 ];
 
 describe('tool cards', () => {
@@ -209,19 +334,33 @@ describe('tool cards', () => {
         'tabs_close',
         'navigate',
         'snapshot',
+        'page_text',
         'screenshot',
+        'screenshot_diff',
+        'record_start',
+        'record_status',
+        'record_stop',
         'scroll',
         'scroll_to',
         'click',
         'hover',
         'fill',
+        'type',
         'check',
         'select',
         'press',
         'drag',
+        'dialog',
+        'upload',
+        'network_capture',
+        'console_capture',
+        'wait_for',
+        'eval',
+        'emulate',
         'handoff',
         'web_search',
         'webfetch',
+        'batch',
       ].toSorted(),
     );
   });
@@ -262,6 +401,57 @@ describe('tool cards', () => {
         approval: { id: 'c1', approved: false, reason: 'The user said no.' },
       } as ToolPartValue),
     ).toEqual({ icon: 'cursor', title: 'Click', subtitle: 'The user said no.' });
+  });
+
+  it('names a batch’s current step, and lists each step’s outcome once it ends', () => {
+    const line = TOOL_LINES.batch;
+
+    if (!line) throw new Error('No batch line');
+
+    const calls = [
+      { tool: 'snapshot', input: {} },
+      { tool: 'click', input: { ref: 'e3' } },
+      { tool: 'press', input: { key: 'Enter' } },
+    ];
+
+    expect(describeCall(line, running('batch', { calls })).title).toBe('Running 3 steps');
+
+    expect(
+      describeCall(line, running('batch', { calls }, { step: '2', of: '3', tool: 'click' })).title,
+    ).toBe('Running step 2 of 3: click');
+
+    const ok = describeCall(
+      line,
+      done('batch', {
+        input: { calls },
+        output: {
+          steps: [
+            { tool: 'snapshot', output: { title: 'Shop' } },
+            { tool: 'click', output: {} },
+            { tool: 'press', output: {} },
+          ],
+        },
+      }),
+    );
+
+    expect(ok.title).toBe('Ran 3 steps');
+    expect(steps(ok.body)).toEqual(['Read Shop', 'Clicked', 'Pressed Enter']);
+
+    const failed = describeCall(
+      line,
+      done('batch', {
+        input: { calls },
+        output: {
+          steps: [{ tool: 'snapshot', output: { title: 'Shop' } }],
+          failed: { index: 1, tool: 'click', code: 'stale_ref', message: 'e3 is gone.' },
+          skipped: 1,
+        },
+      }),
+    );
+
+    expect(failed.title).toBe('Ran 1 of 3 steps');
+    expect(failed.subtitle).toBe('click failed: e3 is gone.');
+    expect(steps(failed.body)).toEqual(['Read Shop', 'Click: e3 is gone.', 'Skipped press']);
   });
 
   it('lists search results, fetched pages, opened pages and tabs as links', () => {

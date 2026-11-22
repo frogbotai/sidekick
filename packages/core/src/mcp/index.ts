@@ -1,5 +1,7 @@
 export type { McpConnectResult, McpHandlers, McpHost, McpHostOptions } from './hubs';
-export { createMcpHost, DIAL_TIMEOUT, isLoopbackHub } from './hubs';
+export { createMcpHost } from './hubs';
+export type { McpPairResult, McpUnpairResult } from './pair';
+export { computerName } from './pair';
 export {
   addPairing,
   findPairing,
@@ -10,5 +12,7 @@ export {
 } from './pairings';
 export type { McpServerOptions } from './server';
 export { createMcpServer, KEEPALIVE, listingOf, MCP_AGENT, resultOf } from './server';
+export type { ConnectionToolsOptions } from './tools';
+export { connectionTools, READABLE_SETTINGS, WRITABLE_SETTINGS } from './tools';
 export type { Socket } from './transport';
-export { socketTransport } from './transport';
+export { DIAL_TIMEOUT, isLoopbackHub, socketTransport } from './transport';

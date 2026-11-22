@@ -1,5 +1,6 @@
 import { ToolError } from '../../tool/tool';
 import { race } from './abort';
+import { dialogOpen, type Dialogs } from './dialogs';
 import type { Sessions } from './sessions';
 import type { Cdp, CdpEvent, Page, Tabs } from './types';
 
@@ -25,14 +26,21 @@ export interface SettleOptions {
    * without one, and fails `request_failed` on a main-frame error.
    */
   commit?: boolean;
+  /** The action answers the dialog that is open, so it runs anyway. */
+  answers?: boolean;
 }
 
-/** Tracks requests from before `action` runs, then resolves `true` when the tab settled within the caps. */
+/**
+ * Tracks requests from before `action` runs, then resolves `true` when the tab settled within the
+ * caps. A dialog that opens on the tab ends it at once with `false`, and aborts the signal `action`
+ * was given, so the action stops before its next step. A dialog already open fails `dialog_open`
+ * without running `action`, unless the action answers it.
+ */
 export interface Settler {
   settle(
     tabId: number,
     signal: AbortSignal,
-    action?: () => Promise<unknown>,
+    action?: (signal: AbortSignal) => Promise<unknown>,
     options?: SettleOptions,
   ): Promise<boolean>;
 }
@@ -173,46 +181,71 @@ export function createSettler({
   page,
   tabs,
   sessions,
+  dialogs,
 }: {
   cdp: Cdp;
   page: Page;
   tabs: Tabs;
   sessions: Sessions;
+  dialogs: Dialogs;
 }): Settler {
-  return {
-    settle: async (tabId, signal, action, { load = false, commit = false } = {}) => {
-      const network = track(cdp, tabId);
-      const committed = commit ? watchCommit(tabs, tabId) : undefined;
-      const waitForLoad = () => tabs.waitForLoad(tabId, NETWORK_CAP_MS).catch(() => false);
+  const settle = async (
+    tabId: number,
+    signal: AbortSignal,
+    action: ((signal: AbortSignal) => Promise<unknown>) | undefined,
+    { load = false, commit = false }: SettleOptions,
+  ) => {
+    const network = track(cdp, tabId);
+    const committed = commit ? watchCommit(tabs, tabId) : undefined;
+    const waitForLoad = () => tabs.waitForLoad(tabId, NETWORK_CAP_MS).catch(() => false);
 
-      try {
-        await action?.();
+    try {
+      await action?.(signal);
 
-        if (committed) {
-          const outcome = await race(committed.wait(), signal);
+      if (committed) {
+        const outcome = await race(committed.wait(), signal);
 
-          if ('error' in outcome) {
-            throw new ToolError('request_failed', `The page didn’t load: ${outcome.error}.`);
-          }
-
-          if (!outcome.committed) return false;
+        if ('error' in outcome) {
+          throw new ToolError('request_failed', `The page didn’t load: ${outcome.error}.`);
         }
 
-        const loaded = !sessions.attached(tabId)
-          ? waitForLoad()
-          : load
-            ? waitForLoad().then(async (done) => (await network.quiet()) && done)
-            : network.quiet();
+        if (!outcome.committed) return false;
+      }
 
-        const networkSettled = await race(loaded, signal);
+      const loaded = !sessions.attached(tabId)
+        ? waitForLoad()
+        : load
+          ? waitForLoad().then(async (done) => (await network.quiet()) && done)
+          : network.quiet();
 
-        const dom = page.domQuiet(tabId, { quiet: DOM_QUIET_MS, cap: DOM_CAP_MS });
-        const domSettled = await race(capped(dom, DOM_CAP_MS), signal);
+      const networkSettled = await race(loaded, signal);
 
-        return networkSettled && domSettled;
+      const dom = page.domQuiet(tabId, { quiet: DOM_QUIET_MS, cap: DOM_CAP_MS });
+      const domSettled = await race(capped(dom, DOM_CAP_MS), signal);
+
+      return networkSettled && domSettled;
+    } finally {
+      network.stop();
+      committed?.stop();
+    }
+  };
+
+  return {
+    settle: async (tabId, signal, action, options = {}) => {
+      const pending = dialogs.get(tabId);
+
+      if (pending && !options.answers) throw dialogOpen(pending);
+
+      const interrupt = new AbortController();
+      const dialog = dialogs.opened(tabId);
+      const body = settle(tabId, AbortSignal.any([signal, interrupt.signal]), action, options);
+
+      try {
+        return await Promise.race([body, dialog.promise.then(() => false)]);
       } finally {
-        network.stop();
-        committed?.stop();
+        dialog.stop();
+        interrupt.abort();
+        body.catch(() => undefined);
       }
     },
   };

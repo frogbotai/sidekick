@@ -50,6 +50,28 @@ describe('debugger sessions (req. 2, 21)', () => {
     expect(cdp.attaching).toEqual([]);
   });
 
+  it('never idle-detaches a held session, and counts down again once released', async () => {
+    const { tool, ctx, cdp, runtime } = await setupBrowser();
+
+    await drain(tool('click').execute({ tab_id: 1, ref: 'f0e1' }, ctx), 10, 100);
+
+    const release = runtime.env.sessions.hold(1);
+
+    await vi.advanceTimersByTimeAsync(60_000);
+
+    expect(cdp.detached).toEqual([]);
+
+    release();
+    release();
+    await vi.advanceTimersByTimeAsync(19_000);
+
+    expect(cdp.detached).toEqual([]);
+
+    await vi.advanceTimersByTimeAsync(1_000);
+
+    expect(cdp.detached).toEqual([1]);
+  });
+
   it('detaches 20 s after the last command, and attaches again on the next', async () => {
     const { tool, ctx, cdp } = await setupBrowser();
 
@@ -65,6 +87,54 @@ describe('debugger sessions (req. 2, 21)', () => {
     await drain(tool('click').execute({ tab_id: 1, ref: 'f0e1' }, ctx));
 
     expect(cdp.attaching).toEqual([1, 1]);
+  });
+
+  it('stays attached while a command is still running past the idle time (sidekick-17)', async () => {
+    const { runtime, cdp } = await setupBrowser();
+    let answer = (_value: unknown) => {};
+
+    cdp.replies.set('Runtime.evaluate', () => new Promise((resolve) => (answer = resolve)));
+
+    const running = runtime.env.sessions.send(1, 'Runtime.evaluate', {}, undefined, {
+      timeout: 60_000,
+    });
+
+    await vi.advanceTimersByTimeAsync(45_000);
+
+    expect(cdp.detached).toEqual([]);
+
+    answer({ result: {} });
+    await running;
+    await vi.advanceTimersByTimeAsync(20_000);
+
+    expect(cdp.detached).toEqual([1]);
+  });
+
+  it('re-sends after a lost session, unless the command is sent once', async () => {
+    const { runtime, cdp } = await setupBrowser();
+    const lost = () => new Error('Detached while handling command.');
+
+    cdp.sendErrors.set('Runtime.evaluate', [lost()]);
+    await runtime.env.sessions.send(1, 'Runtime.evaluate', {});
+
+    cdp.sendErrors.set('Runtime.evaluate', [lost()]);
+
+    const error = await failure(
+      runtime.env.sessions.send(1, 'Runtime.evaluate', {}, undefined, { once: true }),
+    );
+
+    expect(error).toMatchObject({ message: 'Detached while handling command.' });
+    expect(cdp.sent.filter(({ method }) => method === 'Runtime.evaluate')).toHaveLength(3);
+  });
+
+  it('gives up on an attach whose Network.enable never answers', async () => {
+    const { runtime, cdp } = await setupBrowser();
+
+    cdp.replies.set('Network.enable', () => new Promise(() => undefined));
+
+    const error = await failure(runtime.env.sessions.ensure(1));
+
+    expect(error).toMatchObject({ code: 'timeout' });
   });
 
   it('detaches leftover sessions on start', async () => {
@@ -219,5 +289,27 @@ describe('the infobar’s Cancel (271 D2)', () => {
 
     expect(result.output).toMatchObject({ settled: true });
     expect(cdp.attaching).toEqual([1, 1]);
+  });
+});
+
+describe('attach listeners (sidekick-17)', () => {
+  it('runs attach listeners before the first command, and a failing one never fails the attach', async () => {
+    const { runtime, cdp } = await setupBrowser();
+    const { sessions } = runtime.env;
+    const order: string[] = [];
+
+    sessions.onAttached(() => Promise.reject(new Error('gone')));
+
+    sessions.onAttached((tabId) => {
+      order.push(`attached ${tabId}`);
+
+      return Promise.resolve();
+    });
+
+    cdp.replies.set('DOM.enable', () => order.push('DOM.enable'));
+
+    await drain(sessions.send(1, 'DOM.enable', {}));
+
+    expect(order).toEqual(['attached 1', 'DOM.enable']);
   });
 });

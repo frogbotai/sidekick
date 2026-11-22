@@ -1,5 +1,6 @@
 import {
   agents,
+  attachedFile,
   broadcastRelay,
   cacheRoute,
   CONNECTED,
@@ -14,10 +15,12 @@ import {
   registerBuiltinAgents,
   registerBuiltinCommands,
   registerBuiltinModes,
+  registerFindTool,
   registerSubagentTool,
   registerUserCommands,
   registerWorkerTools,
   type SessionEngine,
+  type ToolContext,
   tools,
   webLocks,
   workerPermission,
@@ -151,8 +154,16 @@ export async function startSessions(
 
   let unregister: (() => void) | undefined;
 
+  const store = createSessionStore(await openDatabase(), { relay: broadcastRelay() });
+
+  const attachment = async (filename: string, ctx: ToolContext) =>
+    attachedFile(await store.messages(ctx.session.rootID ?? ctx.session.id), filename);
+
   const refresh = () =>
-    registerWorkerTools(tools, worker, windowId === undefined ? {} : { windowId }).then(
+    registerWorkerTools(tools, worker, {
+      attachment,
+      ...(windowId === undefined ? {} : { windowId }),
+    }).then(
       (next) => {
         unregister?.();
         unregister = next;
@@ -165,8 +176,6 @@ export async function startSessions(
 
   const prompted = new Set<string>();
   const models = modelSource();
-
-  const store = createSessionStore(await openDatabase(), { relay: broadcastRelay() });
   const runs = import.meta.env.SIDEKICK_RUNS ? runSaver({ reader: store }) : undefined;
 
   const base = createSessionEngine({
@@ -183,6 +192,7 @@ export async function startSessions(
   });
 
   registerSubagentTool({ engine: base, agents, models });
+  registerFindTool({ engine: base, agents, models });
 
   const endRun = (sessionID: string) =>
     worker.call('run.end', { sessionID, close: true }).catch(() => undefined);

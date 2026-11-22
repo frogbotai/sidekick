@@ -14,6 +14,7 @@ const VERBS: Record<PermissionAction, string> = {
   webfetch: 'read pages on',
   subagent: 'start the subagent',
   handoff: 'hand you',
+  settings: 'change the settings of',
 };
 
 /** What Deny sends: a note turns it into a rejection that only fails this call. */

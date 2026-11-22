@@ -1,8 +1,10 @@
 import {
   agents,
   answerContent,
+  batchTool,
   callFrame,
   chromeCdp,
+  chromeImages,
   chromePage,
   chromeTabs,
   cleanupLegacy,
@@ -18,6 +20,7 @@ import {
   permissionModes,
   registerBuiltinAgents,
   registerBuiltinModes,
+  registerBuiltinSearchProviders,
   restrictStorageToTrustedContexts,
   serve,
   type Server,
@@ -25,9 +28,10 @@ import {
   sidekickProtocol,
   tools,
 } from '@frogbotai/sidekick-core';
-import { listenForConnect } from '@frogbotai/sidekick-core/frogbot';
+import { listenForConnect, registerFrogbotSearch } from '@frogbotai/sidekick-core/frogbot';
 import { defineBackground } from 'wxt/utils/define-background';
 
+import { chromeEncoder } from '../recorder/encoder';
 import { answerTestRequests } from '../testTools';
 
 const FRAME_SCRIPT = 'frame.js';
@@ -73,11 +77,15 @@ export default defineBackground(() => {
     cdp: chromeCdp(),
     page: chromePage({ tabs, inject: injectFrame, refs: sessionRefStore() }),
     tabs,
+    images: chromeImages(),
+    encoder: chromeEncoder(),
     mac: /Mac OS X|Macintosh/.test(navigator.userAgent),
   });
 
   registerBuiltinAgents();
   registerBuiltinModes();
+  registerBuiltinSearchProviders();
+  registerFrogbotSearch();
 
   let server: Server<typeof sidekickProtocol> | undefined;
 
@@ -109,6 +117,8 @@ export default defineBackground(() => {
 
   tools.register('builtin', (draft) => {
     for (const tool of runtime.tools) draft.add(tool);
+
+    draft.add(batchTool({ tools, locks }));
   });
 
   server = serve(

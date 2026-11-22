@@ -1,4 +1,4 @@
-export { chromeCdp, chromeTabs } from './chrome';
+export { chromeCdp, chromeImages, chromeTabs } from './chrome';
 export type { ActionOutput, BrowserEnv, ScreenMap } from './env';
 export type { HandoffAsk, HandoffEnd, Handoffs } from './handoff';
 export { HANDOFF_BADGE, HANDOFF_TIMEOUT } from './handoff';
@@ -18,12 +18,16 @@ export type {
   Cdp,
   CdpEvent,
   Direction,
+  Encoder,
   FrameInfo,
   HandoffCard,
+  Images,
   Page,
   Point,
   Rect,
   RefInfo,
+  Rgba,
+  SavedVideo,
   ScrollEnd,
   ScrollStart,
   Size,
@@ -32,3 +36,4 @@ export type {
   Tabs,
   Target,
 } from './types';
+export type { EndReason, RecordingReport, RecordingStatus, Videos } from './videos';

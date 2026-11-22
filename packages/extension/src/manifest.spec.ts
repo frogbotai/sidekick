@@ -19,6 +19,8 @@ const PERMISSIONS = [
   'debugger',
   'webNavigation',
   'favicon',
+  'downloads',
+  'offscreen',
 ];
 
 let outBase: string;
@@ -141,10 +143,6 @@ describe('built manifest', () => {
     expect(manifest).not.toHaveProperty(field);
   });
 
-  it('has no offscreen permission', () => {
-    expect(manifest.permissions).not.toContain('offscreen');
-  });
-
   it('adds only nativeMessaging in a development build, for saving runs (328)', () => {
     expect(devManifest.permissions).toEqual([...PERMISSIONS, 'nativeMessaging']);
     expect(devManifest.key).toBe(manifest.key);
@@ -152,12 +150,12 @@ describe('built manifest', () => {
 });
 
 describe('built files', () => {
-  it('ships the content script as one small classic script', async () => {
+  it('ships the content script as one classic script under 80 KB, raised from 64 KB for page_text, webmcp, the recorder and the handoff card', async () => {
     const source = await readFile(path.join(outDir, 'frame.js'), 'utf8');
 
     expect(source).not.toMatch(/(^|[;\s}])import[\s{*("']/);
     expect(source).not.toMatch(/(^|[;\s}])export[\s{*]/);
-    expect(source.length).toBeLessThan(64_000);
+    expect(source.length).toBeLessThan(80_000);
   });
 
   it('leaves the e2e and live-test pages out of production', async () => {

@@ -1,4 +1,15 @@
-import type { Capture, Cdp, CdpEvent, Commit, Size, TabInfo, Tabs } from './types';
+import type {
+  Capture,
+  Cdp,
+  CdpEvent,
+  Commit,
+  Images,
+  Rect,
+  Rgba,
+  Size,
+  TabInfo,
+  Tabs,
+} from './types';
 
 const PROTOCOL_VERSION = '1.3';
 
@@ -66,7 +77,7 @@ function base64(buffer: ArrayBuffer) {
   return btoa(binary);
 }
 
-async function captureVisible(windowId: number, size: Size): Promise<Capture> {
+async function captureVisible(windowId: number, size: Size, source?: Rect): Promise<Capture> {
   const url = await chrome.tabs.captureVisibleTab(windowId, { format: 'jpeg', quality: QUALITY });
   const bitmap = await createImageBitmap(await (await fetch(url)).blob());
   const width = Math.max(1, Math.round(size.width));
@@ -76,11 +87,62 @@ async function captureVisible(windowId: number, size: Size): Promise<Capture> {
 
   if (!context) throw new Error('No 2D canvas for the screenshot');
 
-  context.drawImage(bitmap, 0, 0, width, height);
+  const crop = source ?? { x: 0, y: 0, width: 1, height: 1 };
+
+  context.drawImage(
+    bitmap,
+    crop.x * bitmap.width,
+    crop.y * bitmap.height,
+    crop.width * bitmap.width,
+    crop.height * bitmap.height,
+    0,
+    0,
+    width,
+    height,
+  );
 
   const blob = await canvas.convertToBlob({ type: 'image/jpeg', quality: QUALITY / 100 });
 
   return { data: base64(await blob.arrayBuffer()), mime: 'image/jpeg', width, height };
+}
+
+function context2d(canvas: OffscreenCanvas) {
+  const context = canvas.getContext('2d', { willReadFrequently: true });
+
+  if (!context) throw new Error('No 2D canvas for the image');
+
+  return context;
+}
+
+export function chromeImages(): Images {
+  return {
+    decode: async ({ data, mime }) => {
+      const blob = await (await fetch(`data:${mime};base64,${data}`)).blob();
+      const bitmap = await createImageBitmap(blob, {
+        colorSpaceConversion: 'none',
+        premultiplyAlpha: 'none',
+      });
+
+      const { width, height } = bitmap;
+      const context = context2d(new OffscreenCanvas(width, height));
+
+      context.drawImage(bitmap, 0, 0);
+      bitmap.close();
+
+      return { width, height, data: context.getImageData(0, 0, width, height).data };
+    },
+    png: async ({ width, height, data }: Rgba) => {
+      const canvas = new OffscreenCanvas(width, height);
+
+      context2d(canvas).putImageData(
+        new ImageData(new Uint8ClampedArray(data), width, height),
+        0,
+        0,
+      );
+
+      return base64(await (await canvas.convertToBlob({ type: 'image/png' })).arrayBuffer());
+    },
+  };
 }
 
 function waitForLoad(tabId: number, timeout: number) {

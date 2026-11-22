@@ -1,24 +1,37 @@
-import { contentProtocol, type frameProtocol } from '../../protocol';
+import { contentProtocol, EVAL_TAG, type frameProtocol, type RecordedStep } from '../../protocol';
 import { callWorker } from '../../rpc/content';
 import type { Handlers } from '../../rpc/define';
 import { ToolError, type ToolErrorCode, type ToolErrorDetail } from '../../tool/tool';
 import type { HandoffCard } from '../worker/types';
-import { assignFrames, type Identify, listenForFrames } from './dom';
+import {
+  assignFrames,
+  type Identify,
+  isShown,
+  listenForFrames,
+  nextFrame,
+  renderedText,
+} from './dom';
 import {
   checkState,
   focusedField,
   focusElement,
+  focusField,
   maxLengthOf,
   selectContents,
   selectOptions,
 } from './fields';
+import { setFiles } from './files';
 import { frameSources, stripFrames } from './frames';
 import { createIndicator, type Indicator } from './indicator';
+import { probePage } from './probe';
 import { domQuiet } from './quiet';
+import { createRecorder } from './recorder';
 import { createRefs, navigated } from './refs';
 import { fingerprintOf, isRedacted } from './roles';
 import { frameBox, scrollBegin, scrollFallback, scrollFinish, scrollToElement } from './scroll';
 import { snapshotFrame } from './snapshot';
+import { readText } from './text';
+import { callTool, cancelTool, listTools } from './webmcp';
 
 export type PageHandlers = Omit<Handlers<(typeof frameProtocol)['methods']>, 'frame.ping'>;
 
@@ -35,6 +48,21 @@ async function guard<T>(run: () => T | Promise<T>): Promise<Outcome<T>> {
   }
 }
 
+const PAINT_CAP_MS = 200;
+
+function painted() {
+  return new Promise<void>((resolve) => {
+    const timer = setTimeout(resolve, PAINT_CAP_MS);
+
+    void nextFrame()
+      .then(nextFrame)
+      .then(() => {
+        clearTimeout(timer);
+        resolve();
+      });
+  });
+}
+
 export interface ContentOptions {
   /** Whether this frame shows the indicator: the top frame only. */
   top?: boolean;
@@ -47,6 +75,9 @@ export interface ContentOptions {
     stop: () => Promise<void>;
     resolve: (id: string) => Promise<void>;
     identify: Identify;
+    /** Whether the person's tab is being recorded, for a frame that loads mid-recording. */
+    recording: () => Promise<boolean>;
+    step: (step: RecordedStep) => Promise<void>;
   };
 }
 
@@ -55,6 +86,8 @@ const chromeWorker: NonNullable<ContentOptions['worker']> = {
   stop: async () => void (await callWorker(contentProtocol, 'indicator.stop', {})),
   resolve: async (id) => void (await callWorker(contentProtocol, 'handoff.continue', { id })),
   identify: () => callWorker(contentProtocol, 'frame.identify', {}),
+  recording: async () => (await callWorker(contentProtocol, 'recorder.state', {})).on,
+  step: async (step) => void (await callWorker(contentProtocol, 'recorder.step', step)),
 };
 
 /** The content script's answers to the worker for one frame's document (req. 9–12, 16–17, 23). */
@@ -66,8 +99,14 @@ export function createContent({
   let frameId = 0;
   const refs = createRefs(() => frameId);
   let indicator: Indicator | undefined;
+  const recorder = createRecorder((step) => void worker.step(step).catch(() => undefined));
 
   listenForFrames(worker.identify);
+
+  void worker
+    .recording()
+    .then((on) => on && recorder.set(true))
+    .catch(() => undefined);
 
   const resolve = (ref: string, expected?: string) => {
     if (expected !== undefined && expected !== doc) throw navigated(ref);
@@ -114,6 +153,13 @@ export function createContent({
 
         return { ...snapshot, doc, next: refs.next() };
       }),
+    'page.text': ({ ref, doc: expected, max_chars }) =>
+      guard(() =>
+        readText({
+          root: ref === undefined ? undefined : resolve(ref, expected),
+          maxChars: max_chars,
+        }),
+      ),
     'page.inspect': ({ ref, doc: expected }) =>
       guard(() => {
         const element = resolve(ref, expected);
@@ -136,9 +182,10 @@ export function createContent({
 
         return frameBox(child, reveal, point);
       }),
-    'page.focus': ({ ref, doc: expected }) =>
+    'page.focus': ({ ref, doc: expected, end }) =>
       guard(() => {
-        focusElement(resolve(ref, expected));
+        if (end) focusField(resolve(ref, expected), ref);
+        else focusElement(resolve(ref, expected));
 
         return null;
       }),
@@ -158,6 +205,8 @@ export function createContent({
       guard(() => checkState(resolve(ref, expected), ref)),
     'page.selectOptions': ({ ref, doc: expected, values }) =>
       guard(() => selectOptions(resolve(ref, expected), ref, values)),
+    'page.setFiles': ({ ref, doc: expected, files }) =>
+      guard(() => setFiles(resolve(ref, expected), ref, files)),
     'page.scrollStart': ({ ref, doc: expected, point, direction, amount, children, key }) =>
       guard(async () => {
         if (children) await assignFrames(children, { key });
@@ -174,10 +223,15 @@ export function createContent({
     'page.domQuiet': ({ quiet, cap }) => guard(() => domQuiet(quiet, cap)),
     'page.viewport': () => guard(() => ({ width: innerWidth, height: innerHeight })),
     'page.iframes': () => guard(frameSources),
+    'page.probe': ({ selectors }) => guard(() => probePage(selectors)),
     'page.strip': ({ reported, surplus }) => guard(() => stripFrames(reported, surplus)),
     'page.indicator': (state) =>
-      guard(() => {
-        if (top && (state.visible === true || indicator)) showIndicator().set(state);
+      guard(async () => {
+        if (!top || (state.visible !== true && !indicator)) return null;
+
+        showIndicator().set(state);
+
+        if (state.hidden !== undefined) await painted();
 
         return null;
       }),
@@ -188,7 +242,33 @@ export function createContent({
 
         return null;
       }),
+    'page.hasText': ({ text }) =>
+      guard(() => renderedText(document.body?.innerText ?? '').includes(renderedText(text))),
+    'page.isVisible': ({ ref, doc: expected }) => guard(() => isShown(resolve(ref, expected))),
+    'page.tag': ({ ref, doc: expected, token }) =>
+      guard(() => {
+        const element = resolve(ref, expected);
+
+        if (token === null) element.removeAttribute(EVAL_TAG);
+        else element.setAttribute(EVAL_TAG, token);
+
+        return null;
+      }),
+    'page.record': ({ on }) =>
+      guard(() => {
+        recorder.set(on);
+
+        return null;
+      }),
+    'page.webmcpList': ({ fromOrigins }) => guard(() => listTools(fromOrigins)),
+    'page.webmcpCall': (input) => guard(() => callTool(input)),
+    'page.webmcpCancel': ({ token }) =>
+      guard(() => {
+        cancelTool(token);
+
+        return null;
+      }),
   };
 
-  return { handlers, indicator: () => indicator };
+  return { handlers, indicator: () => indicator, recorder };
 }
