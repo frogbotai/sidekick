@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { defineTool } from '../../../tool/tool';
 import { race } from '../abort';
 import { type BrowserEnv, enter, runOf, send, untrusted } from '../env';
-import { DEFAULT_FRAME_RATE, DEFAULT_MAX_DURATION_MS, MAX_DURATION_MS } from '../recording';
+import { DEFAULT_FRAME_RATE, DEFAULT_MAX_DURATION_MS, MAX_DURATION_MS } from '../videos';
 import { byTab, tabId } from './schema';
 
 const quality = {
@@ -31,7 +31,7 @@ const ENDED = z.enum(['tab_closed', 'detached', 'max_duration', 'run_stopped']);
 export function recordTools(env: BrowserEnv) {
   const checked = async (ctx: Parameters<typeof runOf>[1], tab_id: number) => {
     const { run, signal } = runOf(env, ctx);
-    const origin = env.recordings.originOf(run.id, tab_id);
+    const origin = env.videos.originOf(run.id, tab_id);
 
     if (origin !== undefined) {
       await race(ctx.permission.assert({ action: 'read', resource: origin }), signal);
@@ -80,7 +80,7 @@ export function recordTools(env: BrowserEnv) {
         }
 
         await race(
-          env.recordings.start({
+          env.videos.start({
             runId: act.run.id,
             tabId: tab_id,
             origin: act.origin,
@@ -107,7 +107,7 @@ export function recordTools(env: BrowserEnv) {
       execute: async ({ tab_id }, ctx) => {
         const { run, signal } = await checked(ctx, tab_id);
 
-        return untrusted(await race(env.recordings.status(run.id, tab_id), signal));
+        return untrusted(await race(env.videos.status(run.id, tab_id), signal));
       },
     }),
     defineTool({
@@ -121,7 +121,7 @@ export function recordTools(env: BrowserEnv) {
       execute: async ({ tab_id }, ctx) => {
         const { run } = await checked(ctx, tab_id);
 
-        return untrusted(await env.recordings.stop(run.id, tab_id));
+        return untrusted(await env.videos.stop(run.id, tab_id));
       },
     }),
   ];

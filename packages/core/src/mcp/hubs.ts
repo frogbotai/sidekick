@@ -5,25 +5,10 @@ import type { Handlers } from '../rpc/define';
 import { type McpHub, mcpHubs, type McpPairing, mcpPairings } from '../storage/items';
 import type { ToolCaller } from '../tool/bridge';
 import type { ToolDefinition } from '../tool/tool';
+import { pairHandlers } from './pair';
 import { findPairing } from './pairings';
 import { createMcpServer, KEEPALIVE } from './server';
-import { type Socket, socketTransport } from './transport';
-
-/** How long a dial waits for the helper's hub to answer. */
-export const DIAL_TIMEOUT = 5_000;
-
-const LOOPBACK = new Set(['127.0.0.1', 'localhost', '[::1]']);
-
-/** Whether `hub` is a `ws:` URL on this machine, the only kind Sidekick dials. */
-export function isLoopbackHub(hub: string) {
-  try {
-    const url = new URL(hub);
-
-    return url.protocol === 'ws:' && LOOPBACK.has(url.hostname);
-  } catch {
-    return false;
-  }
-}
+import { isLoopbackHub, openSocket, type Socket, socketTransport } from './transport';
 
 const NAME_LENGTH = 32;
 
@@ -57,7 +42,7 @@ export function groupTitle(
 
 export type McpHandlers = Pick<
   Handlers<(typeof sidekickProtocol)['methods']>,
-  'mcp.connect' | 'mcp.disconnect'
+  'mcp.connect' | 'mcp.disconnect' | 'mcp.pair' | 'mcp.unpair'
 >;
 
 export type McpConnectResult = Awaited<ReturnType<McpHandlers['mcp.connect']>>;
@@ -74,7 +59,7 @@ export interface McpHostOptions {
 }
 
 export interface McpHost {
-  /** `mcp.connect` for the connect page, `mcp.disconnect` for Connected agents. */
+  /** `mcp.connect`, `mcp.pair` and `mcp.unpair` for the connect page, `mcp.disconnect` for Connected agents. */
   handlers: McpHandlers;
   /** Dials a hub the connect page passed, for the pairing its token names. */
   connect: (input: { hub: string; token: string; tabId?: number }) => Promise<McpConnectResult>;
@@ -102,26 +87,6 @@ function withToken(hub: string, token: string) {
   return url.href;
 }
 
-function open(socket: Socket) {
-  return new Promise<void>((resolve, reject) => {
-    const timer = setTimeout(() => {
-      socket.close();
-      reject(new Error('timeout'));
-    }, DIAL_TIMEOUT);
-
-    const settle = (error?: Error) => {
-      clearTimeout(timer);
-
-      if (error) reject(error);
-      else resolve();
-    };
-
-    socket.addEventListener('open', () => settle(), { once: true });
-    socket.addEventListener('error', () => settle(new Error('error')), { once: true });
-    socket.addEventListener('close', () => settle(new Error('closed')), { once: true });
-  });
-}
-
 /**
  * The worker's MCP host: one connection per helper hub, each with its own MCP server and run,
  * a ping every 20 s, and its hub kept in `storage.session` so a restarted worker redials it.
@@ -147,7 +112,7 @@ export function createMcpHost(options: McpHostOptions): McpHost {
     const socket = dial(withToken(hub, token));
 
     try {
-      await open(socket);
+      await openSocket(socket);
     } catch {
       return { connected: false, reason: 'unreachable' } as const;
     }
@@ -262,6 +227,7 @@ export function createMcpHost(options: McpHostOptions): McpHost {
 
         return {};
       },
+      ...pairHandlers(dial),
     },
     connect,
     disconnect,

@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { UNTRUSTED } from '../../tool/tool';
 import { fakeContext, fakeJpeg } from './fakes';
 import { failure, sentMethods, setupBrowser } from './harness';
-import { FALLBACK_GRACE_MS, QUIET_GRACE_MS, recordingFile } from './recording';
+import { FALLBACK_GRACE_MS, QUIET_GRACE_MS, recordingFile } from './videos';
 
 type Setup = Awaited<ReturnType<typeof setupBrowser>>;
 

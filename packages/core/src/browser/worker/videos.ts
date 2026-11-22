@@ -40,7 +40,7 @@ export type RecordingStatus =
   | { recording: false; ended: EndReason; error: string }
   | { recording: false };
 
-export interface Recordings {
+export interface Videos {
   start(input: {
     runId: string;
     tabId: number;
@@ -106,7 +106,7 @@ function noRecording(tabId: number) {
  * quiet, frames paced onto a fixed grid, and a self-stop on tab close, detach, the time limit or
  * the end of the run.
  */
-export function createRecordings({
+export function createVideos({
   cdp,
   sessions,
   encoder,
@@ -116,7 +116,7 @@ export function createRecordings({
   sessions: Sessions;
   encoder: Encoder;
   runs: Runs;
-}): Recordings {
+}): Videos {
   const active = new Map<number, Active>();
   const ended = new Map<string, Ended>();
 

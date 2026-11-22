@@ -253,6 +253,8 @@ export interface Page {
   ): Promise<void>;
   /** Whether a top-level viewport point is on Sidekick's Stop button. */
   stopAt(tabId: number, point: Point): Promise<boolean>;
+  /** Turns the person's-steps recorder on or off in every frame of the tab. */
+  record(tabId: number, on: boolean): Promise<void>;
   /** The WebMCP tools the top frame sees, cross-origin ones from `fromOrigins` included. */
   webmcpList(
     tabId: number,
