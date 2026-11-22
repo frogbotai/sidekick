@@ -1,6 +1,6 @@
 import type { Page } from '@playwright/test';
 
-import { expect, isolatedWorld, refFor, type SnapshotOutput, test } from './fixtures';
+import { expect, isolatedWorld, type SnapshotOutput, test } from './fixtures';
 
 const CARD = `(() => {
   const card = [...document.querySelectorAll('*')]
@@ -47,6 +47,18 @@ interface Demonstration {
   ended_url: string;
   steps: Step[];
   summary: string;
+}
+
+function refByRole(snapshot: string, role: string, name: string) {
+  const matches = [
+    ...snapshot.matchAll(new RegExp(`- ${role} "${name}"[^\\n]*\\[(f\\d+e\\d+)\\]`, 'g')),
+  ];
+
+  if (matches.length !== 1) {
+    throw new Error(`${matches.length} matches for ${role} "${name}" in:\n${snapshot}`);
+  }
+
+  return matches[0]?.[1];
 }
 
 async function pressContinue(page: Page, evaluate: (expression: string) => Promise<unknown>) {
@@ -162,7 +174,7 @@ test('the agent replays a demonstration on a re-rendered page by snapshot, role 
   const { snapshot } = await run.call<SnapshotOutput>('snapshot', {});
 
   for (const step of steps) {
-    const ref = refFor(snapshot, step.name ?? '');
+    const ref = refByRole(snapshot, step.role ?? '', step.name ?? '');
 
     if (step.kind === 'fill') await run.call('fill', { ref, text: step.value });
     else if (step.kind === 'check') await run.call('check', { ref, checked: step.checked });

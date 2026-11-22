@@ -15,7 +15,7 @@
         ? '<h1>Checkout</h1><p>Thanks</p>'
         : `
           <form aria-label="Order" class="${again ? 'v2' : 'v1'}">
-            ${again ? '<div class="wrap">' : ''}
+            ${again ? '<a href="#help">Find</a><div class="wrap">' : ''}
             <label>Search <input id="${id('q')}" type="search"></label>
             <label>Address <input id="${id('addr')}" autocomplete="street-address"></label>
             <label>Password <input id="${id('pw')}" type="password"></label>

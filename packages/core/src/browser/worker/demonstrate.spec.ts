@@ -143,6 +143,50 @@ describe('the demonstrate tool (sidekick-21 req. 1, 6, 7)', () => {
     expect(recordings.recording(1)).toBe(false);
   });
 
+  it('notes a browser dialog the user answered, which records no step (req. 9)', async () => {
+    const { cdp, recordings, demonstrate, started, resolve } = await setup();
+    const result = demonstrate();
+
+    await started();
+    recordings.step(1, 0, step({ name: 'Leave' }));
+
+    cdp.emit({
+      tabId: 1,
+      method: 'Page.javascriptDialogOpening',
+      params: { type: 'confirm', message: 'Leave?' },
+    });
+
+    cdp.emit({ tabId: 1, method: 'Page.javascriptDialogClosed', params: {} });
+    resolve();
+
+    const { output } = await result;
+
+    expect(output.steps).toEqual([step({ name: 'Leave' })]);
+
+    expect(output.summary).toBe(
+      '1. Clicked the "Leave" button\nA browser dialog opened during the demonstration; the user answered it, and that part wasn’t recorded.',
+    );
+  });
+
+  it('gives a plain handoff that replaces a demonstration no recording line', async () => {
+    const { cards, recordings, handoffs, tool, ctx, demonstrate, started } = await setup();
+    const first = demonstrate();
+
+    await started();
+
+    const handoff = tool('handoff').execute({ tab_id: 1, message: 'Sign in' }, ctx);
+
+    expect((await first).output.status).toBe('timeout');
+    expect(recordings.recording(1)).toBe(false);
+
+    await vi.waitFor(() => expect(handoffs.pending(1)?.message).toBe('Sign in'));
+
+    expect(cards.at(-1)).toEqual({ id: handoffs.pending(1)?.id, message: 'Sign in' });
+
+    handoffs.resolve(handoffs.pending(1)?.id ?? '');
+    await handoff;
+  });
+
   it('returns cancelled with the steps so far when the run stops', async () => {
     const { runtime, run, recordings, demonstrate, started } = await setup();
     const result = demonstrate();
