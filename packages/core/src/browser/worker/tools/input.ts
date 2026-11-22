@@ -12,22 +12,19 @@ import {
   fromScreenshot,
   inspectTarget,
   offStop,
+  onPage,
   recheck,
   report,
   scrollIntoView,
+  settleAfter,
   untrusted,
+  watchTab,
 } from '../env';
-import { click, drag, fill, hover, press } from '../input';
+import { click, drag, fill, hover, press, sameField, typeText } from '../input';
 import type { Point } from '../types';
 import { action, byTab, coordinate, modifiers, pointer, ref, tabId } from './schema';
 
 const end = z.union([ref, z.object({ x: coordinate, y: coordinate })]);
-
-async function settleAfter(act: Act, input: () => Promise<unknown>) {
-  const settled = await act.env.settler.settle(act.tabId, act.signal, input);
-
-  return untrusted(await finish(act, settled));
-}
 
 async function focusTarget(act: Act, element: string | undefined) {
   const info = element === undefined ? undefined : await inspectTarget(act, element);
@@ -35,14 +32,12 @@ async function focusTarget(act: Act, element: string | undefined) {
   await recheck(act);
   await act.env.sessions.ensure(act.tabId, act.signal);
 
-  if (element !== undefined) await scrollIntoView(act, element);
-
   return info;
 }
 
 async function stateAfter(act: Act, element: string) {
   try {
-    return await race(act.env.page.checkState(act.tabId, element), act.signal);
+    return await onPage(act, () => act.env.page.checkState(act.tabId, element));
   } catch (error) {
     if (!(error instanceof ToolError && error.code === 'stale_ref')) throw error;
 
@@ -59,7 +54,7 @@ async function stateAfter(act: Act, element: string) {
 async function check(act: Act, element: string, checked: boolean) {
   await inspectTarget(act, element);
 
-  const before = await race(act.env.page.checkState(act.tabId, element), act.signal);
+  const before = await onPage(act, () => act.env.page.checkState(act.tabId, element));
 
   if (before.checked === checked) {
     return untrusted({ ...(await finish(act, true)), checked, changed: false });
@@ -79,20 +74,37 @@ async function check(act: Act, element: string, checked: boolean) {
   await recheck(act);
   await act.env.sessions.ensure(act.tabId, act.signal);
 
-  const point = await scrollIntoView(act, element);
-  const settled = await act.env.settler.settle(act.tabId, act.signal, () => click(act, point, {}));
+  const watched = watchTab(act);
 
-  const after = await stateAfter(act, element);
+  try {
+    const settled = await act.env.settler.settle(act.tabId, act.signal, async (signal) => {
+      const during = { ...act, signal };
 
-  if (after.checked !== checked) {
-    throw new ToolError(
-      'input_mismatch',
-      `The page didn’t keep ${element} ${checked ? 'checked' : 'unchecked'}. Take a snapshot and look for a message on the page; don’t toggle it again.`,
-      { checked: after.checked },
-    );
+      await click(during, await scrollIntoView(during, element), {});
+    });
+
+    if (act.env.dialogs.get(act.tabId)) {
+      return untrusted({
+        ...(await finish(act, settled, watched)),
+        checked: before.checked,
+        changed: false,
+      });
+    }
+
+    const after = await stateAfter(act, element);
+
+    if (after.checked !== checked) {
+      throw new ToolError(
+        'input_mismatch',
+        `The page didn’t keep ${element} ${checked ? 'checked' : 'unchecked'}. Take a snapshot and look for a message on the page; don’t toggle it again.`,
+        { checked: after.checked },
+      );
+    }
+
+    return untrusted({ ...(await finish(act, settled, watched)), checked, changed: true });
+  } finally {
+    watched.stop();
   }
-
-  return untrusted({ ...(await finish(act, settled)), checked, changed: true });
 }
 
 async function endpoint(act: Act, target: z.infer<typeof end>): Promise<() => Promise<Point>> {
@@ -128,7 +140,9 @@ export function inputTools(env: BrowserEnv) {
         const act = await enter(env, ctx, input.tab_id, 'input');
         const point = await aim(act, input);
 
-        return settleAfter(act, () => click(act, point, input));
+        return untrusted(
+          await settleAfter(act, async (during) => click(during, await point(during), input)),
+        );
       },
     }),
     defineTool({
@@ -142,7 +156,9 @@ export function inputTools(env: BrowserEnv) {
         const act = await enter(env, ctx, input.tab_id, 'input');
         const point = await aim(act, input);
 
-        return settleAfter(act, () => hover(act, point));
+        return untrusted(
+          await settleAfter(act, async (during) => hover(during, await point(during))),
+        );
       },
     }),
     defineTool({
@@ -162,7 +178,59 @@ export function inputTools(env: BrowserEnv) {
 
         if (info?.redacted) await report(act, { redacted: 'true' });
 
-        return settleAfter(act, () => fill(act, element, text, info));
+        return untrusted(
+          await settleAfter(act, async (during) => {
+            if (element !== undefined) await scrollIntoView(during, element);
+
+            await fill(during, element, text, info);
+          }),
+        );
+      },
+    }),
+    defineTool({
+      id: 'type',
+      description:
+        'Type text key by key, for fields that react to each key (search suggestions, masked inputs, editors). Adds to what is there; use fill to replace a field’s text. By ref, or into the focused element.',
+      input: z.object({
+        tab_id: tabId,
+        ref: ref.optional(),
+        text: z.string().min(1),
+        submit: z.boolean().optional().describe('Press Enter after the text.'),
+      }),
+      output: action.extend({
+        typed: z.number().describe('How many characters went in.'),
+      }),
+      permission: 'input',
+      lock: byTab,
+      execute: async ({ tab_id, ref: element, text, submit }, ctx) => {
+        const act = await enter(env, ctx, tab_id, 'input');
+
+        if (element === undefined) await focusedField(act);
+
+        const info = await focusTarget(act, element);
+
+        if (info?.redacted) await report(act, { redacted: 'true' });
+
+        let typed = 0;
+
+        const result = await settleAfter(act, async () => {
+          if (element !== undefined) await race(env.page.focus(tab_id, element, true), act.signal);
+
+          const start = await race(env.page.focused(tab_id), act.signal);
+
+          if (element !== undefined && info && !(start.editable && sameField(info, start))) {
+            throw new ToolError(
+              'invalid_target',
+              `Focus didn’t land on ${element}, so nothing was typed. Take a snapshot and pick an enabled text field.`,
+            );
+          }
+
+          typed = await typeText(act, text, start);
+
+          if (submit) await press(act, 'Enter');
+        });
+
+        return untrusted({ ...result, typed });
       },
     }),
     defineTool({
@@ -178,7 +246,9 @@ export function inputTools(env: BrowserEnv) {
         checked: z.boolean().describe('The state the control is in now.'),
         changed: z
           .boolean()
-          .describe('false when it was already in that state, so nothing was clicked.'),
+          .describe(
+            'false when it was already in that state, so nothing was clicked, or when a dialog opened before it changed.',
+          ),
       }),
       permission: 'input',
       lock: byTab,
@@ -197,9 +267,10 @@ export function inputTools(env: BrowserEnv) {
 
         await inspectTarget(act, element);
         await recheck(act);
+        await env.sessions.ensure(tab_id, act.signal);
 
-        return settleAfter(act, async () => {
-          const chosen = await race(env.page.selectOptions(tab_id, element, values), act.signal);
+        const selected = await settleAfter(act, async (during) => {
+          const chosen = await race(env.page.selectOptions(tab_id, element, values), during.signal);
 
           if (chosen.length < values.length) {
             throw new ToolError(
@@ -211,6 +282,8 @@ export function inputTools(env: BrowserEnv) {
             );
           }
         });
+
+        return untrusted(selected);
       },
     }),
     defineTool({
@@ -226,9 +299,16 @@ export function inputTools(env: BrowserEnv) {
 
         await focusTarget(act, element);
 
-        if (element !== undefined) await race(env.page.focus(tab_id, element), act.signal);
+        return untrusted(
+          await settleAfter(act, async (during) => {
+            if (element !== undefined) {
+              await scrollIntoView(during, element);
+              await race(env.page.focus(tab_id, element), during.signal);
+            }
 
-        return settleAfter(act, () => press(act, key));
+            await press(during, key);
+          }),
+        );
       },
     }),
     defineTool({
@@ -243,7 +323,9 @@ export function inputTools(env: BrowserEnv) {
         const start = await aim(act, typeof from === 'string' ? { ref: from } : from);
         const target = await endpoint(act, to);
 
-        return settleAfter(act, () => drag(act, start, target));
+        return untrusted(
+          await settleAfter(act, async (during) => drag(during, await start(during), target)),
+        );
       },
     }),
   ];

@@ -208,6 +208,13 @@ describe('actions report the wall (req. 5, 9)', () => {
       tool('navigate').execute({ tab_id: 1, url: 'https://example.com/next' }, ctx),
     );
 
-    expect(Object.keys(result.output as object)).toEqual(['url', 'navigated', 'settled']);
+    expect(Object.keys(result.output as object)).toEqual([
+      'url',
+      'settled',
+      'navigated',
+      'urlChanged',
+      'newTabs',
+      'dialog',
+    ]);
   });
 });

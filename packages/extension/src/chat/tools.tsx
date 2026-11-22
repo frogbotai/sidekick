@@ -8,6 +8,8 @@ import {
 import type { IconName } from '@frogbotai/ui/icons/registry';
 import type { ReactNode } from 'react';
 
+import { count, hostOf, joined, plural, record, short, text, web } from './text';
+
 /** One call's input, output and progress, as the status lines read them. */
 export interface ToolCall {
   input: Record<string, unknown>;
@@ -26,47 +28,20 @@ export interface ToolLine {
   body?: ReactNode;
 }
 
-const TEXT_LIMIT = 40;
+function waitedFor(input: Record<string, unknown>, target: string | undefined) {
+  const quote = (value: unknown) => `“${short(text(value) ?? '')}”`;
 
-function record(value: unknown): Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : {};
-}
+  if (text(input.text)) return quote(input.text);
 
-function text(value: unknown) {
-  return typeof value === 'string' && value ? value : undefined;
-}
+  if (text(input.text_gone)) return `${quote(input.text_gone)} to go away`;
 
-function count(value: unknown) {
-  return Array.isArray(value) ? value.length : 0;
-}
+  if (text(input.url)) return `the URL to contain ${quote(input.url)}`;
 
-function plural(n: number, word: string) {
-  return `${n} ${word}${n === 1 ? '' : 's'}`;
-}
-
-function short(value: string) {
-  const line = value.replace(/\s+/g, ' ').trim();
-
-  return line.length > TEXT_LIMIT ? `${line.slice(0, TEXT_LIMIT).trimEnd()}…` : line;
-}
-
-function web(url: string | undefined) {
-  return url !== undefined && /^https?:\/\//i.test(url);
-}
-
-/** A URL's host without `www.`, or the URL when it has none. */
-export function hostOf(url: string) {
-  try {
-    return new URL(url).hostname.replace(/^www\./, '') || url;
-  } catch {
-    return url;
+  if (text(input.ref)) {
+    return `${target ?? 'an element'} to ${input.state === 'hidden' ? 'hide' : 'show'}`;
   }
-}
 
-function joined(...words: (string | undefined)[]) {
-  return words.filter(Boolean).join(' ');
+  return 'the page to load';
 }
 
 function linkTo(url: string | undefined): readonly LinkListItem[] | undefined {
@@ -93,6 +68,13 @@ function opening(url: string | undefined, link: string | undefined): ToolLine {
     links: linkTo(link ?? url),
   };
 }
+
+const ENDED: Record<string, string> = {
+  tab_closed: 'the tab closed',
+  detached: 'the debugger was detached',
+  max_duration: 'it reached its time limit',
+  run_stopped: 'the task ended',
+};
 
 const HISTORY: Record<string, ToolLine> = {
   back: { icon: 'go-backward', running: 'Going back', done: 'Went back', failed: 'Go back' },
@@ -133,6 +115,82 @@ function screenshotOf(output: Record<string, unknown>) {
   const mime = text(image?.mimeType);
 
   return data && mime ? `data:${mime};base64,${data}` : undefined;
+}
+
+function recording(icon: IconName, what: string, unit: string) {
+  return ({ input, output }: ToolCall): ToolLine => {
+    const entries = plural(count(output.entries), unit);
+
+    if (input.action === 'start') {
+      return {
+        icon,
+        running: `Starting to record ${what}`,
+        done: `Recording ${what}`,
+        failed: `Record ${what}`,
+      };
+    }
+
+    if (input.action === 'stop') {
+      return {
+        icon,
+        running: `Stopping recording ${what}`,
+        done: `Stopped recording ${what}, ${entries}`,
+        failed: `Stop recording ${what}`,
+      };
+    }
+
+    return { icon, running: `Reading ${what}`, done: `Read ${entries}`, failed: `Read ${what}` };
+  };
+}
+
+function stepLabel(call: Record<string, unknown>, output: unknown, failed?: string) {
+  const tool = text(call.tool) ?? 'step';
+  const line = TOOL_LINES[tool];
+
+  if (!line) return failed ? `${tool}: ${failed}` : tool;
+
+  const status = line({ input: record(call.input), output: record(output), metadata: {} });
+
+  return failed ? `${status.failed}: ${failed}` : status.done;
+}
+
+function batchLine({ input, output, metadata }: ToolCall): ToolLine {
+  const calls = Array.isArray(input.calls) ? input.calls.map(record) : [];
+  const steps = Array.isArray(output.steps) ? output.steps.map(record) : [];
+  const failed = record(output.failed);
+  const failedTool = text(failed.tool);
+  const total = plural(calls.length, 'step');
+  const step = text(metadata.step);
+  const current = text(metadata.tool);
+  const items = calls.map((call, index) => {
+    if (index < steps.length) return stepLabel(call, steps[index]?.output);
+
+    if (failedTool && index === steps.length) {
+      return stepLabel(call, {}, text(failed.message) ?? 'failed');
+    }
+
+    return `Skipped ${text(call.tool) ?? 'step'}`;
+  });
+
+  return {
+    icon: 'workflow',
+    running:
+      step && current ? `Running step ${step} of ${calls.length}: ${current}` : `Running ${total}`,
+    done: failedTool ? `Ran ${steps.length} of ${total}` : `Ran ${total}`,
+    failed: `Run ${total}`,
+    ...(failedTool ? { subtitle: `${failedTool} failed: ${text(failed.message) ?? ''}` } : {}),
+    ...(steps.length || failedTool
+      ? {
+          body: (
+            <ol className="sidekick-batch-steps">
+              {items.map((item, index) => (
+                <li key={index}>{item}</li>
+              ))}
+            </ol>
+          ),
+        }
+      : {}),
+  };
 }
 
 /** Each tool's status lines, from its input, output and the element it reported (315 D2). */
@@ -208,6 +266,61 @@ export const TOOL_LINES: Record<string, (call: ToolCall) => ToolLine> = {
         : {}),
     };
   },
+  screenshot_diff: ({ input, output }) => {
+    const src = screenshotOf(output);
+    const baseline = text(input.baseline);
+    const since = baseline ? ` since “${short(baseline)}”` : '';
+    const changed = typeof output.changed_pixels === 'number' ? output.changed_pixels : undefined;
+
+    return {
+      icon: 'image',
+      running: 'Comparing screenshots',
+      done:
+        changed === undefined
+          ? 'Compared screenshots'
+          : changed === 0
+            ? `No change${since}`
+            : `${changed.toLocaleString('en-US')} pixel${changed === 1 ? '' : 's'} changed${since}`,
+      failed: 'Compare screenshots',
+      ...(src
+        ? { body: <img className="sidekick-tool-image" src={src} alt="screenshot diff" /> }
+        : {}),
+    };
+  },
+  record_start: () => ({
+    icon: 'video',
+    running: 'Starting a recording',
+    done: 'Recording the tab',
+    failed: 'Start a recording',
+  }),
+  record_status: ({ output }) => {
+    const seconds =
+      typeof output.duration_ms === 'number' ? Math.round(output.duration_ms / 1000) : undefined;
+
+    const ended = text(output.ended);
+
+    return {
+      icon: 'video',
+      running: 'Checking the recording',
+      done:
+        output.recording === true
+          ? `Recording${seconds === undefined ? '' : ` for ${seconds} s`}`
+          : ended
+            ? `Recording stopped: ${ENDED[ended] ?? ended}`
+            : 'Not recording',
+      failed: 'Check the recording',
+    };
+  },
+  record_stop: ({ output }) => {
+    const file = text(output.file);
+
+    return {
+      icon: 'download',
+      running: 'Saving the recording',
+      done: file ? `Saved ${file} to Downloads` : 'Saved the recording',
+      failed: 'Save the recording',
+    };
+  },
   scroll: ({ input, output }) => {
     const direction = text(input.direction) ?? 'down';
 
@@ -260,6 +373,17 @@ export const TOOL_LINES: Record<string, (call: ToolCall) => ToolLine> = {
       subtitle: text(metadata.target),
     };
   },
+  type: ({ input, metadata }) => {
+    const typed = metadata.redacted === 'true' ? '••••••' : `“${short(text(input.text) ?? '')}”`;
+
+    return {
+      icon: 'keyboard',
+      running: 'Typing',
+      done: `Typed ${typed}${input.submit === true ? ' and pressed Enter' : ''}`,
+      failed: 'Type',
+      subtitle: text(metadata.target),
+    };
+  },
   check: ({ input, output, metadata }) => {
     const target = text(metadata.target);
     const on = input.checked !== false;
@@ -305,6 +429,50 @@ export const TOOL_LINES: Record<string, (call: ToolCall) => ToolLine> = {
 
     return { icon: 'cursor', running: 'Dragging', done: `Dragged${ends}`, failed: `Drag${ends}` };
   },
+  dialog: ({ input, output }) => {
+    const shown = record(output.dialog);
+    const message = text(shown.message);
+
+    if (input.action === 'accept' || input.action === 'dismiss') {
+      const [running, done, failed] =
+        input.action === 'accept'
+          ? ['Accepting', 'Accepted', 'Accept']
+          : ['Dismissing', 'Dismissed', 'Dismiss'];
+
+      return {
+        icon: 'message-square-text',
+        running: `${running} the dialog`,
+        done: `${done} the dialog`,
+        failed: `${failed} the dialog`,
+      };
+    }
+
+    return {
+      icon: 'message-square-text',
+      running: 'Reading the dialog',
+      done: message ? `Dialog “${short(message)}”` : 'No dialog open',
+      failed: 'Read the dialog',
+    };
+  },
+  network_capture: recording('activity', 'requests', 'request'),
+  console_capture: recording('terminal', 'the console', 'message'),
+  wait_for: ({ input, metadata }) => {
+    const what = waitedFor(input, text(metadata.target));
+
+    return {
+      icon: 'hourglass',
+      running: `Waiting for ${what}`,
+      done: `Waited for ${what}`,
+      failed: `Wait for ${what}`,
+    };
+  },
+  eval: ({ metadata }) => ({
+    icon: 'code',
+    running: 'Running a script',
+    done: 'Ran a script',
+    failed: 'Run a script',
+    subtitle: text(metadata.target),
+  }),
   web_search: ({ input, output }) => {
     const query = `“${short(text(input.query) ?? '')}”`;
     const results = Array.isArray(output.results) ? output.results.map(record) : [];
@@ -341,6 +509,7 @@ export const TOOL_LINES: Record<string, (call: ToolCall) => ToolLine> = {
       links: linkTo(url),
     };
   },
+  batch: batchLine,
 };
 
 function callOf(part: ToolPartValue): ToolCall {

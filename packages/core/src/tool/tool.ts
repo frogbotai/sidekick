@@ -20,6 +20,8 @@ export interface PermissionRequest {
   action: PermissionAction;
   resource: string;
   frameOrigin?: string;
+  /** The batch step asking, so a once grant on a sensitive site covers that step alone. */
+  step?: number;
 }
 
 /** What a tool reports while it runs, kept on its tool part: `subagent` reports its child's `sessionID`. */
@@ -69,6 +71,10 @@ export interface ToolDefinition<I extends z.ZodType = z.ZodType, O extends z.Zod
 export const TOOL_ERROR_CODES = [
   'stale_ref',
   'stale_screenshot',
+  'no_baseline',
+  'size_mismatch',
+  'recording_running',
+  'no_recording',
   'navigated',
   'not_visible',
   'obscured',
@@ -78,7 +84,9 @@ export const TOOL_ERROR_CODES = [
   'invalid_target',
   'input_mismatch',
   'not_editable',
+  'dialog_open',
   'timeout',
+  'script_error',
   'stopped',
   'not_connected',
   'reconnect',

@@ -1,7 +1,16 @@
 import { vi } from 'vitest';
 
 import { installFakeChrome } from '../../testing/fakeChrome';
-import { fakeCdp, fakeContext, fakePage, fakeTabs, type Log } from './fakes';
+import { createToolCaller } from '../../tool/bridge';
+import {
+  fakeCdp,
+  fakeContext,
+  fakeEncoder,
+  fakeImages,
+  fakePage,
+  fakeTabs,
+  type Log,
+} from './fakes';
 import { createBrowserRuntime } from './runtime';
 import type { Page, TabInfo } from './types';
 
@@ -32,7 +41,9 @@ export async function setupBrowser({
   const cdp = fakeCdp(log);
   const page = fakePage(log, overrides);
   const tabs = fakeTabs(log, [START_TAB, OUTSIDE_TAB]);
-  const runtime = createBrowserRuntime({ cdp, page, tabs, mac });
+  const images = fakeImages(log);
+  const encoder = fakeEncoder(log);
+  const runtime = createBrowserRuntime({ cdp, page, tabs, images, encoder, mac });
   const run = await runtime.env.runs.start({ tabId: START_TAB.id, label: 'Task' });
   const ctx = fakeContext(log, run.id);
 
@@ -46,7 +57,7 @@ export async function setupBrowser({
 
   log.length = 0;
 
-  return { storage, log, cdp, page, tabs, runtime, run, ctx, tool };
+  return { storage, log, cdp, page, tabs, images, encoder, runtime, run, ctx, tool };
 }
 
 /** Advances fake time until `promise` settles, so settling timers don't stall a test. */
@@ -72,4 +83,28 @@ export async function failure(promise: Promise<unknown>) {
 
 export function sentMethods(sent: { method: string }[]) {
   return sent.map(({ method }) => method);
+}
+
+/** Calls tools through the bridge's caller, so calls on one tab take its lock in turn. */
+export function callerOf({ runtime, run }: Awaited<ReturnType<typeof setupBrowser>>) {
+  const caller = createToolCaller({
+    tools: {
+      list: () => runtime.tools,
+      get: (id) => runtime.tools.find((entry) => entry.id === id),
+    },
+    permission: {
+      assert: () => Promise.resolve(),
+      reply: () => Promise.resolve(),
+      list: () => [],
+      cancel: () => undefined,
+    },
+  });
+
+  let next = 0;
+
+  return (tool: string, input: unknown) =>
+    caller.call(
+      { tool, input, sessionID: 'ses-1', messageID: 'msg-1', callID: `c${next++}`, agent: 'build' },
+      { run: () => Promise.resolve({ id: run.id }) },
+    );
 }

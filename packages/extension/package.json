@@ -16,6 +16,7 @@
     "@frogbotai/sidekick-core": "workspace:^",
     "@frogbotai/ui": "link:../../.frogbot/packages/ui",
     "ai": "7.0.127",
+    "mediabunny": "1.65.2",
     "react": "19.2.6",
     "react-dom": "19.2.6"
   },

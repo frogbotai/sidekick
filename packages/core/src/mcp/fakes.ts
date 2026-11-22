@@ -2,7 +2,14 @@ import type { JSONRPCMessage, Transport } from '@modelcontextprotocol/server';
 
 import type { AgentInfo } from '../agent/agent';
 import { BUILTIN_AGENTS } from '../agent/builtin';
-import { fakeCdp, fakePage, fakeTabs, type Log } from '../browser/worker/fakes';
+import {
+  fakeCdp,
+  fakeEncoder,
+  fakeImages,
+  fakePage,
+  fakeTabs,
+  type Log,
+} from '../browser/worker/fakes';
 import { OUTSIDE_TAB, START_TAB } from '../browser/worker/harness';
 import { createBrowserRuntime } from '../browser/worker/runtime';
 import { createBrowserWorker } from '../browser/worker/serve';
@@ -133,6 +140,8 @@ export function setupWorker({
     cdp: fakeCdp(log),
     page: fakePage(log, overrides),
     tabs,
+    images: fakeImages(log),
+    encoder: fakeEncoder(log),
     mac: false,
   });
 
