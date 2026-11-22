@@ -23,6 +23,9 @@ export function HandoffCard({ ask, onContinue }: HandoffCardProps) {
       footer={<Button onClick={onContinue}>Continue</Button>}
     >
       <p className="sidekick-handoff__message">{ask.message}</p>
+      {ask.recording ? (
+        <p className="sidekick-handoff__recording">Sidekick is recording your clicks and typing</p>
+      ) : null}
     </ChatDock>
   );
 }

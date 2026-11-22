@@ -147,13 +147,32 @@ describe('recorder steps (sidekick-21, req. 2 to 4)', () => {
 
     const { steps } = await recording();
 
-    input(byId('upload'));
+    click(byId('upload'));
     input(byId('go'));
     click(byId('text'));
     click(byId('search'));
     click(byId('terms'));
 
     expect(steps()).toEqual([]);
+  });
+
+  it('records a chosen file as a file step with no file name', async () => {
+    document.body.innerHTML = FORM;
+
+    const { steps } = await recording();
+
+    input(byId('upload'));
+
+    expect(steps()).toEqual([
+      {
+        kind: 'file',
+        frameUrl: location.href,
+        role: expect.any(String),
+        name: 'Receipt',
+        nearby: 'Checkout',
+        selector: 'input#upload',
+      },
+    ]);
   });
 
   it('records a contenteditable fill from its editing host', async () => {
@@ -387,5 +406,47 @@ describe('masking (D3 B, req. 5)', () => {
     expect(steps()[1]).not.toHaveProperty('options');
 
     expect(steps()[0]).not.toHaveProperty('options');
+  });
+});
+
+describe('masking after the PR #56 review (req. 5, D3 B)', () => {
+  it('keeps a password redacted when Show swaps in a text input with another id', async () => {
+    document.body.innerHTML = `
+      <form aria-label="Sign in">
+        <span><input id="hidden" type="password" aria-label="Password"></span>
+        <button id="show" type="button">Show</button>
+      </form>`;
+
+    const { steps } = await recording();
+
+    type(field('hidden'), 'hunter');
+
+    byId('show').addEventListener('click', () => {
+      const shown = document.createElement('input');
+
+      shown.id = 'shown';
+      shown.setAttribute('aria-label', 'Password');
+      shown.value = field('hidden').value;
+      field('hidden').replaceWith(shown);
+    });
+
+    click(byId('show'));
+    type(field('shown'), 'hunter2');
+
+    expect(JSON.stringify(steps())).not.toMatch(/hunter/);
+  });
+
+  it('keeps a personal field masked after the page drops its autocomplete', async () => {
+    document.body.innerHTML = `<label>Address <input id="addr" autocomplete="street-address"></label>`;
+
+    const { steps } = await recording();
+    const address = field('addr');
+
+    type(address, '1 Main');
+    address.setAttribute('autocomplete', 'off');
+    type(address, '1 Main St');
+
+    expect(steps().map((step) => step.masked)).toEqual(['street-address', 'street-address']);
+    expect(JSON.stringify(steps())).not.toMatch(/Main/);
   });
 });

@@ -146,6 +146,22 @@ export const TOOL_LINES: Record<string, (call: ToolCall) => ToolLine> = {
       subtitle: text(input.message),
     };
   },
+  demonstrate: ({ input, output }) => {
+    const done =
+      output.status === 'resolved'
+        ? `Watched you, ${plural(count(output.steps), 'step')}`
+        : output.status === 'timeout'
+          ? 'Stopped watching you'
+          : 'Demonstration cancelled';
+
+    return {
+      icon: 'video',
+      running: 'Watching you',
+      done,
+      failed: 'Watch you',
+      subtitle: text(input.message),
+    };
+  },
   page_text: ({ output }) => {
     const title = text(output.title) ?? (text(output.url) && hostOf(text(output.url) as string));
 

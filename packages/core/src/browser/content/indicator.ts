@@ -15,9 +15,12 @@ const CSS = `
 .handoff { position: fixed; inset: auto auto 64px 50%; transform: translateX(-50%); margin: 0; width: min(360px, calc(100vw - 32px)); box-sizing: border-box; overflow: visible; pointer-events: auto; font: 14px/1.4 Inter, system-ui, sans-serif; color: #111827; background: #fff; border: 1px solid #d1d5db; border-radius: 12px; padding: 16px; box-shadow: 0 8px 30px rgba(5, 9, 18, 0.25); }
 .handoff__title { margin: 0 0 4px; font-weight: 600; }
 .handoff__message { margin: 0 0 12px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.handoff__recording { display: flex; align-items: center; gap: 8px; margin: 0 0 12px; font-size: 13px; color: #b91c1c; }
+.handoff__recording::before { content: ''; width: 8px; height: 8px; flex: none; border-radius: 50%; background: currentColor; }
+.handoff__recording[hidden] { display: none; }
 .handoff__continue { display: block; margin-left: auto; font: 700 14px/20px Inter, system-ui, sans-serif; color: #fff; background: #16a34a; border: 0; border-radius: 9999px; padding: 8px 16px; cursor: pointer; }
 .handoff__continue:hover { background: color-mix(in srgb, #16a34a, #000000 12%); }
-@media (prefers-color-scheme: dark) { .handoff { color: #f9fafb; background: #1f2937; border-color: #374151; } }
+@media (prefers-color-scheme: dark) { .handoff { color: #f9fafb; background: #1f2937; border-color: #374151; } .handoff__recording { color: #fca5a5; } }
 .stop { position: fixed; left: 50%; bottom: 16px; transform: translateX(-50%); pointer-events: auto; font: 700 14px/20px Inter, system-ui, sans-serif; color: #ffffff; background: #b91c1c; border: 0; border-radius: 9999px; padding: 8px 16px; cursor: pointer; box-shadow: 0 2px 10px rgba(5, 9, 18, 0.3); }
 .stop:hover { background: color-mix(in srgb, #b91c1c, #ffffff 16%); }
 `;
@@ -83,6 +86,7 @@ export function createIndicator({ onStop, onContinue }: IndicatorActions): Indic
   const card = document.createElement('div');
   const title = document.createElement('p');
   const message = document.createElement('p');
+  const recording = document.createElement('p');
   const proceed = document.createElement('button');
   let shown = false;
   let waiting: HandoffCard | null = null;
@@ -117,10 +121,13 @@ export function createIndicator({ onStop, onContinue }: IndicatorActions): Indic
   title.className = 'handoff__title';
   title.textContent = 'Sidekick is waiting for you';
   message.className = 'handoff__message';
+  recording.className = 'handoff__recording';
+  recording.textContent = 'Sidekick is recording your clicks and typing';
+  recording.hidden = true;
   proceed.className = 'handoff__continue';
   proceed.type = 'button';
   proceed.textContent = 'Continue';
-  card.append(title, message, proceed);
+  card.append(title, message, recording, proceed);
 
   proceed.addEventListener('click', (event) => {
     if (!event.isTrusted || !waiting) return;
@@ -205,7 +212,10 @@ export function createIndicator({ onStop, onContinue }: IndicatorActions): Indic
       waiting = next;
       overlay.classList.toggle('overlay--waiting', next !== null);
 
-      if (next) message.textContent = next.message;
+      if (next) {
+        message.textContent = next.message;
+        recording.hidden = !next.recording;
+      }
 
       if (place() || !same) raise();
     },

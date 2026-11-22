@@ -10,8 +10,10 @@ interface Entry {
 }
 
 interface Recording {
+  id: number;
   entries: Entry[];
   secret: Set<string>;
+  masked: Map<string, string>;
 }
 
 const LOAD_TIMEOUT_MS = 10_000;
@@ -19,38 +21,82 @@ const LOAD_TIMEOUT_MS = 10_000;
 const MAX_STEPS = 500;
 
 export interface Recordings {
-  /** Starts recording a tab in every frame, and in every document it loads until `stop`. */
-  start(tabId: number): Promise<void>;
+  /**
+   * Starts recording a tab in every frame, and in every document it loads until `stop`. A new
+   * recording on the tab sets the earlier one aside, so its `stop` with its id still gets its steps.
+   */
+  start(tabId: number): Promise<number>;
   recording(tabId: number): boolean;
   /**
    * A frame's step; a fill of the field the last step filled replaces it. A fill of a field that
-   * was redacted earlier in the recording stays redacted.
+   * was redacted or masked earlier in the recording stays so. Urls keep no query or fragment.
    */
   step(tabId: number, frameId: number, step: RecordedStep): void;
-  stop(tabId: number): Promise<DemonstrationStep[]>;
+  /** Ends the tab's recording, or with `id` the recording `start` returned it for, and gives its steps. */
+  stop(tabId: number, id?: number): Promise<DemonstrationStep[]>;
   dispose(): void;
 }
 
-function redact({ kind, frameUrl, role, name, nearby, selector }: RecordedStep): RecordedStep {
-  return { kind, frameUrl, role, name, nearby, selector, redacted: true };
+/** A url without credentials, query or fragment, where a GET form puts the values typed into it. */
+export function bareUrl(url: string): string {
+  try {
+    const parsed = new URL(url);
+
+    parsed.search = '';
+    parsed.hash = '';
+    parsed.username = '';
+    parsed.password = '';
+
+    return parsed.href;
+  } catch {
+    return url.split(/[?#]/)[0] ?? url;
+  }
 }
 
-function sticky(recording: Recording, frameId: number | undefined, step: DemonstrationStep) {
+function hidden(
+  { kind, frameUrl, role, name, nearby, selector }: RecordedStep,
+  privacy: { redacted: true } | { masked: string },
+): RecordedStep {
+  return { kind, frameUrl, role, name, nearby, selector, ...privacy };
+}
+
+function sticky(recording: Recording, frameId: number | undefined, step: RecordedStep) {
   if (step.kind !== 'fill') return step;
 
   const key = `${frameId ?? ''} ${step.selector}`;
 
   if (step.redacted) recording.secret.add(key);
 
-  return recording.secret.has(key) && !step.redacted ? redact(step) : step;
+  if (step.masked) recording.masked.set(key, step.masked);
+
+  if (recording.secret.has(key)) return step.redacted ? step : hidden(step, { redacted: true });
+
+  const masked = recording.masked.get(key);
+
+  return masked && !step.masked ? hidden(step, { masked }) : step;
+}
+
+function bare(step: DemonstrationStep): DemonstrationStep {
+  return step.kind === 'navigation'
+    ? { ...step, url: bareUrl(step.url) }
+    : { ...step, frameUrl: bareUrl(step.frameUrl) };
 }
 
 /** One recording per tab for `demonstrate` (sidekick-21), after browse's demonstration recorder. */
 export function createRecordings({ page, tabs }: { page: Page; tabs: Tabs }): Recordings {
   const active = new Map<number, Recording>();
+  const aside = new Map<number, Entry[]>();
+  let next = 0;
 
-  const arm = (tabId: number) =>
-    active.has(tabId) ? page.record(tabId, true).catch(() => undefined) : Promise.resolve();
+  const off = (tabId: number) => page.record(tabId, false).catch(() => undefined);
+
+  const arm = async (tabId: number) => {
+    if (!active.has(tabId)) return;
+
+    await page.record(tabId, true).catch(() => undefined);
+
+    if (!active.has(tabId)) await off(tabId);
+  };
 
   const add = (tabId: number, entry: Entry) => {
     const recording = active.get(tabId);
@@ -59,7 +105,8 @@ export function createRecordings({ page, tabs }: { page: Page; tabs: Tabs }): Re
 
     const { entries } = recording;
     const last = entries.at(-1);
-    const step = sticky(recording, entry.frameId, entry.step);
+    const bared = bare(entry.step);
+    const step = bared.kind === 'navigation' ? bared : sticky(recording, entry.frameId, bared);
 
     if (
       step.kind === 'fill' &&
@@ -87,22 +134,41 @@ export function createRecordings({ page, tabs }: { page: Page; tabs: Tabs }): Re
 
   return {
     start: async (tabId) => {
-      active.set(tabId, { entries: [], secret: new Set() });
+      const earlier = active.get(tabId);
+      const id = ++next;
+
+      if (earlier) aside.set(earlier.id, earlier.entries);
+
+      active.set(tabId, { id, entries: [], secret: new Set(), masked: new Map() });
       await arm(tabId);
+
+      return id;
     },
     recording: (tabId) => active.has(tabId),
     step: (tabId, frameId, step) => add(tabId, { frameId, step }),
-    stop: async (tabId) => {
-      const entries = active.get(tabId)?.entries ?? [];
+    stop: async (tabId, id) => {
+      const recording = active.get(tabId);
+
+      if (id !== undefined && recording?.id !== id) {
+        const entries = aside.get(id) ?? [];
+
+        aside.delete(id);
+
+        return entries.map(({ step }) => step);
+      }
 
       active.delete(tabId);
-      await page.record(tabId, false).catch(() => undefined);
+      await off(tabId);
 
-      return entries.map(({ step }) => step);
+      return (recording?.entries ?? []).map(({ step }) => step);
     },
     dispose: () => {
       stopCommits();
+
+      for (const tabId of active.keys()) void off(tabId);
+
       active.clear();
+      aside.clear();
     },
   };
 }
@@ -174,6 +240,8 @@ export function describeStep(step: DemonstrationStep): string {
       return `${step.checked ? 'Checked' : 'Unchecked'} ${target(step)}`;
     case 'select':
       return selectLine(step);
+    case 'file':
+      return `Chose a file for ${target(step)}; which file wasn't recorded`;
   }
 }
 

@@ -93,6 +93,15 @@ const CASES: [string, Done, string, string][] = [
     'Stopped waiting for you',
   ],
   [
+    'demonstrate',
+    {
+      input: { tab_id: 2, message: 'Show me' },
+      output: { status: 'resolved', steps: [{ kind: 'click' }, { kind: 'fill' }] },
+    },
+    'Watching you',
+    'Watched you, 2 steps',
+  ],
+  [
     'navigate',
     { input: { url: 'https://mdn.test/' }, output: { url: 'https://mdn.test/' } },
     'Opening mdn.test',
@@ -358,6 +367,7 @@ describe('tool cards', () => {
         'eval',
         'emulate',
         'handoff',
+        'demonstrate',
         'web_search',
         'webfetch',
         'batch',

@@ -290,4 +290,6 @@ export interface Page {
 export interface HandoffCard {
   id: string;
   message: string;
+  /** Set while `demonstrate` records the person's steps, so the card says so (sidekick-21 req. 7). */
+  recording?: boolean;
 }

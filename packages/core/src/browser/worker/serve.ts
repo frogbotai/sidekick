@@ -242,7 +242,15 @@ export function createBrowserWorker({ env }: BrowserRuntime): BrowserWorker {
 
         return {
           visible: run !== undefined && !hidden.has(run.id),
-          ...(pending ? { handoff: { id: pending.id, message: pending.message } } : {}),
+          ...(pending
+            ? {
+                handoff: {
+                  id: pending.id,
+                  message: pending.message,
+                  ...(pending.recording ? { recording: true } : {}),
+                },
+              }
+            : {}),
         };
       },
       'handoff.continue': ({ id }) => {
