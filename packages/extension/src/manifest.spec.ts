@@ -152,7 +152,7 @@ describe('built manifest', () => {
 });
 
 describe('built files', () => {
-  it('ships the content script as one small classic script', async () => {
+  it('ships the content script as one classic script under 72 KB, raised from 64 KB for page_text and webmcp', async () => {
     const source = await readFile(path.join(outDir, 'frame.js'), 'utf8');
 
     expect(source).not.toMatch(/(^|[;\s}])import[\s{*("']/);
